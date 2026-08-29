@@ -1,0 +1,2741 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "dd-benefactor-marketing-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_1bae48db2f13",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "descriptor"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_api_docs_08582594fa9a",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_api_docs_json_b220dfc40f18",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_json"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/approvals": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_approvals_41f8866c0b74",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_approval"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/approvals",
+        "x-dd-source-paths": [
+          "/approvals"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/approvals/{approval_id}/decision": {
+      "patch": {
+        "operationId": "dd_benefactor_marketing_rs_patch_approvals_approval_id_decision_e4bcb1bc668a",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "decide_approval"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/approvals/{approval_id}/decision",
+        "x-dd-source-paths": [
+          "/approvals/{approval_id}/decision"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/attribution/events": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_attribution_events_4149d88e67db",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "record_attribution_event"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/attribution/events",
+        "x-dd-source-paths": [
+          "/attribution/events"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/automation/events": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_automation_events_3bd90421d2f7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "record_automation_event"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/automation/events",
+        "x-dd-source-paths": [
+          "/automation/events"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/automation/workflows": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_automation_workflows_08f8e45610c8",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_automation_workflow"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/automation/workflows",
+        "x-dd-source-paths": [
+          "/automation/workflows"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/campaigns": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_campaigns_1e7c3d17b40b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_campaign"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/campaigns",
+        "x-dd-source-paths": [
+          "/campaigns"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/campaigns/{campaign_id}/channels": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_campaigns_campaign_id_channels_456eb1568a15",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_campaign_channel"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/campaigns/{campaign_id}/channels",
+        "x-dd-source-paths": [
+          "/campaigns/{campaign_id}/channels"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/campaigns/{campaign_id}/experiments": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_campaigns_campaign_id_experiments_78ff0f9f4a88",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "campaign_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_campaign_experiment"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/campaigns/{campaign_id}/experiments",
+        "x-dd-source-paths": [
+          "/campaigns/{campaign_id}/experiments"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_capabilities_ba9ccb10d98f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "capabilities"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/capabilities",
+        "x-dd-source-paths": [
+          "/capabilities"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_d46340d5cc17",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_client",
+          "list_clients"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients",
+        "x-dd-source-paths": [
+          "/clients"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_c9aad6307d0c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_client",
+          "list_clients"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients",
+        "x-dd-source-paths": [
+          "/clients"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/budget-forecasts": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_budget_forecasts_e06e0359d67c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_budget_forecast",
+          "list_client_budget_forecasts"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/budget-forecasts",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/budget-forecasts"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_budget_forecasts_5059a00009e0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_budget_forecast",
+          "list_client_budget_forecasts"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/budget-forecasts",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/budget-forecasts"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/call-insights": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_call_insights_fe5f879b9dbf",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_client_call_insight",
+          "list_client_call_insights"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/call-insights",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/call-insights"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_call_insights_ed0a4b4e2ca0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_client_call_insight",
+          "list_client_call_insights"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/call-insights",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/call-insights"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/campaigns": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_campaigns_7ee709c166cc",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_client_campaigns"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/campaigns",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/campaigns"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/comments": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_comments_4e68192871d5",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_comment",
+          "list_client_comments"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/comments",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/comments"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_comments_e1468a9c9fc4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_comment",
+          "list_client_comments"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/comments",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/comments"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/commissions": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_commissions_8cf7e96c72f8",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_commission_entry",
+          "list_client_commissions"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/commissions",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/commissions"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_commissions_b37f7721b165",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_commission_entry",
+          "list_client_commissions"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/commissions",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/commissions"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/contacts": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_contacts_15f0e5ff037e",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_contact"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/contacts",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/contacts"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/contracts": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_contracts_bbf90a8740ae",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_contract"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/contracts",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/contracts"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/conversion-events": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_conversion_events_79386a53be86",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_client_conversion_events"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/conversion-events",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/conversion-events"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/dashboard": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_dashboard_cd307a46e509",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "client_dashboard"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/dashboard",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/dashboard"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/documents": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_documents_58e6be2e483d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_shared_document",
+          "list_client_documents"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/documents",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/documents"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_documents_24e1407bd58e",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_shared_document",
+          "list_client_documents"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/documents",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/documents"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/integrations": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_integrations_61dc1a734766",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_integration"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/integrations",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/integrations"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/invoices": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_invoices_09ce6a44e62f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_invoice"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/invoices",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/invoices"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/lead-intelligence": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_lead_intelligence_5262b1a2f370",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "client_lead_intelligence"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/lead-intelligence",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/lead-intelligence"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/leads": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_leads_441162672b7c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_client_leads"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/leads",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/leads"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/notifications": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_notifications_e23bdea573aa",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_notification",
+          "list_client_notifications"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/notifications",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/notifications"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_notifications_7ece7c8bbb54",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_notification",
+          "list_client_notifications"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/notifications",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/notifications"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/operations": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_operations_0bb837eb1fb6",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "client_operations_summary"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/operations",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/operations"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/outreach": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_outreach_1715a7c3a625",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "client_outreach_summary"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/outreach",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/outreach"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/outreach/sequences": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_outreach_sequences_84292dc650ac",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_client_outreach_sequences"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/outreach/sequences",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/outreach/sequences"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/overview": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_overview_faf4fea78f53",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "client_dashboard"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/overview",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/overview"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/portal/members": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_portal_members_bdc9c394c729",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_portal_member",
+          "list_client_portal_members"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/portal/members",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/portal/members"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_portal_members_dfd29f9246fd",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_portal_member",
+          "list_client_portal_members"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/portal/members",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/portal/members"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/profitability": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_profitability_f26cefccab7b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "client_profitability_summary"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/profitability",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/profitability"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/research/briefs": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_research_briefs_8490838ae38b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_client_research_briefs"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/research/briefs",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/research/briefs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/revenue-attribution": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_revenue_attribution_05fda4a17fce",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "client_revenue_attribution"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/revenue-attribution",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/revenue-attribution"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/sync-runs": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_sync_runs_e6a557cf6ae7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_client_sync_runs"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/sync-runs",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/sync-runs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/team-allocations": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_team_allocations_c0b35f61ab20",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_team_allocation",
+          "list_client_team_allocations"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/team-allocations",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/team-allocations"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_team_allocations_84b60c7a7647",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_team_allocation",
+          "list_client_team_allocations"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/team-allocations",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/team-allocations"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/time-entries": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_time_entries_20cdacea5269",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_time_entry",
+          "list_client_time_entries"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/time-entries",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/time-entries"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_time_entries_9244c28862bc",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_time_entry",
+          "list_client_time_entries"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/time-entries",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/time-entries"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/clients/{client_id}/vendor-costs": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_clients_client_id_vendor_costs_e74d1bb0e4b9",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_vendor_cost",
+          "list_client_vendor_costs"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/vendor-costs",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/vendor-costs"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_clients_client_id_vendor_costs_172d8ba24c76",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "client_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_vendor_cost",
+          "list_client_vendor_costs"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/clients/{client_id}/vendor-costs",
+        "x-dd-source-paths": [
+          "/clients/{client_id}/vendor-costs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/content/assets": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_content_assets_bca5949f19dc",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_content_asset"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/content/assets",
+        "x-dd-source-paths": [
+          "/content/assets"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/conversion/events": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_conversion_events_c010fffb9699",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "record_conversion_event"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/conversion/events",
+        "x-dd-source-paths": [
+          "/conversion/events"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/descriptor": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_descriptor_049ff25a752f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "descriptor"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/descriptor",
+        "x-dd-source-paths": [
+          "/descriptor"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_docs_api_37a923e269a6",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_healthz_0f922ff73afd",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/integrations/{integration_id}/sync-runs": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_integrations_integration_id_sync_runs_b057d42afa78",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "integration_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_integration_sync_run"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/integrations/{integration_id}/sync-runs",
+        "x-dd-source-paths": [
+          "/integrations/{integration_id}/sync-runs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/leads/{lead_id}/enrichment-jobs": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_leads_lead_id_enrichment_jobs_a33d9ff99e43",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "lead_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "queue_enrichment_job"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/leads/{lead_id}/enrichment-jobs",
+        "x-dd-source-paths": [
+          "/leads/{lead_id}/enrichment-jobs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/leads/{lead_id}/score": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_leads_lead_id_score_65ec801b1758",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "lead_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "score_lead"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/leads/{lead_id}/score",
+        "x-dd-source-paths": [
+          "/leads/{lead_id}/score"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/leads/import": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_leads_import_05136060be00",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "import_leads"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/leads/import",
+        "x-dd-source-paths": [
+          "/leads/import"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/meetings": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_meetings_f1418b07a309",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_meeting"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/meetings",
+        "x-dd-source-paths": [
+          "/meetings"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/meetings/{meeting_id}/call-insights": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_meetings_meeting_id_call_insights_4b697f993c90",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_meeting_call_insight"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/meetings/{meeting_id}/call-insights",
+        "x-dd-source-paths": [
+          "/meetings/{meeting_id}/call-insights"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_metrics_a0728e229439",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/opportunities": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_opportunities_ecc43d68a5e3",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_opportunity"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/opportunities",
+        "x-dd-source-paths": [
+          "/opportunities"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/outreach/enrollments": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_outreach_enrollments_34b6e6538eb7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_outreach_enrollment"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/outreach/enrollments",
+        "x-dd-source-paths": [
+          "/outreach/enrollments"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/outreach/sequences": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_outreach_sequences_464604a0b578",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_outreach_sequence"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/outreach/sequences",
+        "x-dd-source-paths": [
+          "/outreach/sequences"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/outreach/sequences/{sequence_id}/steps": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_outreach_sequences_sequence_id_steps_9649dec03097",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "sequence_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_outreach_step"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/outreach/sequences/{sequence_id}/steps",
+        "x-dd-source-paths": [
+          "/outreach/sequences/{sequence_id}/steps"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/outreach/touchpoints": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_outreach_touchpoints_0f3b7ccec140",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "record_outreach_touchpoint"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/outreach/touchpoints",
+        "x-dd-source-paths": [
+          "/outreach/touchpoints"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/projects/tasks": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_projects_tasks_657c0b6813c4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_project_task"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/projects/tasks",
+        "x-dd-source-paths": [
+          "/projects/tasks"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_readyz_4a6f149a52e3",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "readyz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/reports/snapshots": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_reports_snapshots_cfd1d5007087",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_report_snapshot"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/reports/snapshots",
+        "x-dd-source-paths": [
+          "/reports/snapshots"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/research/briefs": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_research_briefs_2efdc4ddb75f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_research_brief"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/research/briefs",
+        "x-dd-source-paths": [
+          "/research/briefs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/runtime/redis": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_runtime_redis_fb49dbfcd57a",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "redis_status"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/runtime/redis",
+        "x-dd-source-paths": [
+          "/runtime/redis"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/service-packages": {
+      "get": {
+        "operationId": "dd_benefactor_marketing_rs_get_service_packages_199cbd4784a7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_service_package",
+          "list_service_packages"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/service-packages",
+        "x-dd-source-paths": [
+          "/service-packages"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_service_packages_159a23fd7a22",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_service_package",
+          "list_service_packages"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/service-packages",
+        "x-dd-source-paths": [
+          "/service-packages"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/tickets": {
+      "post": {
+        "operationId": "dd_benefactor_marketing_rs_post_tickets_b6319df968b7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_ticket"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-benefactor-marketing-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/tickets",
+        "x-dd-source-paths": [
+          "/tickets"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 76,
+  "x-dd-route-count": 76,
+  "x-dd-service": "dd-benefactor-marketing-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

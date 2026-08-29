@@ -81,19 +81,28 @@ async fn store_media_http(
     }
     let content_type = body.content_type.trim();
     if content_type.is_empty() || content_type.len() > MAX_CONTENT_TYPE_LEN {
-        return json_err(StatusCode::BAD_REQUEST, "contentType must be 1..=128 characters");
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            "contentType must be 1..=128 characters",
+        );
     }
     let bytes = match general_purpose::STANDARD.decode(body.data_base64.trim()) {
         Ok(bytes) => bytes,
         Err(error) => {
-            return json_err(StatusCode::BAD_REQUEST, &format!("dataBase64 invalid: {error}"))
+            return json_err(
+                StatusCode::BAD_REQUEST,
+                &format!("dataBase64 invalid: {error}"),
+            )
         }
     };
     if bytes.is_empty() {
         return json_err(StatusCode::BAD_REQUEST, "media must not be empty");
     }
     if bytes.len() > MAX_MEDIA_BYTES {
-        return json_err(StatusCode::PAYLOAD_TOO_LARGE, "media exceeds the size limit");
+        return json_err(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "media exceeds the size limit",
+        );
     }
     let digest = sha256_hex(&bytes);
     let size = bytes.len();
@@ -131,7 +140,11 @@ async fn get_media_http(
     if let Err(resp) = require_enabled(bc, bc.config().nft_enabled, "BLOCKCHAIN_NFT_ENABLED") {
         return resp;
     }
-    let key = digest.trim().strip_prefix("sha256:").unwrap_or(digest.trim()).to_string();
+    let key = digest
+        .trim()
+        .strip_prefix("sha256:")
+        .unwrap_or(digest.trim())
+        .to_string();
     let store = match bc.inner().media.lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -207,14 +220,22 @@ mod tests {
 
     #[test]
     fn metaplex_requires_symbol_and_image() {
-        assert!(validate_metadata(ChainKind::Solana, &json!({ "name": "x", "symbol": "X", "image": "u" })).is_ok());
-        assert!(validate_metadata(ChainKind::Solana, &json!({ "name": "x", "symbol": "X" })).is_err());
+        assert!(validate_metadata(
+            ChainKind::Solana,
+            &json!({ "name": "x", "symbol": "X", "image": "u" })
+        )
+        .is_ok());
+        assert!(
+            validate_metadata(ChainKind::Solana, &json!({ "name": "x", "symbol": "X" })).is_err()
+        );
         assert!(validate_metadata(ChainKind::Solana, &json!({ "name": "x" })).is_err());
     }
 
     #[test]
     fn erc_requires_image() {
-        assert!(validate_metadata(ChainKind::Evm, &json!({ "name": "x", "image": "ipfs://y" })).is_ok());
+        assert!(
+            validate_metadata(ChainKind::Evm, &json!({ "name": "x", "image": "ipfs://y" })).is_ok()
+        );
         assert!(validate_metadata(ChainKind::Evm, &json!({ "name": "x" })).is_err());
     }
 }

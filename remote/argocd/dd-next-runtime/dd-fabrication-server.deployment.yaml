@@ -647,6 +647,18 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8113'
+            # Optional, provider-neutral secret overlay. An external secret
+            # controller/injector owns the credential; the app reads only the
+            # allowlisted secrets/daedalus/{NATS_URL,NATS_TOKEN,NATS_NKEY} keys.
+            # Missing credentials preserve the direct environment configuration.
+            - name: FIDUCIA_URL
+              value: http://fiducia-load-balance.fiducia.svc.cluster.local:8088
+            - name: FIDUCIA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-fabrication-server-secrets
+                  key: FIDUCIA_API_KEY
+                  optional: true
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: NATS_REQUIRE_TLS

@@ -22,7 +22,23 @@ async function readRepoFile(relativePath: string): Promise<string> {
 
 test('rust solana contract service is deployed, scraped, and guarded', async () => {
   const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
-  const source = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const sourceFiles = [
+  'remote/deployments/contract-service-rs/src/main.rs',
+  'remote/deployments/contract-service-rs/src/confirm.rs',
+  'remote/deployments/contract-service-rs/src/coordination.rs',
+  'remote/deployments/contract-service-rs/src/handlers.rs',
+  'remote/deployments/contract-service-rs/src/metrics.rs',
+  'remote/deployments/contract-service-rs/src/nats.rs',
+  'remote/deployments/contract-service-rs/src/rpc.rs',
+  'remote/deployments/contract-service-rs/src/settlement.rs',
+  'remote/deployments/contract-service-rs/src/shared.rs',
+  'remote/deployments/contract-service-rs/src/solana_features.rs',
+  'remote/deployments/contract-service-rs/src/state.rs',
+  'remote/deployments/contract-service-rs/src/validation.rs',
+];
+const source = (
+  await Promise.all(sourceFiles.map((path) => readRepoFile(path)))
+).join('\n');
   const coordination = await readRepoFile(
     'remote/deployments/contract-service-rs/src/coordination.rs',
   );
@@ -45,7 +61,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/home.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(cargo, /name = "dd-contract-service"/);
@@ -127,10 +143,13 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
   assert.match(deployment, /CONTRACT_FORMAL_METHODS_ENABLED[\s\S]*value:\s*'true'/);
   assert.match(deployment, /FORMAL_METHODS_URL[\s\S]*dd-formal-methods-server/);
   assert.match(deployment, /CONTRACT_FORMAL_METHODS_GITHUB_ORGS[\s\S]*fiducia-cloud/);
-  assert.match(deployment, /CONTRACT_COORDINATION_ENABLED[\s\S]*value:\s*'true'/);
-  assert.match(deployment, /CONTRACT_COORDINATION_REQUIRED[\s\S]*value:\s*'true'/);
+  assert.match(deployment, /CONTRACT_COORDINATION_ENABLED[\s\S]*value:\s*'false'/);
+  assert.match(deployment, /CONTRACT_COORDINATION_REQUIRED[\s\S]*value:\s*'false'/);
   assert.match(deployment, /RDS_DATABASE_URL[\s\S]*dd-remote-rest-api-secrets/);
   assert.match(deployment, /FIDUCIA_LOCK_URL[\s\S]*fiducia-load-balance\.fiducia/);
+  assert.match(coordination, /requires a requests:write-scoped FIDUCIA_API_KEY/);
+  assert.match(coordination, /Method::OPTIONS/);
+  assert.match(source, /fn enforce_broadcast_coordination/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
   assert.match(deployment, /CONTRACT_VALIDATE_SUBJECT[\s\S]*dd\.remote\.contracts\.solana\.validate/);
   assert.match(deployment, /CONTRACT_QUEUE_GROUP[\s\S]*dd-contract-service/);
@@ -175,6 +194,7 @@ test('rust solana contract service is deployed, scraped, and guarded', async () 
 test('blockchain feature suite is wired in, keyless, and off by default', async () => {
   const cargo = await readRepoFile('remote/deployments/contract-service-rs/Cargo.toml');
   const main = await readRepoFile('remote/deployments/contract-service-rs/src/main.rs');
+  const nats = await readRepoFile('remote/deployments/contract-service-rs/src/nats.rs');
   const mod = await readRepoFile('remote/deployments/contract-service-rs/src/blockchain/mod.rs');
   const evm = await readRepoFile('remote/deployments/contract-service-rs/src/blockchain/evm.rs');
   const readme = await readRepoFile('remote/deployments/contract-service-rs/readme.md');
@@ -193,7 +213,7 @@ test('blockchain feature suite is wired in, keyless, and off by default', async 
   assert.match(main, /mod blockchain;/);
   assert.match(main, /\.merge\(blockchain::router\(\)\)/);
   assert.match(main, /blockchain::BlockchainState::from_env/);
-  assert.match(main, /pub\(crate\) async fn publish_blockchain_event/);
+  assert.match(nats, /pub\(crate\) async fn publish_blockchain_event/);
 
   // Keyless, custody-ready seam: only an External signer exists.
   assert.match(mod, /enum SignerBackend \{\s*External,?\s*\}/);

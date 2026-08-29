@@ -1,0 +1,3 @@
+Apply the exact Apps Script Advanced Chat service orderBy compatibility fix for DEN-266.
+Retry synchronize event.
+Run one-shot branch patch.

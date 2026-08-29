@@ -37,7 +37,18 @@
           opentelemetry-bom; semconv (its own groupId) is pinned explicitly.
         -->
         <opentelemetry.version>1.46.0</opentelemetry.version>
-        <opentelemetry-semconv.version>1.30.0</opentelemetry-semconv.version>
+        <!--
+          Pinned to 1.25.0-alpha (the version selenium-java 4.27 itself declares),
+          NOT 1.30.0. selenium's OTel tracing references the monolithic
+          io.opentelemetry.semconv.SemanticAttributes, which was removed from the
+          artifact by 1.30.0 (verified via `jar tf`) — so a FRESH build against
+          1.30.0 throws NoClassDefFoundError: SemanticAttributes at the first
+          WebDriver session. 1.25.0-alpha still ships BOTH SemanticAttributes
+          (for selenium) AND ServiceAttributes (used by Telemetry.java), so both
+          sides resolve. Do not bump without confirming selenium's required class
+          still exists in the target version.
+        -->
+        <opentelemetry-semconv.version>1.25.0-alpha</opentelemetry-semconv.version>
 
         <main.class>com.oresoftware.dd.selenium.App</main.class>
     </properties>

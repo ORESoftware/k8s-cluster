@@ -6,3 +6,10 @@ resources:
   - nats.configmap.yaml
   - nats.deployment.yaml
   - nats.service.yaml
+  - nats.networkpolicy.yaml
+  - nats.pdb.yaml
+  - nats-bridge.configmap.yaml
+  - nats-bridge.externalsecret.yaml
+  - nats-bridge.deployment.yaml
+  - nats-bridge.service.yaml
+  - nats-bridge.networkpolicy.yaml

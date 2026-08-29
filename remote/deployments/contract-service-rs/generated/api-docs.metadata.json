@@ -1,0 +1,1022 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "contract-service-rs",
+  "language": "rust",
+  "routeCount": 59,
+  "routeTypeCounts": {
+    "service": 7,
+    "user-generated": 49,
+    "runtime-config": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "home"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/account",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "account_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/balance",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "balance_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/blockhash",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "blockhash_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/bridge/transfer",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "transfer_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/bridge.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/bridge/transfer/:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "status_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/bridge.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/bridge/transfer/:id/attest",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "attest_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/bridge.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/capabilities",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "capabilities_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/chain/:id/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "chain_status_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/chain/priority-fees",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "priority_fees_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/chain/signatures",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "signature_history_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/chains",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "chains_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/confirm",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "confirm_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/escrow/inspect",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "escrow_inspect_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/example",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "example_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/example/settlement",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "settlement_example_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/executor/execute",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "execute_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/executor.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/executor/simulate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "simulate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/executor.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/fee",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "fee_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "healthz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/index/query",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "query_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/indexer.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/index/watch",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "watch_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/indexer.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "handlers": [
+        "dd_runtime_config_client::handle_get"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "handlers": [
+        "dd_runtime_config_client::handle_reset"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "handlers": [
+        "dd_runtime_config_client::handle_apply"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/mev/opportunities",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "opportunities_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/mev.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/multisig/proposal",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/multisig.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/multisig/proposal/:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "status_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/multisig.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/multisig/proposal/:id/approve",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "approve_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/multisig.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/nft/media",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "store_media_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/nft.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/nft/media/:digest",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "get_media_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/nft.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/nft/metadata/validate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "validate_metadata_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/nft.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/program/inspect",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "program_inspect_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/program/verify",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "program_verify_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/solana_features.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "readyz"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/relayer/status/:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "status_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/relayer.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/relayer/submit",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "submit_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/relayer.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/rent-exemption",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "rent_exemption_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/resolve",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resolve_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/schema",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "schema_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/schema/resolution",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "resolution_schema_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/schema/settlement",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "settlement_schema_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/send",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "send_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/settle",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "settle_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/simulate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "simulate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/simulate-settlement",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "simulate_settlement_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/staking/intent",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "intent_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/staking.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/staking/positions/:chain/:address",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "positions_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/staking.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/staking/validate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "validate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/staking.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "status_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/transaction",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "transaction_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/validate",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "validate_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/wallet/:id/balance",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "balance_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/wallet.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/wallet/list",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/wallet.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/wallet/register",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "register_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/contract-service-rs/src/blockchain/wallet.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

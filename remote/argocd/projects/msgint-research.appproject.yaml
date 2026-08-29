@@ -1,0 +1,29 @@
+# Restricts Messaging Intel application manifests to one repository, one
+# namespace, and namespaced workload resources. Platform-owned identity,
+# quota, secret, and RBAC objects remain outside the application repository.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: msgint-research
+  namespace: argocd
+spec:
+  description: "Restricted research tenant for Messaging Intel capture workloads."
+  sourceRepos:
+    - "git@github.com:messaging-intel/msgint-monorepo.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: msgint-research
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+    - group: rbac.authorization.k8s.io
+      kind: Role
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding

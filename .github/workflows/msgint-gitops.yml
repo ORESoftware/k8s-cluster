@@ -1,0 +1,64 @@
+name: Messaging Intel GitOps
+
+# Desired-state validation only. This workflow receives no cluster or provider
+# credentials and cannot unsuspend or deploy the capture workload.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/msgint-gitops.yml'
+      - 'docs/messaging-intel-research-deployment.md'
+      - 'scripts/validate-msgint-gitops.py'
+      - 'remote/argocd/apps/msgint-capture.application.yaml'
+      - 'remote/argocd/projects/msgint-research.appproject.yaml'
+      - 'remote/argocd/projects/msgint-research.tenant.yaml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/msgint-gitops.yml'
+      - 'docs/messaging-intel-research-deployment.md'
+      - 'scripts/validate-msgint-gitops.py'
+      - 'remote/argocd/apps/msgint-capture.application.yaml'
+      - 'remote/argocd/projects/msgint-research.appproject.yaml'
+      - 'remote/argocd/projects/msgint-research.tenant.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: msgint-gitops-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: ./.github/workflows/msgint-gitops.yml
+
+      - name: Parse Kubernetes and Argo YAML
+        run: |
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_stream(File.read(path)) }' \
+            remote/argocd/projects/msgint-research.tenant.yaml \
+            remote/argocd/projects/msgint-research.appproject.yaml \
+            remote/argocd/apps/msgint-capture.application.yaml
+
+      - name: Validate restricted-research contract
+        run: python3 scripts/validate-msgint-gitops.py
+
+      - name: Reject unresolved merge markers
+        run: |
+          ! grep -RInE '^(<<<<<<<|=======|>>>>>>>)' \
+            remote/argocd/projects/msgint-research.tenant.yaml \
+            remote/argocd/projects/msgint-research.appproject.yaml \
+            remote/argocd/apps/msgint-capture.application.yaml \
+            scripts/validate-msgint-gitops.py \
+            docs/messaging-intel-research-deployment.md

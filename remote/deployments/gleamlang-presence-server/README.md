@@ -159,8 +159,11 @@ that hashes upgrades across pods.
 ```bash
 kubectl apply -f k8s/00-namespace.yaml
 kubectl apply -f k8s/10-rbac.yaml
-# edit k8s/20-secret-cookie.yaml first — replace placeholder
-kubectl apply -f k8s/20-secret-cookie.yaml
+# The Erlang cookie is created out of band and never committed — see the
+# notes in k8s/20-secret-cookie.yaml. Anyone holding it can open a shell on
+# the BEAM nodes, so generate a fresh one per environment:
+kubectl -n presence create secret generic presence-cookie \
+  --from-literal=cookie="$(openssl rand -hex 32)"
 kubectl apply -f k8s/25-postgres-externalsecret.yaml
 kubectl apply -f k8s/30-headless-service.yaml
 kubectl apply -f k8s/40-statefulset.yaml

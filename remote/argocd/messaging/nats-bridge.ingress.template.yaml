@@ -1,0 +1,33 @@
+# INERT TEMPLATE — do not add to kustomization until DEN-440 activation gates pass.
+# Replace the invalid host and reviewed TLS secret name in a dedicated rollout PR.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dd-nats-http-ingress
+  namespace: messaging
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/proxy-body-size: 1m
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: '5'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '10'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '10'
+    nginx.ingress.kubernetes.io/limit-rps: '10'
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: '5'
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - nats-ingress.example.invalid
+      secretName: replace-with-reviewed-nats-ingress-tls
+  rules:
+    - host: nats-ingress.example.invalid
+      http:
+        paths:
+          - path: /v1/queues
+            pathType: Prefix
+            backend:
+              service:
+                name: dd-nats-bridge
+                port:
+                  name: http

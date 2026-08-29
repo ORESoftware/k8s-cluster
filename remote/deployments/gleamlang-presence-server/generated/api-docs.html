@@ -42,11 +42,10 @@
     <h1>gleamlang-presence-server API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>17 routes</span>
+      <span>5 routes</span>
       <span>gleam</span>
       <span>5 service</span>
-      <span>9 user-generated</span>
-      <span>3 runtime-config</span>
+      <span>0 user-generated</span>
     </div>
   </header>
   <main>
@@ -54,140 +53,44 @@
       <thead><tr><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th><th>Handlers</th><th>Auth</th></tr></thead>
       <tbody>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/</code></td>
-  <td data-label="Purpose">Help text.</td>
+  <td data-label="Purpose">Presence service help</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs</code></td>
-  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Purpose">Interactive API reference</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs.json</code></td>
-  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+  <td data-label="Purpose">Public OpenAPI contract alias</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/conv/:conv_id/broadcast</code></td>
-  <td data-label="Purpose">Body is broadcast to every conv-scoped</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/conv/:conv_id/members</code></td>
-  <td data-label="Purpose">List members (PG-backed).</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span><span class="method">DELETE</span></div></td>
-  <td data-label="Path"><code>/conv/:conv_id/members/:user_id</code></td>
-  <td data-label="Purpose">Add user to conv (PG + cache + cluster broadcast).</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/docs/api</code></td>
-  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Purpose">Interactive API reference alias</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/healthz</code></td>
-  <td data-label="Purpose">JSON health check.</td>
+  <td data-label="Path"><code>/openapi.json</code></td>
+  <td data-label="Purpose">Public OpenAPI contract</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/runtime-config</code></td>
-  <td data-label="Purpose">Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.</td>
-  <td data-label="Handlers"><code>dd_runtime_config_client::handle_get</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/internal/runtime-config/reset</code></td>
-  <td data-label="Purpose">Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.</td>
-  <td data-label="Handlers"><code>dd_runtime_config_client::handle_reset</code></td>
-  <td data-label="Auth">X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/internal/update-runtime-config</code></td>
-  <td data-label="Purpose">Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.</td>
-  <td data-label="Handlers"><code>dd_runtime_config_client::handle_apply</code></td>
-  <td data-label="Auth">X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/nodes</code></td>
-  <td data-label="Purpose">Plain text list of connected BEAM peers.</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/user/:user_id/broadcast</code></td>
-  <td data-label="Purpose">Body is broadcast to every user-scoped ws</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/user/:user_id/devices/:device_id/logout</code></td>
-  <td data-label="Purpose">Closes every ws (user- and conv-scoped) of</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/ws</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/ws?user=:id</code></td>
-  <td data-label="Purpose">Upgrade to a user-scoped ws.</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/ws?user=:id&amp;conv=:id</code></td>
-  <td data-label="Purpose">Upgrade to a conv-scoped ws (must be a member).</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
 </tr>
       </tbody>
     </table>

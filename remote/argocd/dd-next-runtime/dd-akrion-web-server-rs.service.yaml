@@ -5,6 +5,10 @@ metadata:
   namespace: default
   labels:
     app: dd-akrion-web-server-rs
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8127'
 spec:
   selector:
     app: dd-akrion-web-server-rs

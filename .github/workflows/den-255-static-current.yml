@@ -1,0 +1,79 @@
+name: DEN-255 current static diagnostic
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/den-255-static-current.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Require private libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+      - name: Initialize remote libs
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Setup Gleam contract toolchain
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: '27.3.4.14'
+          gleam-version: '1.17.0'
+          rebar3-version: '3'
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Install the locked Playwright Chromium runtime
+        working-directory: remote/tests
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run authoritative static list
+        id: tests
+        continue-on-error: true
+        working-directory: remote/tests
+        run: |
+          set +e
+          mapfile -t static_tests < <(
+            awk '/static_tests=\(/ { capture=1; next } capture && /^[[:space:]]*\)/ { exit } capture { gsub(/^[[:space:]]+|[[:space:]]+$/, ""); if ($0 != "") print $0 }' ../../.github/workflows/repo-checks.yml
+          )
+          out="${RUNNER_TEMP}/den-255-static-current"
+          mkdir -p "$out"
+          printf '%s\n' "${static_tests[@]}" >"$out/test-list.txt"
+          pnpm exec tsx --test "${static_tests[@]}" >"$out/full.log" 2>&1
+          status=$?
+          {
+            echo '--- failing TAP entries ---'
+            grep -nE '^(not ok|# fail|# error|.*AssertionError|.*ERR_)' "$out/full.log" | tail -n 120 || true
+            echo '--- final context ---'
+            tail -n 350 "$out/full.log"
+          } >"$out/diagnostic.txt"
+          printf '%s\n' "$status" >"$out/exit-status.txt"
+          exit "$status"
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: den-255-static-current
+          path: ${{ runner.temp }}/den-255-static-current
+          if-no-files-found: error
+          retention-days: 2
+      - name: Enforce result
+        if: steps.tests.outcome == 'failure'
+        run: exit 1

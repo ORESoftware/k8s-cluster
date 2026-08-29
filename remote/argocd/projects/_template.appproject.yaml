@@ -1,0 +1,34 @@
+# TEMPLATE — copy per app, replace <app> / <org> / <app-repo>. This is what turns the
+# app/platform separation from a convention into an enforced boundary: an app synced under
+# this project can ONLY touch its own namespace and can NOT create cluster-scoped resources.
+#
+# Adopt per app (safe, incremental):
+#   1. Platform lands the tenant scaffold for <app> (Namespace + quota + limit + default-deny).
+#   2. Create this AppProject (additive — affects nothing until an Application references it).
+#   3. Flip that app's Application `spec.project: default` -> `<app>` and `namespace: <app>`.
+#      If the app still ships cluster-scoped objects (e.g. its own Namespace), the sync will
+#      FAIL LOUDLY here — that is the point; move those objects to the tenant scaffold first.
+#
+# NOT wired into any cluster apply yet. Bootstrap when adopting:
+#   kubectl apply -f remote/argocd/projects/<app>.appproject.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: <app>
+  namespace: argocd
+spec:
+  description: "Tenant project for <app> — namespace-scoped, no cluster resources."
+  # Only this app's repo may be a source. Blocks a stray manifest from another repo.
+  sourceRepos:
+    - "git@github.com:<org>/<app-repo>.git"
+  # The one namespace this app may write to. Syncing into another tenant is rejected.
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: <app>
+  # No cluster-scoped resources, ever. A committed ClusterRole/CRD/Namespace fails to sync.
+  clusterResourceWhitelist: []
+  # Belt-and-suspenders: forbid the tenant objects the PLATFORM owns from being overridden
+  # by the app repo even within its own namespace.
+  namespaceResourceBlacklist:
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }

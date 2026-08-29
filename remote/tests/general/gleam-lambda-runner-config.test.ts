@@ -6,7 +6,10 @@ import test from 'node:test';
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/deployments/gleam-lambda-runner/gleam.toml'))) {
+    if (existsSync(resolve(
+      candidate,
+      'remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/gleam.toml',
+    ))) {
       return candidate;
     }
   }
@@ -15,47 +18,48 @@ function findRepoRoot(): string {
 }
 
 const repoRoot = findRepoRoot();
+const runner = 'remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner';
 
 async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
 test('gleam lambda runner keeps child-process and database contracts explicit', async () => {
-  const gleamToml = await readRepoFile('remote/deployments/gleam-lambda-runner/gleam.toml');
+  const gleamToml = await readRepoFile(`${runner}/gleam.toml`);
   const httpServer = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam',
+    `${runner}/src/gleam_lambda_runner/http_server.gleam`,
   );
-  const main = await readRepoFile('remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner.gleam');
+  const main = await readRepoFile(`${runner}/src/gleam_lambda_runner.gleam`);
   const natsModule = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/nats.gleam',
+    `${runner}/src/gleam_lambda_runner/nats.gleam`,
   );
   const childProcess = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/child_process.gleam',
+    `${runner}/src/gleam_lambda_runner/child_process.gleam`,
   );
-  const lambdaNats = await readRepoFile('remote/deployments/gleam-lambda-runner/src/lambda_nats.erl');
-  const runtimeEnv = await readRepoFile('remote/deployments/gleam-lambda-runner/src/lambda_runtime_env.erl');
+  const lambdaNats = await readRepoFile(`${runner}/src/lambda_nats.erl`);
+  const runtimeEnv = await readRepoFile(`${runner}/src/lambda_runtime_env.erl`);
   const pgContract = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam',
+    `${runner}/src/gleam_lambda_runner/pg_contract.gleam`,
   );
   const pgDefsToml = await readRepoFile('remote/libs/pg-defs/generated/gleam/gleam.toml');
-  const erlPort = await readRepoFile('remote/deployments/gleam-lambda-runner/src/lambda_child_runner.erl');
+  const erlPort = await readRepoFile(`${runner}/src/lambda_child_runner.erl`);
   const jsRunner = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs',
+    `${runner}/child-runtimes/js-function-runner.mjs`,
   );
   const pythonRunner = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/child-runtimes/python-function-runner.py',
+    `${runner}/child-runtimes/python-function-runner.py`,
   );
   const rubyRunner = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/child-runtimes/ruby-function-runner.rb',
+    `${runner}/child-runtimes/ruby-function-runner.rb`,
   );
   const bashRunner = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/child-runtimes/bash-function-runner.mjs',
+    `${runner}/child-runtimes/bash-function-runner.mjs`,
   );
   const polyglotRunner = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/child-runtimes/polyglot-function-runner.mjs',
+    `${runner}/child-runtimes/polyglot-function-runner.mjs`,
   );
   const browserRunner = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/child-runtimes/browser-function-runner.mjs',
+    `${runner}/child-runtimes/browser-function-runner.mjs`,
   );
   const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
   const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
@@ -69,53 +73,55 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   // Single source of truth for shared table DDL; per-table dupes were retired.
   const tableSql = await readRepoFile('remote/libs/pg-defs/schema/schema.sql');
   const externalSecrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
-  const manifest = await readRepoFile('remote/deployments/gleam-lambda-runner/manifest.toml');
-  const dockerfile = await readRepoFile('remote/deployments/gleam-lambda-runner/Dockerfile');
+  const manifest = await readRepoFile(`${runner}/manifest.toml`);
+  const dockerfile = await readRepoFile(`${runner}/Dockerfile`);
   const nodeRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/nodejs.Dockerfile',
+    `${runner}/runtime-images/nodejs.Dockerfile`,
   );
   const bashRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile',
+    `${runner}/runtime-images/bash.Dockerfile`,
   );
   const golangRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/golang.Dockerfile',
+    `${runner}/runtime-images/golang.Dockerfile`,
   );
   const dartRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/dart.Dockerfile',
+    `${runner}/runtime-images/dart.Dockerfile`,
   );
   const erlangRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/erlang.Dockerfile',
+    `${runner}/runtime-images/erlang.Dockerfile`,
   );
   const elixirRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/elixir.Dockerfile',
+    `${runner}/runtime-images/elixir.Dockerfile`,
   );
   const javaRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile',
+    `${runner}/runtime-images/java.Dockerfile`,
   );
   const browserRuntimeDockerfile = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/runtime-images/browser.Dockerfile',
+    `${runner}/runtime-images/browser.Dockerfile`,
   );
 
   assert.match(gleamToml, /name = "gleam_lambda_runner"/);
-  assert.match(gleamToml, /dd_pg_defs = \{ path = "\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam" \}/);
-  assert.match(manifest, /name = "dd_pg_defs"[\s\S]*source = "local"[\s\S]*path = "\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam"/);
+  assert.match(gleamToml, /dd_pg_defs = \{ path = "\.\.\/\.\.\/\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam" \}/);
+  assert.match(manifest, /name = "dd_pg_defs"[\s\S]*source = "local"[\s\S]*path = "\.\.\/\.\.\/\.\.\/\.\.\/libs\/pg-defs\/generated\/gleam"/);
   assert.doesNotMatch(pgDefsToml, /\bpog\b/);
   assert.doesNotMatch(manifest, /\bpgo\b|\bpog\b/);
-  assert.match(dockerfile, /COPY remote\/libs\/pg-defs\/generated\/gleam \.\/remote\/libs\/pg-defs\/generated\/gleam/);
-  assert.match(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner\/src \.\/remote\/deployments\/gleam-lambda-runner\/src/);
+  assert.match(dockerfile, /COPY remote\/libs\/pg-defs\/generated\/gleam \/build\/remote\/libs\/pg-defs\/generated\/gleam/);
+  assert.match(dockerfile, /COPY remote\/deployments\/scintilla-run-monorepo\/apps\/gleam-lambda-runner\/src \.\/src/);
   assert.match(dockerfile, /python3/);
   assert.match(dockerfile, /ruby/);
   assert.match(dockerfile, /bash/);
   assert.match(dockerfile, /alpine\/edge\/main/);
-  assert.match(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner\/runtime-images \.\/remote\/deployments\/gleam-lambda-runner\/runtime-images/);
-  assert.doesNotMatch(dockerfile, /COPY remote\/deployments\/gleam-lambda-runner \.\/remote\/deployments\/gleam-lambda-runner/);
-  assert.match(dockerfile, /WORKDIR \/app\/remote\/deployments\/gleam-lambda-runner/);
-  assert.match(nodeRuntimeDockerfile, /nodejs-current/);
-  assert.match(bashRuntimeDockerfile, /nodejs-current/);
+  assert.match(dockerfile, /gleam export erlang-shipment/);
+  assert.match(dockerfile, /COPY --from=builder .*build\/erlang-shipment/);
+  assert.doesNotMatch(dockerfile, /hostPath|gleam build/);
+  assert.match(dockerfile, /WORKDIR \/app\/remote\/deployments\/scintilla-run-monorepo\/apps\/gleam-lambda-runner/);
+  assert.match(nodeRuntimeDockerfile, /node:22-alpine3\.22@sha256:/);
+  assert.match(bashRuntimeDockerfile, /alpine:3\.22/);
   assert.match(nodeRuntimeDockerfile, /ENV NODE_NO_WARNINGS=1/);
   assert.match(bashRuntimeDockerfile, /ENV NODE_NO_WARNINGS=1/);
-  assert.match(nodeRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "\/opt\/dd-lambda\/runner\.mjs"\]/);
-  assert.match(bashRuntimeDockerfile, /ENTRYPOINT \["node", "--permission", "--allow-child-process", "\/opt\/dd-lambda\/runner\.mjs"\]/);
+  assert.match(nodeRuntimeDockerfile, /AS toolchain[\s\S]*AS runtime[\s\S]*AS dynamic/);
+  assert.match(nodeRuntimeDockerfile, /ENTRYPOINT \["\/usr\/local\/bin\/scintilla-entrypoint"\]/);
+  assert.match(bashRuntimeDockerfile, /ENTRYPOINT \["\/usr\/local\/bin\/scintilla-entrypoint"\]/);
   for (const runtimeDockerfile of [
     golangRuntimeDockerfile,
     dartRuntimeDockerfile,
@@ -129,8 +135,8 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   }
   assert.doesNotMatch(nodeRuntimeDockerfile, /"--allow-net"/);
   assert.doesNotMatch(bashRuntimeDockerfile, /"--allow-net"/);
-  assert.doesNotMatch(nodeRuntimeDockerfile, /node:22-alpine/);
-  assert.doesNotMatch(bashRuntimeDockerfile, /node:22-alpine/);
+  assert.doesNotMatch(nodeRuntimeDockerfile, /:(?:latest|edge)(?:\s|@|$)/);
+  assert.doesNotMatch(bashRuntimeDockerfile, /:(?:latest|edge)(?:\s|@|$)/);
   assert.match(pgContract, /import pg_defs/);
   assert.match(pgContract, /pg_defs\.lambda_functions_select_sql/);
   assert.match(gleamToml, /mist = ">= 6\.0\.0 and < 7\.0\.0"/);
@@ -159,7 +165,10 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(runtimeEnv, /-module\(lambda_runtime_env\)/);
   assert.match(runtimeEnv, /dd_cli_config_client_ffi:getenv\(Name, <<>>\)/);
   assert.match(httpServer, /NODE_NO_WARNINGS=1/);
-  assert.match(httpServer, /node --permission --allow-net child-runtimes\/js-function-runner\.mjs/);
+  assert.match(
+    httpServer,
+    /node --permission --allow-net .*child-runtimes\/js-function-runner\.mjs/,
+  );
   assert.match(
     httpServer,
     /\["destroy", reuse_key\] ->\s*require_authenticated_post\(req, fn\(\) \{ destroy\(reuse_key\) \}\)/,
@@ -274,7 +283,10 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(erlPort, /identifier_kind/);
   assert.match(erlPort, /erlang:monitor\(process, Pid\)/);
   assert.match(erlPort, /dd_lambda_runner_child_stdio_bytes_total/);
-  assert.match(jsRunner, /new Function\(/);
+  assert.match(jsRunner, /compileFunction as compileVmFunction/);
+  assert.match(jsRunner, /createContext\(lambdaGlobals/);
+  assert.match(jsRunner, /codeGeneration: \{ strings: false, wasm: false \}/);
+  assert.doesNotMatch(jsRunner, /new Function\(/);
   assert.match(jsRunner, /containerPool:\s*Object\.freeze/);
   assert.match(jsRunner, /dispatchContainerPool/);
   assert.match(jsRunner, /CONTAINER_POOL_NATS_URL/);
@@ -285,7 +297,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   // remote/libs/nats/subject-defs/schema/container-pool.schema.json.
   assert.match(
     jsRunner,
-    /import \{\s*containerPoolLanguageRequestsSubject,?\s*\} from '\.\.\/\.\.\/\.\.\/libs\/nats\/subject-defs\/generated\/javascript\/index\.mjs';/,
+    /import \{\s*containerPoolLanguageRequestsSubject,?\s*\} from '\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/libs\/nats\/subject-defs\/generated\/javascript\/index\.mjs';/,
   );
   assert.match(jsRunner, /containerPoolLanguageRequestsSubject\(poolSlug\)/);
   assert.match(jsRunner, /connectTcp/);
@@ -294,7 +306,7 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(jsRunner, /LAMBDA_RESULT_MAX_BYTES/);
   assert.match(jsRunner, /checkOnly === true/);
   assert.match(jsRunner, /globalThis\.console = safeConsole/);
-  assert.match(jsRunner, /Object\.defineProperty\(globalThis, 'process'/);
+  assert.doesNotMatch(jsRunner, /Object\.defineProperty\(globalThis, 'process'/);
   assert.match(jsRunner, /resolveDefinition/);
   assert.doesNotMatch(jsRunner, /loadFunctionDefinition/);
   assert.doesNotMatch(jsRunner, /node:child_process|execFileAsync\('psql'|LAMBDA_DATABASE_URL/);
@@ -442,11 +454,10 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   assert.match(webHome, /<option value="elixir">elixir<\/option>/);
   assert.match(webHome, /<option value="java">java<\/option>/);
   assert.match(restApiDeployment, /LAMBDA_IMAGE_BUILD_ENABLED/);
-  assert.match(restApiDeployment, /securityContext:\s*\n\s*privileged:\s*true/);
-  assert.match(restApiDeployment, /mountPath:\s*\/run\/containerd\/containerd.sock/);
-  assert.match(restApiDeployment, /mountPath:\s*\/var\/lib\/containerd/);
-  assert.match(restApiDeployment, /mountPropagation:\s*Bidirectional/);
-  assert.match(restApiDeployment, /mountPath:\s*\/usr\/local\/bin\/nerdctl/);
+  assert.match(restApiDeployment, /IMAGE_BUILD_DELEGATE_URL/);
+  assert.match(restApiDeployment, /allowPrivilegeEscalation:\s*false/);
+  assert.match(restApiDeployment, /capabilities:[\s\S]*drop:[\s\S]*-\s*ALL/);
+  assert.doesNotMatch(restApiDeployment, /containerd\.sock|\/var\/lib\/containerd|nerdctl/);
   assert.match(
     gateway,
     /location\s+\/lambdas\/invoke\/[\s\S]*dd-gleam-lambda-runner\.default\.svc\.cluster\.local:8083\/invoke\//,
@@ -470,51 +481,46 @@ test('gleam lambda runner keeps child-process and database contracts explicit', 
   // `not null default X` were retired in favor of this single file).
   assert.match(tableSql, /Do not apply it directly to a shared database/);
   assert.match(tableSql, /create table if not exists lambda_functions/);
-  assert.match(tableSql, /entry_command text default '[^']+' not null/);
+  assert.match(tableSql, /entry_command text default '' not null/);
   assert.match(tableSql, /lambda_functions_body_size_chk/);
   assert.match(tableSql, /lambda_functions_entry_command_chk/);
   assert.match(tableSql, /containerized boolean default false not null/);
   assert.match(tableSql, /container_build_status/);
-  assert.match(tableSql, /runtime in \('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm'\)/);
+  assert.match(tableSql, /'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser'/);
 });
 
 test('gleam lambda runner ships ec2 service manifests', async () => {
   const ec2Deployment = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
+    `${runner}/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml`,
   );
   const ec2Service = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
+    `${runner}/k8s/ec2/dd-gleam-lambda-runner.service.yaml`,
   );
   const ec2Rbac = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner-rbac.yaml',
+    `${runner}/k8s/ec2/dd-gleam-lambda-runner-rbac.yaml`,
   );
   const ec2NetworkPolicy = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.networkpolicy.yaml',
+    `${runner}/k8s/ec2/dd-gleam-lambda-runner.networkpolicy.yaml`,
   );
-  const ec2Kustomization = await readRepoFile('remote/deployments/gleam-lambda-runner/k8s/ec2/kustomization.yaml');
+  const ec2Kustomization = await readRepoFile(`${runner}/k8s/ec2/kustomization.yaml`);
 
   assert.match(ec2Deployment, /name:\s*dd-gleam-lambda-runner/);
   assert.match(ec2Deployment, /serviceAccountName:\s*dd-gleam-lambda-runner/);
   assert.doesNotMatch(ec2Deployment, /lambda-nats-bridge|name:\s*nats-bridge/);
   assert.match(ec2Deployment, /securityContext:\s*\n\s*privileged:\s*true/);
   assert.doesNotMatch(ec2Deployment, /hostPID:\s*true/);
-  assert.match(ec2Deployment, /alpine\/edge\/main/);
-  assert.match(ec2Deployment, /nodejs-current/);
-  assert.match(ec2Deployment, /python3/);
-  assert.match(ec2Deployment, /ruby/);
-  assert.match(ec2Deployment, /bash/);
-  assert.match(ec2Deployment, /gcompat/);
-  assert.match(ec2Deployment, /libc6-compat/);
-  assert.match(ec2Deployment, /rebar3/);
-  assert.match(ec2Deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/gleam-lambda-runner/);
-  assert.match(ec2Deployment, /gleam deps download \|\| \{ sleep 10; gleam deps download; \}/);
-  assert.match(ec2Deployment, /gleam build/);
-  assert.match(ec2Deployment, /hpack\.app/);
-  assert.match(ec2Deployment, /erlc -o build\/dev\/erlang\/hpack\/ebin/);
+  assert.match(ec2Deployment, /image:\s*ghcr\.io\/scintilla-run\/scintilla-runner:development/);
+  assert.doesNotMatch(ec2Deployment, /apk add|gleam build|build-gleam-lambda-runner/);
+  for (const runtime of [
+    'nodejs', 'python3', 'ruby', 'bash', 'golang', 'dart',
+    'erlang', 'elixir', 'java', 'gleam', 'rust', 'browser',
+  ]) {
+    assert.match(ec2Deployment, new RegExp(`name: cache-runtime-${runtime}`));
+  }
   assert.match(ec2Deployment, /containerPort:\s*8083/);
   assert.match(ec2Deployment, /requests:[\s\S]*memory:\s*512Mi/);
-  assert.match(ec2Deployment, /limits:[\s\S]*memory:\s*2560Mi/);
-  assert.match(ec2Deployment, /path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1/);
+  assert.match(ec2Deployment, /limits:[\s\S]*memory:\s*2Gi/);
+  assert.doesNotMatch(ec2Deployment, /path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1/);
   assert.match(ec2Deployment, /dd-gleam-lambda-runner-secrets/);
   assert.match(ec2Deployment, /name:\s*LAMBDA_DATABASE_URL[\s\S]*key:\s*LAMBDA_DATABASE_URL/);
   assert.match(ec2Deployment, /name:\s*SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/);
@@ -536,6 +542,7 @@ test('gleam lambda runner ships ec2 service manifests', async () => {
   assert.match(ec2Deployment, /LAMBDA_CONTAINER_RUNNER[\s\S]*value:\s*ctr/);
   assert.match(ec2Deployment, /LAMBDA_CONTAINER_NAMESPACE[\s\S]*value:\s*k8s\.io/);
   assert.match(ec2Deployment, /LAMBDA_CONTAINER_NETWORK[\s\S]*value:\s*host/);
+  assert.match(ec2Deployment, /LAMBDA_CONTAINER_WORK_TMPFS_SIZE[\s\S]*value:\s*1g/);
   assert.match(ec2Deployment, /LAMBDA_BROWSER_CONTAINER_IMAGE[\s\S]*dd-lambda-browser-runtime:dev/);
   assert.match(ec2Deployment, /LAMBDA_BROWSER_ALLOW_PRIVATE_NETWORKS[\s\S]*value:\s*'false'/);
   assert.match(ec2Deployment, /LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE[\s\S]*value:\s*'false'/);

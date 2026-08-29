@@ -1,0 +1,31 @@
+# AppProject for the daedalus-fab org — STRICT. Because daedalus-monorepo is greenfield and
+# was authored against the contract (no Namespace/ClusterRole/CRD in apps/*/k8s), this can
+# enforce clusterResourceWhitelist: [] from day one. If anyone later commits a cluster-scoped
+# resource to the monorepo, the sync fails loudly. That is the intent.
+#
+# sourceRepos are the PER-APP repos, not the org monorepo. daedalus-monorepo/apps/* are all
+# gitlinks (the monorepo tracks zero manifest files), and repo-server has submodule checkout
+# disabled — so a monorepo-sourced Application renders EMPTY. The monorepo remains the
+# inventory/pin vehicle (it also carries apps/daedalus-infra). See
+# docs/app-deploy-contract.md "Submodules are inventory, NOT a render source".
+#
+#   kubectl apply -f remote/argocd/projects/daedalus.tenant.yaml
+#   kubectl apply -f remote/argocd/projects/daedalus.appproject.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: daedalus
+  namespace: argocd
+spec:
+  description: "Tenant project for daedalus-fab — namespace `daedalus`, no cluster resources."
+  sourceRepos:
+    - "git@github.com:daedalus-fab/fabrication-server.rs.git"
+    - "git@github.com:daedalus-fab/daedalus-api-server.rs.git"
+    - "git@github.com:daedalus-fab/daedalus-web-server.rs.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: daedalus
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }

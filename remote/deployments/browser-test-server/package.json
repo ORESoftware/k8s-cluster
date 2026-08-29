@@ -11,8 +11,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
+    "export:openapi": "tsx src/server.ts --export-openapi",
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
+    "test:contract": "tsx --test src/api-contract.test.ts",
+    "test:runtime": "node scripts/runtime-contract-smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

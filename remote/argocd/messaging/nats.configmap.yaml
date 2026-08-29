@@ -9,12 +9,20 @@ data:
     port: 4222
     http: 8222
 
-    max_payload: 8MB
+    # Keep connection-level memory bounded. Application events and both
+    # websocket bridges already cap bodies at 1 MiB.
+    max_connections: 4096
+    max_subscriptions: 8192
+    max_control_line: 4KB
+    max_payload: 1MB
+    max_pending: 16MB
     ping_interval: "20s"
+    ping_max: 2
     write_deadline: "10s"
 
     jetstream {
       store_dir: "/data/jetstream"
-      max_mem_store: 1GB
+      # Leave process/headroom inside the pod's 1 GiB memory limit.
+      max_mem_store: 512MB
       max_file_store: 20GB
     }

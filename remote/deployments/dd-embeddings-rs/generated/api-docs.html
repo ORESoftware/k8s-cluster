@@ -1,37 +1,115 @@
 <!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>dd-embeddings-rs API</title>
-    <style>
-      body { font-family: system-ui, sans-serif; max-width: 60rem; margin: 2rem auto; padding: 0 1rem; }
-      table { border-collapse: collapse; width: 100%; }
-      td, th { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; }
-      code { background: #f4f1ea; padding: 0.1rem 0.3rem; border-radius: 0.2rem; }
-    </style>
-  </head>
-  <body>
-    <h1>dd-embeddings-rs</h1>
-    <p>
-      Multi-provider embedding gateway + RAG indexing service. <code>🔒</code> routes require a bearer
-      token when one is configured. The <code>anthropic</code> provider id is an alias for
-      <code>voyage</code> (Anthropic ships no embeddings API).
-    </p>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>dd-embeddings-rs API docs</title>
+  <style>
+    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; --runtime:#3a4d8a; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    header, main { width:min(1180px, calc(100% - 32px)); margin:0 auto; }
+    header { padding:28px 0 18px; }
+    h1 { margin:0 0 6px; font-size:30px; line-height:1.15; letter-spacing:0; }
+    p { margin:0; color:var(--muted); }
+    .summary { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
+    .summary span, .badge { display:inline-flex; align-items:center; min-height:26px; border:1px solid var(--line); border-radius:6px; padding:3px 9px; background:var(--panel); white-space:nowrap; }
+    .badge { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0; }
+    .service { color:var(--service); }
+    .user-generated { color:var(--custom); }
+    .internal-db { color:var(--internal); }
+    .runtime-config { color:var(--runtime); }
+    table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    th, td { padding:12px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
+    th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0; background:#fbfcfd; }
+    tr:last-child td { border-bottom:0; }
+    code { display:inline-block; max-width:100%; padding:2px 5px; border-radius:5px; background:var(--code); overflow-wrap:anywhere; font-family:ui-monospace, "SFMono-Regular", Consolas, monospace; font-size:12px; }
+    .methods { display:flex; flex-wrap:wrap; gap:5px; }
+    .method { background:#17202a; color:#fff; border-radius:5px; padding:2px 6px; font-size:12px; font-weight:700; }
+    .muted { color:var(--muted); font-size:12px; margin-top:4px; }
+    @media (max-width:760px) {
+      header, main { width:min(100% - 20px, 1180px); }
+      table, tbody, tr, td { display:block; width:100%; }
+      thead { display:none; }
+      tr { border-bottom:1px solid var(--line); }
+      td { border-bottom:0; padding:8px 10px; }
+      td::before { display:block; margin-bottom:3px; color:var(--muted); font-size:11px; font-weight:700; text-transform:uppercase; content:attr(data-label); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>dd-embeddings-rs API docs</h1>
+    <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
+    <div class="summary">
+      <span>7 routes</span>
+      <span>rust</span>
+      <span>7 service</span>
+      <span>0 user-generated</span>
+    </div>
+  </header>
+  <main>
     <table>
-      <thead>
-        <tr><th>Method</th><th>Path</th><th>Summary</th></tr>
-      </thead>
+      <thead><tr><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th><th>Handlers</th><th>Auth</th></tr></thead>
       <tbody>
-        <tr><td><code>GET</code></td><td><code>/healthz</code></td><td>Liveness probe (no dependencies).</td></tr>
-        <tr><td><code>GET</code></td><td><code>/readyz</code></td><td>Readiness probe; checks Qdrant reachability.</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/docs.json</code></td><td>This document, as JSON.</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/docs</code></td><td>Human-readable API docs.</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/providers</code> 🔒</td><td>List configured embedding providers, default models, and aliases.</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/embeddings</code> 🔒</td><td>Generate embeddings. Body: { provider, input[], model?, dimensions?, input_type? }.</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/rag/index</code> 🔒</td><td>Embed documents and upsert into a Qdrant collection.</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/rag/search</code> 🔒</td><td>Embed a query and retrieve nearest neighbors.</td></tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/api/docs.json</code></td>
+  <td data-label="Purpose">Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/docs/api</code></td>
+  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/healthz</code></td>
+  <td data-label="Purpose">Health check.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/metrics</code></td>
+  <td data-label="Purpose">Prometheus metrics.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/openapi.json</code></td>
+  <td data-label="Purpose">Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/readyz</code></td>
+  <td data-label="Purpose">Readiness check.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
       </tbody>
     </table>
-    <p>Machine-readable: <a href="/api/docs.json"><code>/api/docs.json</code></a></p>
-  </body>
+  </main>
+</body>
 </html>

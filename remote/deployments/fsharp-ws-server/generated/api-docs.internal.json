@@ -1,0 +1,747 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "fsharp-ws-server API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_1c90f41d31fe",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleIndex"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_api_docs_c918b858495c",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleApiDocsHtml"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_api_docs_json_877d51a9f4d2",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleApiDocsJson"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_docs_api_d4467a9b1dbd",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleApiDocsHtml"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_healthz_91d6af81f7d0",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleHealth"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/livez": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_livez_235170fa9eff",
+        "summary": "Liveness check.",
+        "description": "Liveness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleLive"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/livez",
+        "x-dd-source-paths": [
+          "/livez"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_metrics_f49aeef914d4",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleMetrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_readyz_a77660ce2098",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "handleReady"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/sse/rx-stats": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_sse_rx_stats_35a87e14c26a",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxStatsSse"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/sse/rx-stats",
+        "x-dd-source-paths": [
+          "/sse/rx-stats"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/v1/benchmark": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_v1_benchmark_affa8a07f7ec",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleBenchmark"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/v1/benchmark",
+        "x-dd-source-paths": [
+          "/v1/benchmark"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/v1/rx-stats": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_v1_rx_stats_cbafa9b03da1",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxStats"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/v1/rx-stats",
+        "x-dd-source-paths": [
+          "/v1/rx-stats"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/v1/rx-stats/history": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_v1_rx_stats_history_d240099fe8af",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxStatsHistory"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/v1/rx-stats/history",
+        "x-dd-source-paths": [
+          "/v1/rx-stats/history"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/v1/rx-stats/sources": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_v1_rx_stats_sources_e802b1c71bbb",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxStatsSources"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/v1/rx-stats/sources",
+        "x-dd-source-paths": [
+          "/v1/rx-stats/sources"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/async": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_async_3bf559ec0b78",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleAsync"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/async",
+        "x-dd-source-paths": [
+          "/ws/async"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_b3faa50813f4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRx"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx",
+        "x-dd-source-paths": [
+          "/ws/rx"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-burst": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_burst_8f6ea4379ad5",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxBurst"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-burst",
+        "x-dd-source-paths": [
+          "/ws/rx-burst"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-nats-echo": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_nats_echo_a909c12eb6e4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxNatsEcho"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-nats-echo",
+        "x-dd-source-paths": [
+          "/ws/rx-nats-echo"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-presence": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_presence_b6169fa9b66b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxPresence"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-presence",
+        "x-dd-source-paths": [
+          "/ws/rx-presence"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-publish": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_publish_9ad6d0051d45",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxPublish"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-publish",
+        "x-dd-source-paths": [
+          "/ws/rx-publish"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-sample": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_sample_95e375e8e6ca",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxSample"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-sample",
+        "x-dd-source-paths": [
+          "/ws/rx-sample"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-stream": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_stream_a853777cd1d5",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxStream"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-stream",
+        "x-dd-source-paths": [
+          "/ws/rx-stream"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-throttle": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_throttle_fc07b9b643db",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxThrottle"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-throttle",
+        "x-dd-source-paths": [
+          "/ws/rx-throttle"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws/rx-window": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_ws_rx_window_25271299f930",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "handleRxWindow"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/fsharp-ws-server/Program.fs"
+        ],
+        "x-dd-source-path": "/ws/rx-window",
+        "x-dd-source-paths": [
+          "/ws/rx-window"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "fsharp",
+  "x-dd-operation-count": 23,
+  "x-dd-route-count": 23,
+  "x-dd-service": "fsharp-ws-server",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

@@ -1,0 +1,80 @@
+name: formal methods
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/formal-methods-server-rs/**'
+      - 'remote/deployments/formal-methods-service-rs/**'
+      - 'remote/libs/runtime-config-client-rs/**'
+      - 'remote/libs/telemetry-rs/**'
+      - 'scripts/ci/init-submodules-with-report.sh'
+      - '.github/workflows/formal-methods.yml'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'remote/deployments/formal-methods-server-rs/**'
+      - 'remote/deployments/formal-methods-service-rs/**'
+      - 'remote/libs/runtime-config-client-rs/**'
+      - 'remote/libs/telemetry-rs/**'
+      - 'scripts/ci/init-submodules-with-report.sh'
+      - '.github/workflows/formal-methods.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-methods-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  service-contracts:
+    name: formal service contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require private libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
+
+      - name: Check out repository without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Initialize exact pinned shared libraries
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          SUBMODULE_AUTH_MODE: ssh
+        run: |
+          set -euo pipefail
+          key_file="${RUNNER_TEMP}/k8s-libs-deploy-key"
+          known_hosts="${RUNNER_TEMP}/k8s-libs-known-hosts"
+          cleanup() {
+            git config --local --unset-all core.sshCommand || true
+            rm -f "$key_file" "$known_hosts"
+          }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "$K8S_LIBS_DEPLOY_KEY" > "$key_file"
+          ssh-keyscan -t ed25519,rsa github.com > "$known_hosts"
+          git config --local core.sshCommand \
+            "ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts"
+          bash scripts/ci/init-submodules-with-report.sh remote/libs
+
+      - name: Install Z3
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes z3
+
+      - name: Test annotation analyzer
+        run: cargo test --locked
+        working-directory: remote/deployments/formal-methods-server-rs
+
+      - name: Test repository analyzer service
+        run: cargo test --locked --all-targets
+        working-directory: remote/deployments/formal-methods-service-rs

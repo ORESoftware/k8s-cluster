@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "required_permissions": {
+    "contents": "read",
+    "metadata": "read"
+  },
+  "repositories_by_owner": {
+    "3FA-app": [
+      "3fa-backend.rs",
+      "3fa-web-server.rs"
+    ],
+    "ORESoftware": [
+      "ai-agent-bridge.rs",
+      "chat.vibe",
+      "mip-solver-node.rs",
+      "push-notification-server.rs",
+      "t2v-v2t.rs",
+      "tor-server.rs"
+    ],
+    "akrion-sim": [
+      "akrion-backend.rs",
+      "akrion-web-server.rs"
+    ],
+    "athlet-o": [
+      "athleto-app-rs",
+      "athleto-backend.rs"
+    ],
+    "benefactor-cc": [
+      "backend.rs"
+    ],
+    "canonical-cloud": [
+      "canonical.cloud"
+    ],
+    "claritas-viz": [
+      "data-viz-server.rs"
+    ],
+    "cliptown": [
+      "cliptown-monorepo"
+    ],
+    "daedalus-fab": [
+      "daedalus-monorepo",
+      "fabrication-server.rs"
+    ],
+    "drone-mngr": [
+      "drone-mngr-monorepo"
+    ],
+    "fiducia-cloud": [
+      "fiducia-customer.rs",
+      "fiducia-marketing.web",
+      "fiducia-monorepo"
+    ],
+    "quaestor-ledger": [
+      "billing-server.rs"
+    ],
+    "sagitta-stack": [
+      "dart-server"
+    ],
+    "scintilla-run": [
+      "gleam-lambda-runner",
+      "scintilla-run-monorepo"
+    ],
+    "shared-auth": [
+      "shared-auth-monorepo"
+    ],
+    "sonus-auris": [
+      "sonus-auris-api-server.rs",
+      "sonus-auris-monorepo"
+    ],
+    "usa-acc": [
+      "rest-api-backend.rs"
+    ],
+    "zed-pkg": [
+      "zed-monorepo"
+    ]
+  }
+}

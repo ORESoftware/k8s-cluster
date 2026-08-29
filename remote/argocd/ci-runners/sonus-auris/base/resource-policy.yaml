@@ -1,0 +1,32 @@
+
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: sonus-ci-runner-quota
+  namespace: arc-runners-sonus
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "24"
+    limits.memory: 48Gi
+    requests.ephemeral-storage: 64Gi
+    limits.ephemeral-storage: 160Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: sonus-ci-runner-limits
+  namespace: arc-runners-sonus
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+        ephemeral-storage: 1Gi
+      default:
+        cpu: "4"
+        memory: 8Gi
+        ephemeral-storage: 24Gi

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Runs before `git commit` of THIS superproject. Scans the STAGED diff with
+# gitleaks (same rules as the secret-scan CI workflow, .github/gitleaks.toml)
+# so a pasted key is caught before it ever reaches a commit, let alone CI.
+# This hook GUARDS — it fails the commit on a finding. Bypass for a known
+# false positive with `git commit --no-verify` (CI still scans every push).
+#
+# If gitleaks is not installed the hook warns and allows the commit: CI remains
+# the enforcing layer, and blocking all commits on a missing local tool would
+# hurt more than it helps.
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks not installed; skipping local secret scan (CI still enforces)." >&2
+  echo "pre-commit: install with: brew install gitleaks" >&2
+  exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel)"
+exec gitleaks protect --staged --redact \
+  --config "${repo_root}/.github/gitleaks.toml" \
+  --source "${repo_root}"

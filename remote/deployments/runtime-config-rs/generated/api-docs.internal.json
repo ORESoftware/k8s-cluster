@@ -1,0 +1,849 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "runtime-config-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "runtime_config_rs_get_48f085690509",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "admin_root"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/admin": {
+      "get": {
+        "operationId": "runtime_config_rs_get_admin_b3c61bae6983",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "admin_page"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/admin",
+        "x-dd-source-paths": [
+          "/admin"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/admin/push/{env}": {
+      "post": {
+        "operationId": "runtime_config_rs_post_admin_push_env_1ddf1afaafa0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "admin_push_now"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/admin/push/:env",
+        "x-dd-source-paths": [
+          "/admin/push/:env"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/admin/upsert": {
+      "post": {
+        "operationId": "runtime_config_rs_post_admin_upsert_0fbe25c794bf",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "admin_upsert"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/admin/upsert",
+        "x-dd-source-paths": [
+          "/admin/upsert"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "runtime_config_rs_get_api_docs_7ca4bfac8fa9",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "runtime_config_rs_get_api_docs_json_2e5baa5ee746",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_json"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "runtime_config_rs_get_docs_api_dd328a4dd317",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/entries/{env}": {
+      "get": {
+        "operationId": "runtime_config_rs_get_entries_env_c6ac4d033e59",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_entries",
+          "upsert_entry_handler"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/entries/:env",
+        "x-dd-source-paths": [
+          "/entries/:env"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "runtime_config_rs_post_entries_env_c5029482dc87",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_entries",
+          "upsert_entry_handler"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/entries/:env",
+        "x-dd-source-paths": [
+          "/entries/:env"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/entries/{env}/{scope}/{key}": {
+      "delete": {
+        "operationId": "runtime_config_rs_delete_entries_env_scope_key_f09e417132d1",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "delete_entry_handler",
+          "get_entry"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/entries/:env/:scope/:key",
+        "x-dd-source-paths": [
+          "/entries/:env/:scope/:key"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "get": {
+        "operationId": "runtime_config_rs_get_entries_env_scope_key_7ddaba147efe",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "delete_entry_handler",
+          "get_entry"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/entries/:env/:scope/:key",
+        "x-dd-source-paths": [
+          "/entries/:env/:scope/:key"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/entries/{env}/{scope}/{key}/delete": {
+      "post": {
+        "operationId": "runtime_config_rs_post_entries_env_scope_key_delete_612fa319a2ec",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "admin_delete_entry"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/entries/:env/:scope/:key/delete",
+        "x-dd-source-paths": [
+          "/entries/:env/:scope/:key/delete"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "runtime_config_rs_get_healthz_7d2606a2e6cf",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "runtime_config_rs_get_metrics_cc282b50b608",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/push/{env}": {
+      "post": {
+        "operationId": "runtime_config_rs_post_push_env_be480a2faa42",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "push_now"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/push/:env",
+        "x-dd-source-paths": [
+          "/push/:env"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "runtime_config_rs_get_readyz_fb1000447132",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "readyz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/snapshot/{env}": {
+      "get": {
+        "operationId": "runtime_config_rs_get_snapshot_env_c5a7794f1117",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_entries"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/snapshot/:env",
+        "x-dd-source-paths": [
+          "/snapshot/:env"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/subscribers": {
+      "post": {
+        "operationId": "runtime_config_rs_post_subscribers_fd7de2673774",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "register_subscriber"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/subscribers",
+        "x-dd-source-paths": [
+          "/subscribers"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/subscribers/{env}": {
+      "get": {
+        "operationId": "runtime_config_rs_get_subscribers_env_a3c7ddfe2961",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_subscribers"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/subscribers/:env",
+        "x-dd-source-paths": [
+          "/subscribers/:env"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/subscribers/{env}/{name}": {
+      "delete": {
+        "operationId": "runtime_config_rs_delete_subscribers_env_name_72e4c89cc8d8",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "delete_subscriber_handler"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/subscribers/:env/:name",
+        "x-dd-source-paths": [
+          "/subscribers/:env/:name"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/subscribers/{env}/{name}/delete": {
+      "post": {
+        "operationId": "runtime_config_rs_post_subscribers_env_name_delete_b282d7ed695d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "admin_delete_subscriber"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/runtime-config-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/subscribers/:env/:name/delete",
+        "x-dd-source-paths": [
+          "/subscribers/:env/:name/delete"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 21,
+  "x-dd-route-count": 21,
+  "x-dd-service": "runtime-config-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

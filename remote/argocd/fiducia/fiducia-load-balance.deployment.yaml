@@ -24,9 +24,8 @@ spec:
       labels:
         app: fiducia-load-balance
       annotations:
-        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-load-balance.rs)'
-        # Wire edge auth (offline JWT verify + cached introspection); rebuild.
-        dd.dev/fiducia-build: '2026-06-28-lb-auth-wired'
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-load-balance.rs@main'
+        dd.dev/fiducia-build: '2026-07-27-lb-auth-explicit'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -73,20 +72,24 @@ spec:
               value: 'http://fiducia-node-0.fiducia-node-peer.fiducia.svc.cluster.local:8090,http://fiducia-node-1.fiducia-node-peer.fiducia.svc.cluster.local:8090,http://fiducia-node-2.fiducia-node-peer.fiducia.svc.cluster.local:8090'
             - name: FIDUCIA_BRAIN_URL
               value: http://fiducia-brain.fiducia.svc.cluster.local:8095
-            # Edge auth: verify fiducia JWTs offline (JWKS fetched from auth) +
-            # introspect API keys via auth (carrying the shared internal secret),
-            # both cached. Permissive by default (FIDUCIA_AUTH_MODE unset) so
-            # existing clients keep working; set =enforce to require auth.
+            # Make the release posture explicit instead of relying on a build-mode
+            # default: every non-health route requires a JWT, API key, or verified
+            # trusted-hop identity and all scoped routes enforce their scopes.
+            - { name: FIDUCIA_AUTH_REQUIRED, value: 'true' }
+            - { name: FIDUCIA_AUTH_ALLOW_API_KEYS, value: 'true' }
+            - { name: FIDUCIA_AUTH_ALLOW_JWTS, value: 'true' }
+            - { name: FIDUCIA_AUTH_HTTP_TIMEOUT_SECS, value: '5' }
             - name: FIDUCIA_AUTH_URL
               value: http://fiducia-auth.fiducia.svc.cluster.local:8097
             - name: FIDUCIA_INTROSPECT_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: true }
+                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: false }
             # The same trusted-hop secret used by nodes and brain. The LB verifies
-            # the edge header with it, then injects it on every upstream request.
+            # trusted edge/service identities with it and injects it on every
+            # upstream request. Missing material keeps the pod Pending.
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret }
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: false }
             - name: RUST_LOG
               value: info
             - name: HOME

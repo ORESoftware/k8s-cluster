@@ -1,0 +1,217 @@
+name: browser-test executable OpenAPI contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-openapi-contract.yml'
+      - 'remote/deployments/browser-test-server/**'
+      - 'remote/api-contracts/**'
+      - 'remote/api-sdks/**'
+      - 'remote/config/api-contracts.json'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-api-sdks.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+      - 'remote/tools/validate-api-sdks.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-openapi-contract.yml'
+      - 'remote/deployments/browser-test-server/**'
+      - 'remote/api-contracts/**'
+      - 'remote/api-sdks/**'
+      - 'remote/config/api-contracts.json'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-api-sdks.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+      - 'remote/tools/validate-api-sdks.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-openapi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Reject mutable CI dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/browser-test-openapi-contract.yml')
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export function initTelemetry() {
+            return { shutdown: async () => undefined };
+          }
+          export function instrumentFastify() {}
+          export function loggerMixin() {
+            return {};
+          }
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          export interface TelemetryGuard {
+            shutdown(): Promise<void>;
+          }
+          export function initTelemetry(service: string): TelemetryGuard;
+          export function instrumentFastify(app: unknown, options?: { service?: string }): void;
+          export function loggerMixin(): Record<string, unknown>;
+          TS
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Install browser-test-server dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --dir remote/deployments/browser-test-server install --frozen-lockfile --ignore-workspace
+
+      - name: Type-check, build, and test the service contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir remote/deployments/browser-test-server run typecheck
+          pnpm --dir remote/deployments/browser-test-server run build
+          pnpm --dir remote/deployments/browser-test-server run test:contract
+
+      - name: Prove deterministic committed native OpenAPI
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > "${RUNNER_TEMP}/browser-openapi.1.json"
+          pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > "${RUNNER_TEMP}/browser-openapi.2.json"
+          cmp "${RUNNER_TEMP}/browser-openapi.1.json" "${RUNNER_TEMP}/browser-openapi.2.json"
+          cmp "${RUNNER_TEMP}/browser-openapi.1.json" remote/deployments/browser-test-server/generated/openapi.json
+          python3 -m json.tool remote/deployments/browser-test-server/generated/openapi.json >/dev/null
+
+      - name: Verify native contract and fleet compatibility artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/check-openapi-contracts.mjs
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/generate-openapi-sdks.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+          node remote/tools/generate-api-docs.mjs --check --service browser-test-server
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+      - name: Generate service-specific Rust, TypeScript, and Dart clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service browser-test-server \
+            --output .tmp/browser-test-sdk
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+
+      - name: Compile generated Rust client
+        working-directory: .tmp/browser-test-sdk/rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo check --locked
+
+      - name: Type-check generated TypeScript client
+        working-directory: .tmp/browser-test-sdk/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - name: Install Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Analyze generated Dart client
+        working-directory: .tmp/browser-test-sdk/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze
+
+      - name: Reject conflict markers and stale tracked output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
+            echo 'git conflict marker found' >&2
+            exit 1
+          fi
+          rm -rf remote/libs .tmp remote/deployments/browser-test-server/node_modules remote/deployments/browser-test-server/dist
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          git diff --check
+          git diff --quiet -- . ':(exclude)remote/libs'
+          test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"

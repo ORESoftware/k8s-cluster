@@ -20,6 +20,64 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readWebHomeSource(): Promise<string> {
+  const modules = [
+    'agents',
+    'container_pool',
+    'grafana',
+    'handlers',
+    'home',
+    'jello',
+    'labs',
+    'lambda',
+    'metrics',
+    'shared',
+    'state',
+  ];
+  const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `web-home-rs main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
+async function readRestApiSource(): Promise<string> {
+  const modules = [
+    'api_docs',
+    'container_pool_routes',
+    'context',
+    'db',
+    'db_routes',
+    'dispatch',
+    'events',
+    'graphql_routes',
+    'handlers',
+    'k8s',
+    'lambdas',
+    'metrics',
+    'pg_contract',
+    'shared',
+    'state',
+    'threads',
+    'types',
+  ];
+  const main = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `rest-api-rs main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/rest-api-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 test('remote dev worker keeps branch-safe git setup and ssh command contracts', async () => {
   const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
   const entrypoint = await readRepoFile('remote/deployments/dev-server/entrypoint.sh');
@@ -39,14 +97,17 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   const lockfile = await readRepoFile('remote/deployments/dev-server/pnpm-lock.yaml');
   const brokerServer = await readRepoFile('remote/deployments/agent-worker-broker-rs/src/main.rs');
   const idleReaper = await readRepoFile('remote/deployments/idle-reaper-rs/src/main.rs');
-  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const webHome = await readWebHomeSource();
   const deployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
   const config = await readRepoFile('remote/k8s/01-configmap.yaml');
   const secretsTemplate = await readRepoFile('remote/k8s/02-secrets.template.yaml');
   const threadTemplate = await readRepoFile('remote/k8s/07-thread-deployment.template.yaml');
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const restServer = await readRestApiSource();
+  const restThreads = await readRepoFile(
+    'remote/deployments/rest-api-rs/src/threads.rs',
+  );
   const agentsMd = await readRepoFile('AGENTS.md');
   const systemAgentsMd = await readRepoFile('remote/deployments/dev-server/system-agents.md');
 
@@ -446,7 +507,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(config, /AGENT_SECONDARY_FALLBACK_PROVIDER:\s*'opencode-ai-sdk'/);
   assert.match(config, /AGENT_PROVIDER_ROTATION:\s*'generic-ai-sdk,opencode-ai-sdk,openai-sdk,claude-sdk,gemini-sdk'/);
   assert.match(config, /AGENT_BRANCH_PREFIX:\s*'agent\/k8s\/openai-5\.5'/);
-  assert.match(config, /AGENT_MCP_URL:\s*'http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp'/);
+  assert.match(config, /AGENT_MCP_URL:\s*'http:\/\/dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091\/mcp'/);
   assert.match(config, /AGENT_MCP_CONNECT_TIMEOUT_MS:\s*'3000'/);
   assert.match(secretsTemplate, /OPENAI_API_KEYS_JSON/);
   assert.match(secretsTemplate, /ANTHROPIC_API_KEYS_JSON/);
@@ -554,7 +615,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(deployment, /runAsUser: 1000/);
   assert.match(deployment, /mountPath: \/home\/node\/workspace/);
   assert.match(deployment, /name: DD_REPO_URL[\s\S]*secretKeyRef:[\s\S]*name: dd-agent-secrets[\s\S]*key: DD_REPO_URL/);
-  assert.match(deployment, /name:\s*AGENT_MCP_URL[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp/);
+  assert.match(deployment, /name:\s*AGENT_MCP_URL[\s\S]*dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091\/mcp/);
   assert.match(deployment, /name:\s*AGENT_MCP_CONNECT_TIMEOUT_MS[\s\S]*value:\s*"3000"/);
   assert.doesNotMatch(deployment, /git .* clone --depth 1 --branch dev/);
   assert.doesNotMatch(deployment, /apt-get update/);
@@ -584,7 +645,7 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
   assert.match(webHome, /PodScheduled/);
   assert.match(webHome, /worker pending:/);
   assert.match(restServer, /"THREAD_CONTEXT_BASE_URL", "value": "http:\/\/dd-remote-rest-api\.default\.svc\.cluster\.local:8082"/);
-  assert.match(restServer, /"AGENT_MCP_URL", "value": "http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp"/);
+  assert.match(restServer, /"AGENT_MCP_URL", "value": "http:\/\/dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091\/mcp"/);
   assert.match(restServer, /"AGENT_MCP_CONNECT_TIMEOUT_MS", "value": "3000"/);
   // The NATS event subject literal lives in the generated
   // `dd_nats_subject_defs::RUNTIME_EVENTS_SUBJECT` constant; the env
@@ -599,8 +660,8 @@ test('remote dev worker keeps branch-safe git setup and ssh command contracts', 
     restServer,
     /"secretRef": \{ "name": "dd-agent-secrets", "optional": true \}/,
   );
-  assert.doesNotMatch(restServer, /git .* clone --depth 1 --branch dev/);
-  assert.doesNotMatch(restServer, /apt-get update/);
+  assert.doesNotMatch(restThreads, /git .* clone --depth 1 --branch dev/);
+  assert.doesNotMatch(restThreads, /apt-get update/);
   assert.match(agentsMd, /docs\/\*\.md/);
   assert.match(agentsMd, /agents\/\*\.md/);
   assert.match(agentsMd, /dd_cluster/);

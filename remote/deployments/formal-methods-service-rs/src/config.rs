@@ -3,7 +3,7 @@
 //! Keep this file free of business logic: just parsing and validation.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -122,21 +122,31 @@ impl Config {
         let workdir_root: PathBuf = env_or("WORKDIR_ROOT", ".work").into();
         let contract_manifest_path: PathBuf =
             env_or("CONTRACT_MANIFEST_PATH", "packages/contract/Cargo.toml").into();
+        validate_relative_repo_path("CONTRACT_MANIFEST_PATH", &contract_manifest_path)?;
         let cargo_test_package = env::var("CARGO_TEST_PACKAGE")
             .ok()
             .filter(|s| !s.trim().is_empty());
+        if let Some(package) = cargo_test_package.as_deref() {
+            validate_cargo_token("CARGO_TEST_PACKAGE", package)?;
+        }
         let cargo_test_features = env::var("CARGO_TEST_FEATURES")
             .ok()
             .filter(|s| !s.trim().is_empty());
+        if let Some(features) = cargo_test_features.as_deref() {
+            validate_bounded_text("CARGO_TEST_FEATURES", features, 1024)?;
+        }
 
         let max_concurrent_analyses: usize = env_or("MAX_CONCURRENT_ANALYSES", "2")
             .parse()
             .context("MAX_CONCURRENT_ANALYSES must be a non-negative integer")?;
-        let max_concurrent_analyses = max_concurrent_analyses.max(1);
+        let max_concurrent_analyses = max_concurrent_analyses.clamp(1, 32);
 
         let timeout_secs: u64 = env_or("ANALYZER_TIMEOUT_SECS", "900")
             .parse()
-            .context("ANALYZER_TIMEOUT_SECS must be a non-negative integer")?;
+            .context("ANALYZER_TIMEOUT_SECS must be a positive integer")?;
+        if !(1..=3600).contains(&timeout_secs) {
+            return Err(anyhow!("ANALYZER_TIMEOUT_SECS must be between 1 and 3600"));
+        }
         let analyzer_timeout = Duration::from_secs(timeout_secs);
 
         let enable_cargo_check = bool_env("FORMAL_METHODS_CARGO_CHECK_ENABLED", true);
@@ -148,28 +158,38 @@ impl Config {
         let enable_certora = bool_env("FORMAL_METHODS_CERTORA_ENABLED", false);
 
         let proptest_test_target = env_or("PROPTEST_TEST_TARGET", "proptest_props");
+        validate_cargo_token("PROPTEST_TEST_TARGET", &proptest_test_target)?;
 
         let verus_proof_crate_dir: PathBuf = env_or(
             "VERUS_PROOF_CRATE_DIR",
             "packages/contract/om-core/proofs/verus",
         )
         .into();
+        validate_relative_repo_path("VERUS_PROOF_CRATE_DIR", &verus_proof_crate_dir)?;
         let dreal_queries_dir: PathBuf = env_or(
             "DREAL_QUERIES_DIR",
             "packages/contract/om-core/proofs/dreal",
         )
         .into();
+        validate_relative_repo_path("DREAL_QUERIES_DIR", &dreal_queries_dir)?;
         let dreal_precision: f64 = env_or("DREAL_PRECISION", "0.001")
             .parse()
             .context("DREAL_PRECISION must be a positive float")?;
+        if !dreal_precision.is_finite() || dreal_precision <= 0.0 {
+            return Err(anyhow!("DREAL_PRECISION must be a finite positive float"));
+        }
         let certora_conf_dir: PathBuf = env_or(
             "CERTORA_CONF_DIR",
             "packages/contract/om-core/proofs/certora/conf",
         )
         .into();
+        validate_relative_repo_path("CERTORA_CONF_DIR", &certora_conf_dir)?;
 
         let allowed_repos = parse_csv_env("FORMAL_METHODS_ALLOWED_REPOS");
         let path_prefixes = parse_csv_env("FORMAL_METHODS_PATH_PREFIXES");
+        for prefix in &path_prefixes {
+            validate_relative_text_path("FORMAL_METHODS_PATH_PREFIXES", prefix)?;
+        }
 
         let delivery_dedupe_capacity: usize = env_or("DELIVERY_DEDUPE_CAPACITY", "1024")
             .parse()
@@ -184,9 +204,10 @@ impl Config {
         let max_pr_files_pages: usize = env_or("MAX_PR_FILES_PAGES", "3")
             .parse()
             .context("MAX_PR_FILES_PAGES must be a non-negative integer")?;
-        let max_pr_files_pages = max_pr_files_pages.max(1);
+        let max_pr_files_pages = max_pr_files_pages.clamp(1, 100);
 
         let status_context = env_or("STATUS_CONTEXT", "formal-methods/analysis");
+        validate_bounded_text("STATUS_CONTEXT", &status_context, 100)?;
 
         Ok(Self {
             bind_addr,
@@ -220,6 +241,53 @@ impl Config {
             status_context,
         })
     }
+}
+
+fn validate_bounded_text(name: &str, value: &str, max_bytes: usize) -> Result<()> {
+    if value.is_empty()
+        || value.len() > max_bytes
+        || value.chars().any(|character| character.is_control())
+    {
+        return Err(anyhow!(
+            "{name} must contain between 1 and {max_bytes} bytes and no control characters"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_cargo_token(name: &str, value: &str) -> Result<()> {
+    validate_bounded_text(name, value, 128)?;
+    if value.starts_with('-')
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    {
+        return Err(anyhow!(
+            "{name} must be an ASCII Cargo identifier and must not start with '-'"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_relative_text_path(name: &str, value: &str) -> Result<()> {
+    validate_relative_repo_path(name, Path::new(value))
+}
+
+fn validate_relative_repo_path(name: &str, path: &Path) -> Result<()> {
+    let Some(value) = path.to_str() else {
+        return Err(anyhow!("{name} must be valid UTF-8"));
+    };
+    validate_bounded_text(name, value, 512)?;
+    if path.is_absolute()
+        || path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(anyhow!(
+            "{name} must be a normalized path relative to the checkout root"
+        ));
+    }
+    Ok(())
 }
 
 /// Parses a comma-separated env var into a trimmed, deduped, non-empty list.
@@ -405,10 +473,7 @@ mod tests {
                 let cfg = Config::from_env().unwrap();
                 assert_eq!(
                     cfg.allowed_repos,
-                    vec![
-                        "acme/widgets".to_string(),
-                        "acme/sandbox".to_string(),
-                    ]
+                    vec!["acme/widgets".to_string(), "acme/sandbox".to_string(),]
                 );
                 assert_eq!(
                     cfg.path_prefixes,
@@ -447,6 +512,40 @@ mod tests {
             || {
                 let cfg = Config::from_env().unwrap();
                 assert_eq!(cfg.delivery_dedupe_capacity, 1);
+            },
+        );
+    }
+
+    #[test]
+    fn rejects_paths_that_escape_the_checkout() {
+        assert!(
+            validate_relative_repo_path("CONTRACT_MANIFEST_PATH", Path::new("../Cargo.toml"))
+                .is_err()
+        );
+        assert!(validate_relative_repo_path(
+            "CONTRACT_MANIFEST_PATH",
+            Path::new("/tmp/Cargo.toml")
+        )
+        .is_err());
+        assert!(validate_relative_repo_path(
+            "CONTRACT_MANIFEST_PATH",
+            Path::new("packages/contract/Cargo.toml")
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn rejects_non_finite_dreal_precision() {
+        with_env(
+            &[
+                ("GITHUB_WEBHOOK_SECRET", Some("shh")),
+                ("DREAL_PRECISION", Some("NaN")),
+            ],
+            || {
+                assert!(Config::from_env()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("finite positive"));
             },
         );
     }

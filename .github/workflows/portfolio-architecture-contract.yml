@@ -1,0 +1,47 @@
+name: portfolio architecture contract
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - docs/architecture/portfolio-contract.json
+      - docs/architecture/portfolio-organizations.json
+      - docs/architecture/portfolio-boundaries.md
+      - remote/tests/general/portfolio-architecture-contract.test.mjs
+      - .github/workflows/portfolio-architecture-contract.yml
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - docs/architecture/portfolio-contract.json
+      - docs/architecture/portfolio-organizations.json
+      - docs/architecture/portfolio-boundaries.md
+      - remote/tests/general/portfolio-architecture-contract.test.mjs
+      - .github/workflows/portfolio-architecture-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: portfolio-architecture-contract-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: validate portfolio boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: "22"
+
+      - name: Run portfolio contract tests
+        run: node --test remote/tests/general/portfolio-architecture-contract.test.mjs

@@ -1,0 +1,149 @@
+# AntiCapTrad browser-automation E2E lane.
+#
+# Validates the cluster's OWN shared browser infrastructure — that
+# dd-browser-test-server can still drive Playwright, Puppeteer, and Selenium
+# through its authenticated `POST /run` scenario API — using the act-e2e suite
+# from the anticaptrad org (`npm run test:cluster`, tests/cluster/).
+#
+# Why this is worth a lane: nothing else asserts that all three drivers in that
+# service still work. The deployment's readiness probe only proves the Fastify
+# process is up; it does not launch a browser. A chromedriver/Chromium version
+# skew, a Selenium Manager cold-start failure, or an accidental
+# BROWSER_TEST_ALLOW_EVALUATE=true would all pass the probe and stay invisible.
+# This suite also asserts the security posture: unauthenticated runs are
+# rejected and `evaluate` steps stay refused.
+#
+# Unlike the athleto/fiducia lanes this one is LIGHT — no application builds and
+# no local browser. The browser runs inside dd-browser-test-server; this pod only
+# speaks HTTP to it. The Playwright Noble image is reused anyway because it is
+# already cached on every node that runs browser work and it ships Node 22, so
+# the lane introduces no new image pull.
+#
+#   suspend: true  ->  Argo applies the object but the scheduler never fires it.
+#   Kick a one-off run with:
+#     kubectl -n default create job anticaptrad-e2e-browser-manual \
+#       --from=cronjob/dd-anticaptrad-e2e-browser-suite
+#   Flip `suspend: false` to enable the nightly cadence. It is suspended by
+#   default because the suite briefly drives concurrent scenarios and
+#   BROWSER_TEST_MAX_CONCURRENT is 2 per pod, so an unattended nightly run would
+#   contend with on-call's smoke harness for shared browser capacity.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-anticaptrad-e2e-browser-suite
+  namespace: default
+  labels:
+    app: dd-anticaptrad-e2e-browser-suite
+    app.kubernetes.io/name: dd-anticaptrad-e2e-browser-suite
+    app.kubernetes.io/component: browser-e2e
+    app.kubernetes.io/part-of: dd-next-runtime
+  annotations:
+    dd.dev/note: Opt-in AntiCapTrad lane that proves dd-browser-test-server still drives Playwright, Puppeteer, and Selenium and keeps evaluate disabled; suspended by default, light (no builds).
+spec:
+  schedule: "20 6 * * *"
+  timeZone: America/Chicago
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    metadata:
+      labels:
+        app: dd-anticaptrad-e2e-browser-suite
+        app.kubernetes.io/name: dd-anticaptrad-e2e-browser-suite
+        app.kubernetes.io/component: browser-e2e
+        app.kubernetes.io/part-of: dd-next-runtime
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: dd-anticaptrad-e2e-browser-suite
+            app.kubernetes.io/name: dd-anticaptrad-e2e-browser-suite
+            app.kubernetes.io/component: browser-e2e
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: browser-e2e
+              # Already cached on browser-capable nodes and ships Node 22. No
+              # local browser is launched here.
+              image: mcr.microsoft.com/playwright:v1.56.0-noble
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              command:
+                - /bin/bash
+                - -lc
+              args:
+                - |
+                  set -euo pipefail
+                  base="/tmp/anticaptrad-e2e"
+                  org="${ACT_GIT_ORG:-https://github.com/anticaptrad}"
+                  ref="${ACT_GIT_REF:-main}"
+                  mkdir -p "$base"
+                  if [ ! -d "$base/act-e2e/.git" ]; then
+                    git clone --depth 1 --branch "$ref" "$org/act-e2e.git" "$base/act-e2e"
+                  fi
+                  cd "$base/act-e2e"
+                  npm ci
+                  # tests/cluster/ needs no local browser and no anticaptrad
+                  # services — it drives dd-browser-test-server over HTTP.
+                  npm run test:cluster
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: NODE_ENV
+                  value: test
+                - name: npm_config_cache
+                  value: /tmp/.npm
+                # No local browser is launched, so skip both downloads.
+                - name: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+                  value: "1"
+                - name: PUPPETEER_SKIP_DOWNLOAD
+                  value: "true"
+                # In-cluster Service address; the remote browser resolves the
+                # target below from inside the cluster too.
+                - name: ACT_BROWSER_TEST_URL
+                  value: http://dd-browser-test-server:8104
+                - name: ACT_BROWSER_TARGET_URL
+                  value: http://dd-browser-test-server:8104/healthz
+                - name: ACT_BROWSER_TEST_AUTH
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-agent-secrets
+                      key: SERVER_AUTH_SECRET
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

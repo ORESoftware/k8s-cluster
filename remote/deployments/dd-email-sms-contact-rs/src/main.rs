@@ -163,6 +163,7 @@ struct EmailReq {
     text: Option<String>,
     from: Option<String>,
     auth: Option<String>,
+    idempotency_key: Option<String>,
 }
 #[derive(Deserialize)]
 struct SmsReq {
@@ -1068,7 +1069,7 @@ async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::
             tokio::select! {
                 Some(msg) = email_sub.next() => {
                     let (s2, c2) = (s.clone(), client.clone());
-                    tokio::spawn(async move { handle_email_msg(&s2, &c2, &msg.payload).await; });
+                    tokio::spawn(async move { handle_email_msg(&s2, &c2, &msg).await; });
                 }
                 Some(msg) = sms_sub.next() => {
                     let (s2, c2) = (s.clone(), client.clone());
@@ -1086,9 +1087,18 @@ async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::
     }
 }
 
-async fn publish_result(client: &async_nats::Client, value: Value) {
+async fn publish_result(
+    client: &async_nats::Client,
+    reply: Option<&async_nats::Subject>,
+    value: Value,
+) {
     if let Ok(bytes) = serde_json::to_vec(&value) {
-        let _ = client.publish(CONTACT_SEND_RESULTS_SUBJECT, bytes.into()).await;
+        let _ = client
+            .publish(CONTACT_SEND_RESULTS_SUBJECT, bytes.clone().into())
+            .await;
+        if let Some(reply) = reply {
+            let _ = client.publish(reply.clone(), bytes.into()).await;
+        }
     }
 }
 
@@ -1101,55 +1111,68 @@ fn nats_authorized(s: &AppState, auth: Option<&str>) -> bool {
     }
 }
 
-async fn handle_email_msg(s: &AppState, client: &async_nats::Client, payload: &[u8]) {
-    let Ok(req) = serde_json::from_slice::<EmailReq>(payload) else {
-        publish_result(client, json!({"ok": false, "channel": "email", "error": "invalid payload"})).await;
+async fn handle_email_msg(s: &AppState, client: &async_nats::Client, message: &async_nats::Message) {
+    let reply = message.reply.as_ref();
+    let Ok(req) = serde_json::from_slice::<EmailReq>(&message.payload) else {
+        publish_result(client, reply, json!({"ok": false, "channel": "email", "error": "invalid payload"})).await;
         return;
     };
+    let idempotency_key = req
+        .idempotency_key
+        .as_deref()
+        .filter(|value| {
+            (16..=128).contains(&value.len())
+                && value
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+        })
+        .map(str::to_owned);
     if !nats_authorized(s, req.auth.as_deref()) {
-        publish_result(client, json!({"ok": false, "channel": "email", "error": "unauthorized"})).await;
+        publish_result(client, reply, json!({"ok": false, "channel": "email", "error": "unauthorized", "idempotency_key": idempotency_key})).await;
         return;
     }
     if let Some(e) = validate_email(&req.to, &req.subject, &req.html) {
-        publish_result(client, json!({"ok": false, "channel": "email", "to": req.to, "error": e})).await;
+        publish_result(client, reply, json!({"ok": false, "channel": "email", "to": req.to, "error": e, "idempotency_key": idempotency_key})).await;
         return;
     }
     let o = email_send(s, &req.to, &req.subject, &req.html, req.text.as_deref(), req.from.as_deref()).await;
-    publish_result(client, outcome_json("email", &req.to, &o)).await;
+    let mut result = outcome_json("email", &req.to, &o);
+    result["idempotency_key"] = json!(idempotency_key);
+    publish_result(client, reply, result).await;
 }
 
 async fn handle_sms_msg(s: &AppState, client: &async_nats::Client, payload: &[u8]) {
     let Ok(req) = serde_json::from_slice::<SmsReq>(payload) else {
-        publish_result(client, json!({"ok": false, "channel": "sms", "error": "invalid payload"})).await;
+        publish_result(client, None, json!({"ok": false, "channel": "sms", "error": "invalid payload"})).await;
         return;
     };
     if !nats_authorized(s, req.auth.as_deref()) {
-        publish_result(client, json!({"ok": false, "channel": "sms", "error": "unauthorized"})).await;
+        publish_result(client, None, json!({"ok": false, "channel": "sms", "error": "unauthorized"})).await;
         return;
     }
     if let Some(e) = validate_sms(&req.to, &req.body) {
-        publish_result(client, json!({"ok": false, "channel": "sms", "to": req.to, "error": e})).await;
+        publish_result(client, None, json!({"ok": false, "channel": "sms", "to": req.to, "error": e})).await;
         return;
     }
     let o = sms_send(s, &req.to, &req.body).await;
-    publish_result(client, outcome_json("sms", &req.to, &o)).await;
+    publish_result(client, None, outcome_json("sms", &req.to, &o)).await;
 }
 
 async fn handle_push_msg(s: &AppState, client: &async_nats::Client, payload: &[u8]) {
     let Ok(req) = serde_json::from_slice::<PushReq>(payload) else {
-        publish_result(client, json!({"ok": false, "channel": "push", "error": "invalid payload"})).await;
+        publish_result(client, None, json!({"ok": false, "channel": "push", "error": "invalid payload"})).await;
         return;
     };
     if !nats_authorized(s, req.auth.as_deref()) {
-        publish_result(client, json!({"ok": false, "channel": "push", "error": "unauthorized"})).await;
+        publish_result(client, None, json!({"ok": false, "channel": "push", "error": "unauthorized"})).await;
         return;
     }
     if let Some(e) = validate_push(&req, &s.webpush_policy).await {
-        publish_result(client, json!({"ok": false, "channel": "push", "to": push_target_label(&req), "error": e})).await;
+        publish_result(client, None, json!({"ok": false, "channel": "push", "to": push_target_label(&req), "error": e})).await;
         return;
     }
     let o = push_send(s, &req).await;
-    publish_result(client, outcome_json("push", &push_target_label(&req), &o)).await;
+    publish_result(client, None, outcome_json("push", &push_target_label(&req), &o)).await;
 }
 
 async fn shutdown_signal() {

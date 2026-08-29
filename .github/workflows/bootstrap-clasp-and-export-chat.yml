@@ -1,0 +1,399 @@
+name: Bootstrap clasp and export Google Chat
+
+on:
+  pull_request:
+    paths:
+      - .github/chat-oauth-trigger/**
+      - .github/workflows/bootstrap-clasp-and-export-chat.yml
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: bootstrap-clasp-and-export-chat
+  cancel-in-progress: false
+
+jobs:
+  bootstrap-export:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RELAY_ISSUE: '86'
+      CLASP_VERSION: 3.3.0
+      APPS_SCRIPT_DEPLOYMENT_ID: AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq
+      APPS_SCRIPT_EXEC_URL: https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec
+      EXPECTED_SPACE: spaces/AAQAoHKdzvI
+      EXPECTED_VERSION: '1.0.1'
+    steps:
+      - name: Checkout main source of truth
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+
+      - name: Setup Node and OAuth helper
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Install pinned clasp and pexpect
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --global "@google/clasp@${CLASP_VERSION}"
+          python -m pip install --disable-pip-version-check --quiet pexpect
+
+      - name: Generate one-time handoff keypair
+        id: keypair
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 \
+            -out "${RUNNER_TEMP}/clasp-handoff-private.pem" >/dev/null 2>&1
+          openssl pkey -in "${RUNNER_TEMP}/clasp-handoff-private.pem" -pubout \
+            -out "${RUNNER_TEMP}/clasp-handoff-public.pem" >/dev/null 2>&1
+          run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+          echo "public_key_b64=$(base64 -w0 < "${RUNNER_TEMP}/clasp-handoff-public.pem")" >> "$GITHUB_OUTPUT"
+
+      - name: Authorize clasp through encrypted handoff
+        id: oauth
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.keypair.outputs.run_id }}
+          PUBLIC_KEY_B64: ${{ steps.keypair.outputs.public_key_b64 }}
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/clasp_oauth_handoff.py" <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import time
+          from pathlib import Path
+
+          import pexpect
+
+          run_id = os.environ['RUN_ID']
+          repo = os.environ['GITHUB_REPOSITORY']
+          issue = os.environ['RELAY_ISSUE']
+          gh_token = os.environ['GH_TOKEN']
+          public_key_b64 = os.environ['PUBLIC_KEY_B64']
+          temp = Path(os.environ['RUNNER_TEMP'])
+
+          def gh(*args, input_text=None):
+              env = dict(os.environ)
+              env['GH_TOKEN'] = gh_token
+              return subprocess.run(
+                  ['gh', *args],
+                  input=input_text,
+                  text=True,
+                  capture_output=True,
+                  check=True,
+                  env=env,
+              ).stdout
+
+          child = pexpect.spawn(
+              'clasp',
+              ['login', '--no-localhost'],
+              encoding='utf-8',
+              timeout=180,
+              echo=False,
+          )
+
+          output = ''
+          auth_url = None
+          url_re = re.compile(r'https://accounts\.google\.com/[^\s]+')
+          deadline = time.time() + 180
+          while time.time() < deadline and auth_url is None:
+              try:
+                  chunk = child.read_nonblocking(size=4096, timeout=5)
+              except pexpect.TIMEOUT:
+                  continue
+              except pexpect.EOF:
+                  break
+              output += chunk
+              match = url_re.search(output)
+              if match:
+                  auth_url = match.group(0).rstrip('.,)')
+
+          if not auth_url:
+              raise SystemExit('clasp did not emit a Google authorization URL')
+
+          body = (
+              f'CLASP_OAUTH_HANDOFF run_id={run_id} '
+              f'auth_url={auth_url} key_b64={public_key_b64}'
+          )
+          gh(
+              'api', '--method', 'POST',
+              f'repos/{repo}/issues/{issue}/comments',
+              '-f', f'body={body}',
+          )
+
+          prefix = f'CLASP_OAUTH_CIPHERTEXT run_id={run_id} data='
+          ciphertext = ''
+          deadline = time.time() + 15 * 60
+          while time.time() < deadline:
+              comments = gh(
+                  'api', '--paginate',
+                  f'repos/{repo}/issues/{issue}/comments',
+                  '--jq', f'.[] | select(.body | startswith("{prefix}")) | .body',
+              ).splitlines()
+              if comments:
+                  ciphertext = comments[-1][len(prefix):]
+                  break
+              time.sleep(5)
+
+          if not ciphertext:
+              child.terminate(force=True)
+              raise SystemExit('timed out waiting for encrypted OAuth handoff')
+
+          encrypted_path = temp / 'clasp-oauth-payload.bin'
+          encrypted_path.write_bytes(__import__('base64').b64decode(ciphertext))
+          payload_path = temp / 'clasp-oauth-payload.json'
+          subprocess.run(
+              [
+                  'openssl', 'pkeyutl', '-decrypt',
+                  '-inkey', str(temp / 'clasp-handoff-private.pem'),
+                  '-in', str(encrypted_path),
+                  '-pkeyopt', 'rsa_padding_mode:oaep',
+                  '-pkeyopt', 'rsa_oaep_md:sha256',
+                  '-pkeyopt', 'rsa_mgf1_md:sha256',
+                  '-out', str(payload_path),
+              ],
+              check=True,
+          )
+          payload = json.loads(payload_path.read_text())
+          auth_response = str(payload.get('authorization_response', '')).strip()
+          bridge_token = str(payload.get('bridge_token', '')).strip()
+          archive_passphrase = str(payload.get('archive_passphrase', '')).strip()
+          if len(auth_response) < 4 or len(bridge_token) < 32 or len(archive_passphrase) < 32:
+              child.terminate(force=True)
+              raise SystemExit('invalid encrypted OAuth handoff payload')
+
+          print(f'::add-mask::{bridge_token}')
+          print(f'::add-mask::{archive_passphrase}')
+          (temp / 'bridge-token').write_text(bridge_token)
+          (temp / 'archive-passphrase').write_text(archive_passphrase)
+
+          child.sendline(auth_response)
+          child.expect(pexpect.EOF, timeout=180)
+          child.close()
+          if child.exitstatus not in (0, None):
+              raise SystemExit(f'clasp login failed with status {child.exitstatus}')
+
+          credentials = Path.home() / '.clasprc.json'
+          if not credentials.exists() or credentials.stat().st_size < 100:
+              raise SystemExit('clasp login did not create ~/.clasprc.json')
+
+          encrypted_path.unlink(missing_ok=True)
+          payload_path.unlink(missing_ok=True)
+          PY
+          python "${RUNNER_TEMP}/clasp_oauth_handoff.py"
+          clasp show-authorized-user --json >/dev/null
+
+      - name: Discover target Script ID by deployment ID
+        id: script
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts_json="${RUNNER_TEMP}/scripts.json"
+          if ! clasp list-scripts --json > "$scripts_json" 2>/dev/null; then
+            clasp --json list-scripts > "$scripts_json"
+          fi
+          mapfile -t script_ids < <(jq -r '.. | objects | .scriptId? // empty' "$scripts_json" | sort -u)
+          test "${#script_ids[@]}" -gt 0 || {
+            echo 'No Apps Script projects returned by clasp list-scripts.' >&2
+            exit 1
+          }
+
+          found=''
+          for script_id in "${script_ids[@]}"; do
+            output=''
+            output="$(clasp list-deployments "$script_id" --json 2>&1 || true)"
+            if [ -z "$output" ] || ! grep -Fq "$APPS_SCRIPT_DEPLOYMENT_ID" <<<"$output"; then
+              output="$(clasp --json list-deployments "$script_id" 2>&1 || true)"
+            fi
+            if grep -Fq "$APPS_SCRIPT_DEPLOYMENT_ID" <<<"$output"; then
+              found="$script_id"
+              break
+            fi
+          done
+
+          test -n "$found" || {
+            echo 'Could not match the known deployment ID to any accessible script.' >&2
+            exit 1
+          }
+          echo "script_id=${found}" >> "$GITHUB_OUTPUT"
+
+      - name: Push fixed source and redeploy existing web app
+        shell: bash
+        env:
+          SCRIPT_ID: ${{ steps.script.outputs.script_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          work="${RUNNER_TEMP}/apps-script-source"
+          mkdir -p "$work"
+          cp tools/google-chat-space-export/App.gs "$work/App.gs"
+          cp tools/google-chat-space-export/EmailExport.gs "$work/EmailExport.gs"
+          cp tools/google-chat-space-export/appsscript.json "$work/appsscript.json"
+          jq -n --arg scriptId "$SCRIPT_ID" '{scriptId:$scriptId,rootDir:"."}' > "$work/.clasp.json"
+          cd "$work"
+          clasp show-file-status
+          clasp push --force
+          description="OAuth bootstrap ${GITHUB_SHA}"
+          clasp create-deployment \
+            --deploymentId "$APPS_SCRIPT_DEPLOYMENT_ID" \
+            --description "$description"
+          clasp list-deployments
+
+      - name: Verify deployed version and export Chat history
+        id: export
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ steps.keypair.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          umask 077
+          token="$(cat "${RUNNER_TEMP}/bridge-token")"
+          out="${RUNNER_TEMP}/chat-export"
+          mkdir -p "$out/pages"
+
+          bridge_get() {
+            local action="$1"
+            local output="$2"
+            local page_token="${3:-}"
+            args=(
+              --get --fail --location --silent --show-error
+              --retry 3 --retry-all-errors
+              --connect-timeout 20 --max-time 120
+              --data-urlencode "action=${action}"
+              --data-urlencode "token=${token}"
+            )
+            if [ "$action" = messages ]; then
+              args+=(--data-urlencode pageSize=250)
+              args+=(--data-urlencode metadataOnly=false)
+              args+=(--data-urlencode showDeleted=true)
+              [ -z "$page_token" ] || args+=(--data-urlencode "pageToken=${page_token}")
+            fi
+            curl "${args[@]}" "$APPS_SCRIPT_EXEC_URL" -o "$output"
+            jq -e '.ok == true' "$output" >/dev/null
+          }
+
+          health="${RUNNER_TEMP}/health.json"
+          for attempt in $(seq 1 18); do
+            curl --get --fail --location --silent --show-error \
+              --data-urlencode action=health \
+              "$APPS_SCRIPT_EXEC_URL" -o "$health" || true
+            if jq -e --arg version "$EXPECTED_VERSION" \
+              '.ok == true and .version == $version and .configured == true' \
+              "$health" >/dev/null 2>&1; then
+              break
+            fi
+            sleep 10
+          done
+          jq -e --arg version "$EXPECTED_VERSION" \
+            '.ok == true and .version == $version and .configured == true' \
+            "$health" >/dev/null
+
+          bridge_get status "$out/status.json"
+          bridge_get probe "$out/probe.json"
+          jq -e --arg space "$EXPECTED_SPACE" '.data.space.name == $space' "$out/probe.json" >/dev/null
+
+          page_token=''
+          pages=0
+          messages=0
+          first_time=''
+          last_time=''
+          while :; do
+            pages=$((pages + 1))
+            test "$pages" -le 1000
+            file="$out/pages/messages-part-$(printf '%05d' "$pages").json"
+            bridge_get messages "$file" "$page_token"
+            count="$(jq -r '.data.messageCount // 0' "$file")"
+            messages=$((messages + count))
+            if [ -z "$first_time" ] && [ "$count" -gt 0 ]; then
+              first_time="$(jq -r '.data.messages[0].createTime // empty' "$file")"
+            fi
+            if [ "$count" -gt 0 ]; then
+              last_time="$(jq -r '.data.messages[-1].createTime // empty' "$file")"
+            fi
+            page_token="$(jq -r '.data.nextPageToken // empty' "$file")"
+            [ -n "$page_token" ] || break
+          done
+
+          jq -n \
+            --arg runId "$RUN_ID" \
+            --arg space "$EXPECTED_SPACE" \
+            --arg version "$EXPECTED_VERSION" \
+            --arg firstMessageTime "$first_time" \
+            --arg lastMessageTime "$last_time" \
+            --argjson pages "$pages" \
+            --argjson messages "$messages" \
+            '{runId:$runId,space:$space,bridgeVersion:$version,pages:$pages,messages:$messages,firstMessageTime:$firstMessageTime,lastMessageTime:$lastMessageTime,exportedAt:(now|todateiso8601)}' \
+            > "$out/manifest.json"
+          find "$out" -type f -print0 | sort -z | xargs -0 sha256sum > "$out/SHA256SUMS"
+          echo "pages=${pages}" >> "$GITHUB_OUTPUT"
+          echo "messages=${messages}" >> "$GITHUB_OUTPUT"
+
+      - name: Encrypt export and clasp credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          passphrase_file="${RUNNER_TEMP}/archive-passphrase"
+          tar -C "${RUNNER_TEMP}" -czf "${RUNNER_TEMP}/chat-export.tar.gz" chat-export
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "$passphrase_file" \
+            --symmetric --cipher-algo AES256 \
+            --output "${RUNNER_TEMP}/chat-export.tar.gz.gpg" \
+            "${RUNNER_TEMP}/chat-export.tar.gz"
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file "$passphrase_file" \
+            --symmetric --cipher-algo AES256 \
+            --output "${RUNNER_TEMP}/clasprc.json.gpg" \
+            "${HOME}/.clasprc.json"
+          sha256sum \
+            "${RUNNER_TEMP}/chat-export.tar.gz.gpg" \
+            "${RUNNER_TEMP}/clasprc.json.gpg" \
+            > "${RUNNER_TEMP}/encrypted-artifacts.sha256"
+          rm -rf "${RUNNER_TEMP}/chat-export" "${RUNNER_TEMP}/chat-export.tar.gz"
+
+      - name: Upload encrypted one-day artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: clasp-bootstrap-google-chat-export-${{ steps.keypair.outputs.run_id }}
+          path: |
+            ${{ runner.temp }}/chat-export.tar.gz.gpg
+            ${{ runner.temp }}/clasprc.json.gpg
+            ${{ runner.temp }}/encrypted-artifacts.sha256
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Publish completion metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
+            -f body="CLASP_BOOTSTRAP_COMPLETE run_id=${{ steps.keypair.outputs.run_id }} artifact=clasp-bootstrap-google-chat-export-${{ steps.keypair.outputs.run_id }} pages=${{ steps.export.outputs.pages }} messages=${{ steps.export.outputs.messages }}" \
+            >/dev/null
+
+      - name: Destroy plaintext credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            "${HOME}/.clasprc.json" \
+            "${RUNNER_TEMP}/clasp-handoff-private.pem" \
+            "${RUNNER_TEMP}/clasp-handoff-public.pem" \
+            "${RUNNER_TEMP}/clasp-oauth-payload.bin" \
+            "${RUNNER_TEMP}/clasp-oauth-payload.json" \
+            "${RUNNER_TEMP}/bridge-token" \
+            "${RUNNER_TEMP}/archive-passphrase"

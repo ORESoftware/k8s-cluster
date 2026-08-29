@@ -44,6 +44,14 @@ spec:
             - |
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              # Build into a per-pod /tmp emptyDir, not the shared repo hostPath.
+              # Two replicas building into one target/ contend on the cargo build
+              # lock, stalling the second replica past its startup budget; and the
+              # repo mount is now read-only. HOME/CARGO_HOME/target all land in tmp.
+              export HOME=/tmp
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-trading-server-target
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
               cd /opt/dd-next-1/remote/deployments/trading-server-rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
@@ -157,7 +165,9 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            # Cold in-pod build now runs in an isolated /tmp target (no shared
+            # cache), so give it room: 360*5s = 30 min before startup-kill.
+            failureThreshold: 360
           readinessProbe:
             httpGet:
               path: /readyz
@@ -175,8 +185,13 @@ spec:
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
       volumes:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
             type: Directory
+        - name: tmp
+          emptyDir: {}

@@ -27,6 +27,9 @@ spec:
       labels:
         app: hello-world
     spec:
+      # A static diagnostic page never calls the Kubernetes API, so don't hand
+      # it a ServiceAccount token an attacker could reuse.
+      automountServiceAccountToken: false
       securityContext:
         seccompProfile:
           type: RuntimeDefault

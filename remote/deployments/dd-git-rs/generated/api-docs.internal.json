@@ -1,0 +1,637 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "dd-git-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "dd_git_rs_get_6c4d375081c0",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "home"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_docs_aefb7705a4af",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_docs_json_cae7319e06a7",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_json"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/v1/repos": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_repos_9646a497a1c7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_repo",
+          "list_repos"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos",
+        "x-dd-source-paths": [
+          "/api/v1/repos"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_git_rs_post_api_v1_repos_974d961b4ab7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_repo",
+          "list_repos"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos",
+        "x-dd-source-paths": [
+          "/api/v1/repos"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/v1/repos/{id}": {
+      "delete": {
+        "operationId": "dd_git_rs_delete_api_v1_repos_id_c7932befa51b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "delete_repo",
+          "get_repo"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos/:id",
+        "x-dd-source-paths": [
+          "/api/v1/repos/:id"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_repos_id_5ac5580b1aae",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "delete_repo",
+          "get_repo"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos/:id",
+        "x-dd-source-paths": [
+          "/api/v1/repos/:id"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/v1/repos/{id}/log": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_repos_id_log_a6dc5eff10c7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "get_log"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos/:id/log",
+        "x-dd-source-paths": [
+          "/api/v1/repos/:id/log"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/v1/repos/{id}/operations": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_repos_id_operations_2ad7a4a8ba34",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_operations"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos/:id/operations",
+        "x-dd-source-paths": [
+          "/api/v1/repos/:id/operations"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/v1/repos/{id}/refs": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_repos_id_refs_192aba554a30",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_refs"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos/:id/refs",
+        "x-dd-source-paths": [
+          "/api/v1/repos/:id/refs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/v1/repos/{id}/show/{wildcard}rev": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_repos_id_show_wildcard_rev_b52bd1028427",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "wildcard",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "get_show"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos/:id/show/*rev",
+        "x-dd-source-paths": [
+          "/api/v1/repos/:id/show/*rev"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/v1/repos/{id}/sync": {
+      "post": {
+        "operationId": "dd_git_rs_post_api_v1_repos_id_sync_34eb430786be",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "sync_repo"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/repos/:id/sync",
+        "x-dd-source-paths": [
+          "/api/v1/repos/:id/sync"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/v1/vcs/kinds": {
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_vcs_kinds_19ea26474273",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_kinds"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/v1/vcs/kinds",
+        "x-dd-source-paths": [
+          "/api/v1/vcs/kinds"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "dd_git_rs_get_docs_api_035184cf5e8e",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "dd_git_rs_get_healthz_61cc5ffe8a65",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "dd_git_rs_get_metrics_a0e41979c18c",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "dd_git_rs_get_readyz_7f6d6d62638a",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "readyz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-git-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 17,
+  "x-dd-route-count": 17,
+  "x-dd-service": "dd-git-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

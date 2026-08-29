@@ -16,12 +16,32 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Only the gateway (proxied /scrape) and the observability scrapers (/metrics)
-    # may reach the service port. Nothing else in the cluster can call it.
+    # The gateway (proxied /scrape), browser-automation MCP control plane,
+    # observability scrapers, and the three exact Benefactor discovery/probe
+    # workloads may reach the service port. Benefactor access stays label- and
+    # workload-specific; no namespace-wide or app-family-wide selector is used.
     - from:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-browser-mcp-rs
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: benefactor-contact-batch
+              app.kubernetes.io/component: lead-discovery
+              app.kubernetes.io/part-of: benefactor-cc
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: benefactor-provider-probe-v2
+              app.kubernetes.io/component: credentialed-dry-run
+              app.kubernetes.io/part-of: benefactor-cc
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: benefactor-search-scraper-contract-probe
+              app.kubernetes.io/component: credentialed-dry-run
+              app.kubernetes.io/part-of: benefactor-cc
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
@@ -56,6 +76,16 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # The one-shot Selenium bridge (/agent/selenium-run) forwards native
+    # scenarios to dd-selenium-server. Only reachable when the bridge is
+    # configured (BROWSER_AGENT_SELENIUM_URL set on the deployment).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-selenium-server
+      ports:
+        - protocol: TCP
+          port: 8105
     # Public internet on ANY port (scrape targets and rotating proxies use
     # arbitrary ports), but never the cluster, host, link-local, or cloud
     # metadata ranges. This is the network-layer SSRF backstop: even if a browser

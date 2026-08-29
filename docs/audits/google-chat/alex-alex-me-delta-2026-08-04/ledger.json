@@ -1,0 +1,165 @@
+{
+  "schemaVersion": "google-chat-reconciliation-delta.v1",
+  "space": "spaces/AAQAoHKdzvI",
+  "displayName": "alex-alex-me",
+  "sourceExport": {
+    "relayRunId": "30956776367-1",
+    "exportedAt": "2026-08-04T22:40:17Z",
+    "totalMessages": 1196,
+    "messagesSince2026-06-05": 1013
+  },
+  "delta": {
+    "afterExclusive": "2026-08-04T02:53:06.997967Z",
+    "throughInclusive": "2026-08-04T21:21:07.950927Z",
+    "recordCount": 10,
+    "dispositionCounts": {
+      "mapped-existing-secret-quarantined": 1,
+      "mapped-existing": 3,
+      "created-new": 3,
+      "reopened-existing-private-output-quarantined": 1,
+      "created-and-attached": 1,
+      "duplicate": 1
+    },
+    "newCanonicalIssueIds": [
+      "DEN-1948",
+      "DEN-1949",
+      "DEN-1950",
+      "DEN-1951"
+    ],
+    "reopenedIssueIds": [
+      "DEN-1889"
+    ]
+  },
+  "privacy": {
+    "containsMessageBodies": false,
+    "containsSenderIdentities": false,
+    "containsCredentials": false,
+    "containsContactValues": false,
+    "containsPrivateOutputDestinations": false,
+    "credentialBearingRecords": 1,
+    "privateOutputTransportRecords": 1,
+    "credentialIncidentIssueIds": [
+      "DEN-1230",
+      "DEN-27"
+    ]
+  },
+  "records": [
+    {
+      "ordinal": 1,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/QTshsQdex1s.QTshsQdex1s",
+      "createTime": "2026-08-04T05:48:29.356351Z",
+      "category": "cross-org-rust-modularization-observability-and-credential-incident",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1787",
+        "DEN-802",
+        "DEN-1091",
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 2,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/dFtvYeH06Xg.dFtvYeH06Xg",
+      "createTime": "2026-08-04T15:35:15.647327Z",
+      "category": "nats-queue-consumers-autoscaling-and-telemetry",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-440",
+        "DEN-1013",
+        "DEN-666",
+        "DEN-671"
+      ]
+    },
+    {
+      "ordinal": 3,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Vu_Zt-5QVkg.Vu_Zt-5QVkg",
+      "createTime": "2026-08-04T17:04:04.452511Z",
+      "category": "github-project-and-linear-lifecycle-automation",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-1906"
+      ]
+    },
+    {
+      "ordinal": 4,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/qDSkqfy0Sp8.qDSkqfy0Sp8",
+      "createTime": "2026-08-04T17:04:48.977263Z",
+      "category": "liberty-cal-organization-and-events-foundation",
+      "disposition": "created-new",
+      "issueIds": [
+        "DEN-1948",
+        "DEN-1906"
+      ]
+    },
+    {
+      "ordinal": 5,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/00HZcm6oe0s.00HZcm6oe0s",
+      "createTime": "2026-08-04T19:11:42.096783Z",
+      "category": "evento-globolo-repository-publication-and-private-output-request",
+      "disposition": "reopened-existing-private-output-quarantined",
+      "issueIds": [
+        "DEN-1889",
+        "DEN-1906"
+      ],
+      "sensitiveClass": "private-output-transport"
+    },
+    {
+      "ordinal": 6,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/RRcSeY4hG9A.RRcSeY4hG9A",
+      "createTime": "2026-08-04T19:24:56.992943Z",
+      "category": "embedded-alerts-rust-repository-family",
+      "disposition": "created-new",
+      "issueIds": [
+        "DEN-1949",
+        "DEN-1906"
+      ]
+    },
+    {
+      "ordinal": 7,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/XHcbAXATf_4.XHcbAXATf_4",
+      "createTime": "2026-08-04T19:27:49.678335Z",
+      "category": "hacker-house-medellin-rust-repository-family",
+      "disposition": "created-new",
+      "issueIds": [
+        "DEN-1950",
+        "DEN-1906"
+      ]
+    },
+    {
+      "ordinal": 8,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ki6bnkwoqFM.ki6bnkwoqFM",
+      "createTime": "2026-08-04T20:21:13.383423Z",
+      "category": "streempilot-streamyard-parity-and-repository-fleet",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-876",
+        "DEN-1682"
+      ]
+    },
+    {
+      "ordinal": 9,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/1U4ZV1rOC-o.1U4ZV1rOC-o",
+      "createTime": "2026-08-04T20:41:04.686159Z",
+      "category": "four-org-clients-libs-monorepo-marketing-and-cloudflare-expansion",
+      "disposition": "created-and-attached",
+      "issueIds": [
+        "DEN-1951",
+        "DEN-1889",
+        "DEN-1949",
+        "DEN-1950",
+        "DEN-1906"
+      ]
+    },
+    {
+      "ordinal": 10,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/QCtrwlYDuW4.QCtrwlYDuW4",
+      "createTime": "2026-08-04T21:21:07.950927Z",
+      "category": "duplicate-four-org-repository-expansion",
+      "disposition": "duplicate",
+      "issueIds": [],
+      "duplicateOf": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/1U4ZV1rOC-o.1U4ZV1rOC-o"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: DaemonSet
 metadata:
   name: dd-remote-gateway
   namespace: default
@@ -8,9 +8,11 @@ metadata:
   labels:
     app: dd-remote-gateway
 spec:
-  replicas: 1
-  strategy:
-    type: Recreate
+  revisionHistoryLimit: 10
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-remote-gateway
@@ -18,13 +20,20 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: '2026-06-07-gateway-quoted-regex'
-        dd.dev/gateway-config-revision: '2026-07-15-fiducia-public-hosts'
+        dd.dev/gateway-config-revision: '2026-07-30-mcp-auth-hardening'
       labels:
         app: dd-remote-gateway
     spec:
       priorityClassName: system-cluster-critical
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 20
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
       containers:
         - name: gateway
           image: docker.io/library/nginx:1.27-alpine
@@ -69,6 +78,24 @@ spec:
             - name: https
               containerPort: 443
               hostPort: 443
+          readinessProbe:
+            httpGet:
+              path: /browser-mcp/healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /browser-mcp/healthz
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests:
               cpu: 5m

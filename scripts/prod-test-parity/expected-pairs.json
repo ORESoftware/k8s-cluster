@@ -1,0 +1,219 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "den-3444.v1",
+  "generatedAt": "2026-08-26T00:00:00Z",
+  "pairs": [
+    {
+      "productionOrg": "3FA-app",
+      "testOrg": "3fa-app-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "3fa-interfaces": "interfaces",
+        "3fa-lib-core": "lib",
+        "3fa-clients": "clients",
+        "3fa-cli": "cli",
+        "3fa-web-server.rs": "web",
+        "3fa-api-server.rs": "api",
+        "3fa-desktop-app.rs": "desktop",
+        "3fa-e2e": "e2e",
+        "3fa-infra": "infra",
+        "3fa-monorepo": "monorepo"
+      }
+    },
+    {
+      "productionOrg": "embedded-alerts",
+      "testOrg": "embedded-alerts-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "eal-interfaces": "interfaces",
+        "eal-libs": "lib",
+        "eal-clients": "clients",
+        "eal-cli": "cli",
+        "eal-web-server.rs": "web",
+        "eal-api-server.rs": "api",
+        "eal-e2e": "e2e",
+        "eal-infra": "infra",
+        "eal-monorepo": "monorepo"
+      }
+    },
+    {
+      "productionOrg": "fiducia-cloud",
+      "testOrg": "fiducia-cloud-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "fiducia-interfaces": "interfaces",
+        "fiducia-lib-core": "lib",
+        "fiducia-clients": "clients",
+        "fiducia-cli": "cli",
+        "fiducia-e2e": "e2e",
+        "fiducia-infra": "infra",
+        "fiducia-monorepo": "monorepo"
+      }
+    },
+    {
+      "productionOrg": "sonus-auris",
+      "testOrg": "sonus-auris-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "sonus-interfaces": "interfaces",
+        "sonus-lib-core": "lib",
+        "sonus-clients": "clients",
+        "sonus-cli": "cli",
+        "sonus-e2e": "e2e",
+        "sonus-infra": "infra",
+        "sonus-auris-monorepo": "monorepo"
+      }
+    },
+    {
+      "productionOrg": "zed-pkg",
+      "testOrg": "zed-pkg-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "zed-interfaces": "interfaces",
+        "zed-cli": "cli",
+        "zed-e2e": "e2e",
+        "zed-monorepo": "monorepo"
+      }
+    },
+    {
+      "productionOrg": "shared-auth",
+      "testOrg": "shared-auth-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "shared-auth-interfaces": "interfaces",
+        "shared-auth-lib-core": "lib",
+        "shared-auth-clients": "clients",
+        "shared-auth-cli": "cli",
+        "shared-auth-e2e": "e2e"
+      }
+    },
+    {
+      "productionOrg": "cliptown",
+      "testOrg": "cliptown-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "cliptown-interfaces": "interfaces",
+        "cliptown-lib-core": "lib",
+        "cliptown-clients": "clients",
+        "cliptown-cli": "cli",
+        "cliptown-e2e": "e2e",
+        "cliptown-monorepo": "monorepo"
+      }
+    },
+    {
+      "productionOrg": "declarative-migrations",
+      "testOrg": "declarative-migrations-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "declmig-interfaces": "interfaces",
+        "declmig-lib-core": "lib",
+        "declmig-clients": "clients",
+        "declmig-cli": "cli",
+        "declmig-web-server.rs": "web",
+        "declmig-api-server.rs": "api",
+        "declmig-e2e": "e2e",
+        "declmig-infra": "infra",
+        "declmig-monorepo": "monorepo"
+      }
+    },
+    {
+      "productionOrg": "opto-sync",
+      "testOrg": "opto-sync-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "opto-sync-interfaces": "interfaces",
+        "opto-sync-lib-core": "lib",
+        "opto-sync-clients": "clients",
+        "opto-sync-e2e": "e2e"
+      }
+    },
+    {
+      "productionOrg": "messaging-intel",
+      "testOrg": "messaging-intel-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "msgint-interfaces": "interfaces",
+        "msgint-lib-core": "lib",
+        "msgint-clients": "clients",
+        "msgint-cli": "cli",
+        "msgint-e2e": "e2e"
+      }
+    },
+    {
+      "productionOrg": "quaestor-ledger",
+      "testOrg": "quaestor-ledger-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "quaestor-interfaces": "interfaces",
+        "quaestor-lib-core": "lib",
+        "quaestor-clients": "clients",
+        "quaestor-cli": "cli",
+        "quaestor-e2e": "e2e"
+      }
+    },
+    {
+      "productionOrg": "canonical-cloud",
+      "testOrg": "canonical-cloud-test",
+      "canary": "required",
+      "defaultBranch": "main",
+      "visibility": "private",
+      "roles": {
+        "canonical-interfaces": "interfaces",
+        "canonical-lib-core": "lib",
+        "canonical-clients": "clients",
+        "canonical-cli": "cli",
+        "canonical-e2e": "e2e",
+        "canonical-monorepo": "monorepo"
+      }
+    }
+  ],
+  "exceptions": [
+    {
+      "kind": "missing-test-org",
+      "productionOrg": "daedalus-fab",
+      "owner": "oresoftware",
+      "reason": "No daedalus-fab-test organization has been created yet; canary remains optional until DEN-319 repository-administration coverage includes it.",
+      "scope": "org",
+      "expiresAt": "2026-12-31"
+    },
+    {
+      "kind": "orphan-test-org",
+      "testOrg": "file-tunnel-tesr",
+      "owner": "oresoftware",
+      "reason": "Typo sibling of file-tunnel-test; keep as an explicit orphan until renamed or archived.",
+      "scope": "org",
+      "expiresAt": "2026-12-31"
+    },
+    {
+      "kind": "excluded-organization",
+      "productionOrg": "r2g",
+      "testOrg": "r2g-test",
+      "owner": "oresoftware",
+      "reason": "r2g is a historical package namespace and is excluded from fleet canary policy.",
+      "scope": "fleet",
+      "expiresAt": "2027-01-01"
+    }
+  ]
+}

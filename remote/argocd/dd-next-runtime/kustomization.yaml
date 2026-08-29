@@ -17,14 +17,32 @@ resources:
   - dd-agent-worker-broker.deployment.yaml
   - dd-agent-worker-broker.networkpolicy.yaml
   - dd-agent-worker-broker.service.yaml
+  - dd-durable-worker-server.deployment.yaml
+  - dd-durable-worker-server.service.yaml
+  - dd-durable-worker-server.networkpolicy.yaml
+  - dd-durable-worker-server.pdb.yaml
   - dd-container-pool-rbac.yaml
   - dd-container-pool.deployment.yaml
   - dd-container-pool.networkpolicy.yaml
   - dd-container-pool.service.yaml
   - dd-build-server-rbac.yaml
+  - dd-build-server.configmap.yaml
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
+  - dd-ci-profile-runner.deployment.yaml
+  - dd-ci-profile-runner.service.yaml
+  - dd-ci-profile-runner.networkpolicy.yaml
+  - dd-gha-clone-server.configmap.yaml
+  - dd-gha-clone-server.externalsecret.yaml
+  - dd-gha-clone-server.deployment.yaml
+  - dd-gha-clone-server.service.yaml
+  - dd-gha-clone-server.networkpolicy.yaml
+  - dd-gha-executor-router.configmap.yaml
+  - dd-gha-executor-router.externalsecret.yaml
+  - dd-gha-executor-router.deployment.yaml
+  - dd-gha-executor-router.service.yaml
+  - dd-gha-executor-router.networkpolicy.yaml
   - dd-image-builder.deployment.yaml
   - dd-image-builder.service.yaml
   - dd-image-builder.networkpolicy.yaml
@@ -61,7 +79,14 @@ resources:
   - dd-fabrication-server.deployment.yaml
   - dd-fabrication-server.service.yaml
   - dd-fabrication-server.networkpolicy.yaml
+  # Canonical DES browser surface. The legacy simulator Deployment stays at
+  # zero replicas; its stable Service name aliases the DES-owned web pods so the
+  # existing /des/ gateway rule remains identical in AWS and Hetzner.
   - dd-des-simulator.deployment.yaml
+  - dd-des-web.deployment.yaml
+  - dd-des-web.networkpolicy.yaml
+  - dd-des-web.pdb.yaml
+  - dd-des-web.service.yaml
   - dd-des-simulator.service.yaml
   - dd-des-rs.deployment.yaml
   - dd-des-rs.hpa.yaml
@@ -76,8 +101,25 @@ resources:
   - dd-email-sms-contact-rs.deployment.yaml
   - dd-email-sms-contact-rs.externalsecret.yaml
   - dd-email-sms-contact-rs.service.yaml
+  # push-notification-server: dedicated hardened push (FCM/APNs/Expo/WebPush)
+  # + optional SendGrid/Twilio contact lanes (HTTP :8121). Built in-pod from
+  # the pinned remote/deployments/push-notification-server.rs submodule.
+  # DEN-263 rollout: shadows dd-email-sms-contact-rs above during migration;
+  # the legacy service keeps ownership until cutover (DEN-795).
+  - dd-push-notification-server.deployment.yaml
+  - dd-push-notification-server.externalsecret.yaml
+  - dd-push-notification-server.networkpolicy.yaml
+  - dd-push-notification-server.pdb.yaml
+  - dd-push-notification-server.service.yaml
+  - dd-happy-wakey-gateway.deployment.yaml
+  - dd-happy-wakey-gateway.externalsecret.yaml
+  - dd-happy-wakey-gateway.networkpolicy.yaml
+  - dd-happy-wakey-gateway.pvc.yaml
+  - dd-happy-wakey-gateway.service.yaml
   - dd-next-1-js.deployment.yaml
   - dd-next-1-js.service.yaml
+  - dd-sound-recorder-cloud-projection.cronjob.yaml
+  - dd-sound-recorder-auth.externalsecret.yaml
   - dd-sound-recorder-rs.deployment.yaml
   - dd-sound-recorder-rs.networkpolicy.yaml
   - dd-sound-recorder-rs.service.yaml
@@ -99,6 +141,7 @@ resources:
   - dd-ocr-rs.service.yaml
   - dd-rust-vapi-phone.deployment.yaml
   - dd-rust-vapi-phone.networkpolicy.yaml
+  - dd-rust-vapi-phone.scaledobject.yaml
   - dd-rust-vapi-phone.service.yaml
   - dd-trading-server.deployment.yaml
   - dd-trading-server.networkpolicy.yaml
@@ -120,6 +163,7 @@ resources:
   # canonical.cloud marketing site: Astro frontend built in-pod (node) and
   # served by its axum backend, proxied publicly by the gateway under /canonical/.
   - dd-canonical-cloud.deployment.yaml
+  - dd-canonical-cloud.externalsecret.yaml
   - dd-canonical-cloud.networkpolicy.yaml
   - dd-canonical-cloud.service.yaml
   # fiducia.cloud marketing site: same shape as canonical (in-pod node build of
@@ -161,6 +205,10 @@ resources:
   - dd-sonus-auris-site.configmap.yaml
   - dd-sonus-auris-site.deployment.yaml
   - dd-sonus-auris-site.service.yaml
+  - dd-sonus-auris-console.configmap.yaml
+  - dd-sonus-auris-console.deployment.yaml
+  - dd-sonus-auris-console.networkpolicy.yaml
+  - dd-sonus-auris-console.service.yaml
   - dd-webrtc-signaling.deployment.yaml
   - dd-webrtc-signaling.service.yaml
   - dd-webrtc-media.deployment.yaml
@@ -184,7 +232,7 @@ resources:
   - dd-akrion-web-server-rs.networkpolicy.yaml
   - dd-akrion-web-server-rs.pdb.yaml
   - dd-akrion-web-server-rs.service.yaml
-  # AthletO jello-ws shop app (MASH: Maud/Axum/SQLx/Supabase/HTMX), submodule
+  # AthletO jello-ws shop app (MASH: Maud/Axum/SeaORM/Supabase/HTMX), submodule
   # remote/deployments/athleto-app-rs. Served on its own public host
   # app.athleto.store via a dedicated Ingress and the jello-ws Service alias.
   - dd-athleto-app-rs.deployment.yaml
@@ -194,6 +242,19 @@ resources:
   - dd-athleto-app-rs.pdb.yaml
   - dd-athleto-app-rs.service.yaml
   - jello-ws.service.yaml
+  # Smaller standalone Athlet-O API/storefront backend. Runtime manifests are
+  # vendored here because Argo intentionally disables recursive git submodules;
+  # Rust source remains pinned by the source-of-truth gitlink.
+  - dd-athleto-backend.deployment.yaml
+  - dd-athleto-backend.service.yaml
+  # Opt-in AthletO live-storefront browser smoke: dispatches read-only UI
+  # scenarios to dd-browser-test-server under Playwright + Puppeteer.
+  - dd-athleto-e2e-scenarios.configmap.yaml
+  - dd-athleto-e2e-browser-suite.cronjob.yaml
+  # Opt-in AntiCapTrad lane that proves dd-browser-test-server can still drive
+  # all three drivers (Playwright/Puppeteer/Selenium) and keeps `evaluate`
+  # refused. Light: no builds, no local browser.
+  - dd-anticaptrad-e2e-browser-suite.cronjob.yaml
   # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
   # the runner's Postgres advisory lock lets only one cluster run matches.
   - dd-soccer-tournament-nightly.cronjob.yaml
@@ -211,8 +272,49 @@ resources:
   - dd-idle-reaper-rbac.yaml
   - dd-idle-reaper.deployment.yaml
   - dd-headlamp-cron-sentinel.cronjob.yaml
+  # Runtime hygiene: hourly reap of Evicted pod tombstones older than 3 days so
+  # node-eviction debris can't pile up (default ns; least-priv pod delete).
+  - dd-evicted-pod-reaper-rbac.yaml
+  - dd-evicted-pod-reaper.cronjob.yaml
   # ai-agent-bridge: inter-agent conversation bus (HTTP :8142 + TCP :8143).
   # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
   # both AWS and Hetzner via the dd-next-runtime app.
+  - dd-ai-agent-bridge.externalsecret.yaml
   - dd-ai-agent-bridge.deployment.yaml
+  - dd-ai-agent-bridge.networkpolicy.yaml
+  - dd-ai-agent-bridge.pdb.yaml
   - dd-ai-agent-bridge.service.yaml
+  # ai-agent-runner: multi-provider workflow runner for the bridge (DEN-845),
+  # pinned to the reviewed immutable image digest. Held at replicas: 0 until
+  # DEN-391 provisions dd-ai-agent-runner-secrets and the DEN-847 activation
+  # canary authorizes one replica. Bridge Deployment digest pin is handled
+  # separately in PR #1112.
+  - dd-ai-agent-runner.deployment.yaml
+  - dd-ai-agent-runner.networkpolicy.yaml
+  # t2v-v2t: voice-to-text / text-to-voice / translation. Two separately
+  # deployed binaries built in-pod from the remote/deployments/t2v-v2t.rs
+  # submodule: the JSON API (:8130, Vapi.ai webhooks, custom-FFT audio analysis)
+  # and the MASH (maud+axum+seaorm+htmx) web dashboard (:8131). Owns the `t2v`
+  # Postgres namespace in pg-defs (dpm-migrated).
+  - dd-t2v-api.deployment.yaml
+  - dd-t2v-api.networkpolicy.yaml
+  - dd-t2v-api.pdb.yaml
+  - dd-t2v-api.service.yaml
+  - dd-t2v-web.deployment.yaml
+  - dd-t2v-web.networkpolicy.yaml
+  - dd-t2v-web.pdb.yaml
+  - dd-t2v-web.service.yaml
+
+patches:
+  - path: dd-athleto-backend.observability.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-athleto-backend
+  - path: dd-build-server-gha-continuity.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-build-server

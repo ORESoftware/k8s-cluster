@@ -1,0 +1,304 @@
+name: Google Chat Apps Script sync
+
+on:
+  pull_request:
+    paths:
+      - tools/google-chat-space-export/**
+      - .github/workflows/google-chat-apps-script-sync.yml
+  push:
+    branches:
+      - main
+    paths:
+      - tools/google-chat-space-export/**
+      - .github/workflows/google-chat-apps-script-sync.yml
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Deploy repository code or pull the remote Apps Script as an artifact
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - pull-artifact
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-chat-apps-script-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  APPS_SCRIPT_DIR: tools/google-chat-space-export
+  CLASP_VERSION: 3.3.0
+  APPS_SCRIPT_DEPLOYMENT_ID: AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq
+  APPS_SCRIPT_EXEC_URL: https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec
+
+jobs:
+  validate:
+    name: validate and test Apps Script source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Validate manifest and JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            (.runtimeVersion == "V8") and
+            any(
+              .dependencies.enabledAdvancedServices[];
+              .serviceId == "chat" and .version == "v1"
+            ) and
+            (.oauthScopes | index("https://www.googleapis.com/auth/script.external_request") != null) and
+            (.webapp.executeAs == "USER_DEPLOYING") and
+            (.webapp.access == "ANYONE_ANONYMOUS")
+          ' "${APPS_SCRIPT_DIR}/appsscript.json" >/dev/null
+
+          for source in "${APPS_SCRIPT_DIR}"/*.gs; do
+            temp_file="$(mktemp --suffix=.js)"
+            cp "$source" "$temp_file"
+            node --check "$temp_file"
+            unlink "$temp_file"
+          done
+
+      - name: Verify fixed safety boundaries and production-only clasp allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "spaces/AAQAoHKdzvI" "${APPS_SCRIPT_DIR}/App.gs"
+          grep -Fq "2026-05-10T04:00:00.000Z" "${APPS_SCRIPT_DIR}/App.gs"
+          grep -Fq "alexander.d.mills@gmail.com" "${APPS_SCRIPT_DIR}/EmailExport.gs"
+          grep -Fq "alexander.d.mills@gmail.com" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "America/Chicago" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "triggerHour: 7" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "lookbackHours: 24" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          grep -Fq "SCHEDULED_TASK_DIGEST_BOOTSTRAP_RESULT" "${APPS_SCRIPT_DIR}/ScheduledTaskDigest.gs"
+          ! grep -Fq "orderBy: 'ASC'" "${APPS_SCRIPT_DIR}/App.gs"
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = process.env.APPS_SCRIPT_DIR;
+          const lines = fs
+            .readFileSync(path.join(root, '.claspignore'), 'utf8')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith('#'));
+          const expected = [
+            '**/*',
+            '!App.gs',
+            '!EmailExport.gs',
+            '!ScheduledTaskDigest.gs',
+            '!appsscript.json',
+          ];
+          if (JSON.stringify(lines) !== JSON.stringify(expected)) {
+            throw new Error(`Unexpected .claspignore allowlist: ${JSON.stringify(lines)}`);
+          }
+          NODE
+
+          if grep -RInE '(refresh_token|client_secret|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|lin_api_[A-Za-z0-9]{20,}|SG\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|AIza[A-Za-z0-9_-]{20,})' \
+            "${APPS_SCRIPT_DIR}" --exclude='README.md'; then
+            echo 'Potential credential material found in Apps Script source.' >&2
+            exit 1
+          fi
+
+      - name: Run Apps Script bridge regression tests
+        run: node --test "${APPS_SCRIPT_DIR}/test/app.test.mjs"
+
+      - name: Run scheduled-task digest regression tests
+        run: node --test "${APPS_SCRIPT_DIR}/test/scheduled-task-digest.test.mjs"
+
+      - name: Run import planner regression tests
+        run: node --test "${APPS_SCRIPT_DIR}/test/import-plan.test.mjs"
+
+  deploy:
+    name: push, version, and redeploy Apps Script
+    needs: validate
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: google-chat-apps-script
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Require clasp credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLASPRC_JSON" || {
+            echo 'Missing GitHub environment secret CLASPRC_JSON.' >&2
+            exit 1
+          }
+          test -n "$CLASP_JSON" || {
+            echo 'Missing GitHub environment secret CLASP_JSON.' >&2
+            exit 1
+          }
+          jq -e 'type == "object"' <<<"$CLASPRC_JSON" >/dev/null
+          jq -e '(.scriptId | type == "string") and (.scriptId | length > 10)' \
+            <<<"$CLASP_JSON" >/dev/null
+
+      - name: Install pinned clasp
+        run: npm install --global "@google/clasp@${CLASP_VERSION}"
+
+      - name: Configure clasp without logging credentials
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$CLASPRC_JSON" > "${HOME}/.clasprc.json"
+          jq '.rootDir = "."' <<<"$CLASP_JSON" > "${APPS_SCRIPT_DIR}/.clasp.json"
+          chmod 600 "${HOME}/.clasprc.json" "${APPS_SCRIPT_DIR}/.clasp.json"
+
+      - name: Verify clasp identity and upload set
+        working-directory: tools/google-chat-space-export
+        shell: bash
+        run: |
+          set -euo pipefail
+          clasp show-authorized-user --json >/dev/null
+          test -f App.gs
+          test -f EmailExport.gs
+          test -f ScheduledTaskDigest.gs
+          test -f appsscript.json
+          test -f .claspignore
+          clasp show-file-status
+
+      - name: Push repository source to Apps Script
+        working-directory: tools/google-chat-space-export
+        run: clasp push --force
+
+      - name: Create immutable version and update existing deployment
+        working-directory: tools/google-chat-space-export
+        shell: bash
+        run: |
+          set -euo pipefail
+          description="GitHub ${GITHUB_SHA} from ${GITHUB_REF_NAME}"
+          clasp create-deployment \
+            --deploymentId "$APPS_SCRIPT_DEPLOYMENT_ID" \
+            --description "$description"
+          clasp list-deployments
+
+      - name: Verify exact deployed bridge version and digest bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_version="$(node <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync(`${process.env.APPS_SCRIPT_DIR}/App.gs`, 'utf8');
+          const match = source.match(/\bversion:\s*'([^']+)'/);
+          if (!match) throw new Error('Could not read CHAT_BRIDGE.version from App.gs');
+          process.stdout.write(match[1]);
+          NODE
+          )"
+          response="$(mktemp)"
+          for attempt in $(seq 1 12); do
+            # Loading any Apps Script entry point initializes every production
+            # source file. ScheduledTaskDigest.gs fails closed here unless its
+            # 07:00 America/Chicago trigger and GitHub API probe are healthy.
+            if curl --fail --location --silent --show-error \
+              --max-time 30 \
+              "${APPS_SCRIPT_EXEC_URL}?action=health&sha=${GITHUB_SHA}" \
+              --output "$response" &&
+              jq -e --arg expected "$expected_version" '
+                .ok == true and
+                .service == "google-chat-linear-bridge" and
+                .version == $expected
+              ' "$response" >/dev/null; then
+              jq '{ok, service, version, configured}' "$response"
+              unlink "$response"
+              exit 0
+            fi
+            sleep 10
+          done
+          cat "$response" >&2 || true
+          unlink "$response" || true
+          exit 1
+
+      - name: Remove local credentials
+        if: always()
+        shell: bash
+        run: |
+          unlink "${HOME}/.clasprc.json" 2>/dev/null || true
+          unlink "${APPS_SCRIPT_DIR}/.clasp.json" 2>/dev/null || true
+
+  pull-artifact:
+    name: pull remote Apps Script snapshot
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.operation == 'pull-artifact'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: google-chat-apps-script
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Install pinned clasp
+        run: npm install --global "@google/clasp@${CLASP_VERSION}"
+
+      - name: Configure isolated pull directory
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          CLASP_JSON: ${{ secrets.CLASP_JSON }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLASPRC_JSON" || {
+            echo 'Missing GitHub environment secret CLASPRC_JSON.' >&2
+            exit 1
+          }
+          test -n "$CLASP_JSON" || {
+            echo 'Missing GitHub environment secret CLASP_JSON.' >&2
+            exit 1
+          }
+          jq -e 'type == "object"' <<<"$CLASPRC_JSON" >/dev/null
+          jq -e '(.scriptId | type == "string") and (.scriptId | length > 10)' \
+            <<<"$CLASP_JSON" >/dev/null
+          umask 077
+          printf '%s' "$CLASPRC_JSON" > "${HOME}/.clasprc.json"
+          mkdir -p "${RUNNER_TEMP}/google-chat-apps-script-remote"
+          jq '.rootDir = "."' <<<"$CLASP_JSON" > \
+            "${RUNNER_TEMP}/google-chat-apps-script-remote/.clasp.json"
+
+      - name: Pull remote project
+        working-directory: ${{ runner.temp }}/google-chat-apps-script-remote
+        run: clasp pull
+
+      - name: Remove credential mapping from artifact
+        shell: bash
+        run: |
+          unlink "${RUNNER_TEMP}/google-chat-apps-script-remote/.clasp.json"
+          unlink "${HOME}/.clasprc.json"
+
+      - name: Upload pulled snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: google-chat-apps-script-remote-${{ github.run_id }}
+          path: ${{ runner.temp }}/google-chat-apps-script-remote
+          if-no-files-found: error
+          retention-days: 7

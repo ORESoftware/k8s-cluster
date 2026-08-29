@@ -68,6 +68,16 @@ spec:
                 - FOWNER
             seccompProfile:
               type: RuntimeDefault
+          # A chown pass over the data dir. Unbounded init containers are the
+          # easy way to starve a node before the workload it gates ever starts,
+          # and this one is scheduled on every pod restart.
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data

@@ -1,0 +1,841 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "public-data-server-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "public_data_server_rs_get_3c755f6bd62d",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "root"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/analysis/correlations": {
+      "post": {
+        "operationId": "public_data_server_rs_post_analysis_correlations_3ec2ae45abf9",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "correlations_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/analysis/correlations",
+        "x-dd-source-paths": [
+          "/analysis/correlations"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/analysis/trends": {
+      "post": {
+        "operationId": "public_data_server_rs_post_analysis_trends_f6e99ef2d7bb",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "trends_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/analysis/trends",
+        "x-dd-source-paths": [
+          "/analysis/trends"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "public_data_server_rs_get_api_docs_f4502d513880",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "public_data_server_rs_get_api_docs_json_4df73fa27f3d",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_json"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/briefs/white-paper": {
+      "post": {
+        "operationId": "public_data_server_rs_post_briefs_white_paper_8076db5c90ae",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "white_paper_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/briefs/white-paper",
+        "x-dd-source-paths": [
+          "/briefs/white-paper"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/datasets": {
+      "get": {
+        "operationId": "public_data_server_rs_get_datasets_07391b490ac3",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "datasets"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/datasets",
+        "x-dd-source-paths": [
+          "/datasets"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/descriptor": {
+      "get": {
+        "operationId": "public_data_server_rs_get_descriptor_0d265d2e510f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "descriptor"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/descriptor",
+        "x-dd-source-paths": [
+          "/descriptor"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "public_data_server_rs_get_docs_api_172b3eecf96f",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/example": {
+      "get": {
+        "operationId": "public_data_server_rs_get_example_8f301dd2a253",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/example",
+        "x-dd-source-paths": [
+          "/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/grants/match": {
+      "post": {
+        "operationId": "public_data_server_rs_post_grants_match_6e99b347122d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "grant_match_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/grants/match",
+        "x-dd-source-paths": [
+          "/grants/match"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "public_data_server_rs_get_healthz_3c6e7e8aa921",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/ingest": {
+      "post": {
+        "operationId": "public_data_server_rs_post_ingest_f976cf68340f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ingest_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/ingest",
+        "x-dd-source-paths": [
+          "/ingest"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/jobs": {
+      "get": {
+        "operationId": "public_data_server_rs_get_jobs_b31673e4dafe",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "jobs"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/jobs",
+        "x-dd-source-paths": [
+          "/jobs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "public_data_server_rs_get_metrics_ffde0a175281",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/pipeline/jobs": {
+      "post": {
+        "operationId": "public_data_server_rs_post_pipeline_jobs_dc00c0c9e1d1",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "pipeline_jobs_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/pipeline/jobs",
+        "x-dd-source-paths": [
+          "/pipeline/jobs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "public_data_server_rs_get_readyz_53a3c34b8115",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "readyz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/schema": {
+      "get": {
+        "operationId": "public_data_server_rs_get_schema_b08de23abdc2",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "schema"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/schema",
+        "x-dd-source-paths": [
+          "/schema"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/scrape": {
+      "post": {
+        "operationId": "public_data_server_rs_post_scrape_ebabb8e95694",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "scrape_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/scrape",
+        "x-dd-source-paths": [
+          "/scrape"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/sources": {
+      "get": {
+        "operationId": "public_data_server_rs_get_sources_650c1d93f8f0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "sources"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/sources",
+        "x-dd-source-paths": [
+          "/sources"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ui": {
+      "get": {
+        "operationId": "public_data_server_rs_get_ui_0819bea9b630",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ui_dashboard"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/ui",
+        "x-dd-source-paths": [
+          "/ui"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ui/actions/scrape": {
+      "post": {
+        "operationId": "public_data_server_rs_post_ui_actions_scrape_d87cffde2cba",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ui_scrape_action"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/ui/actions/scrape",
+        "x-dd-source-paths": [
+          "/ui/actions/scrape"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ui/fragments/recent-records": {
+      "get": {
+        "operationId": "public_data_server_rs_get_ui_fragments_recent_records_e74702cf63ff",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ui_recent_records_fragment"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/ui/fragments/recent-records",
+        "x-dd-source-paths": [
+          "/ui/fragments/recent-records"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ui/fragments/sources": {
+      "get": {
+        "operationId": "public_data_server_rs_get_ui_fragments_sources_71c4b50a64ab",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ui_sources_fragment"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/ui/fragments/sources",
+        "x-dd-source-paths": [
+          "/ui/fragments/sources"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ui/fragments/summary": {
+      "get": {
+        "operationId": "public_data_server_rs_get_ui_fragments_summary_bef44539b863",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ui_summary_fragment"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/ui/fragments/summary",
+        "x-dd-source-paths": [
+          "/ui/fragments/summary"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/webhooks/ingest": {
+      "post": {
+        "operationId": "public_data_server_rs_post_webhooks_ingest_99716175721c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "webhook signature",
+        "x-dd-handlers": [
+          "webhook_ingest_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/public-data-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/webhooks/ingest",
+        "x-dd-source-paths": [
+          "/webhooks/ingest"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "webhookSignature": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 26,
+  "x-dd-route-count": 26,
+  "x-dd-service": "public-data-server-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

@@ -19,7 +19,13 @@ use super::{
 
 const URL: &str = "https://api.voyageai.com/v1/embeddings";
 const DEFAULT_MODEL: &str = "voyage-3";
-const MODELS: &[&str] = &["voyage-3", "voyage-3-lite", "voyage-code-3", "voyage-finance-2", "voyage-law-2"];
+const MODELS: &[&str] = &[
+    "voyage-3",
+    "voyage-3-lite",
+    "voyage-code-3",
+    "voyage-finance-2",
+    "voyage-law-2",
+];
 
 pub struct Voyage {
     api_key: String,
@@ -67,7 +73,10 @@ impl EmbeddingProvider for Voyage {
 
     async fn embed(&self, req: &EmbedRequest) -> Result<EmbedResponse, ProviderError> {
         validate_input(req)?;
-        let model = req.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let model = req
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string());
         let input_type = match req.input_type {
             InputType::Query => "query",
             InputType::Document => "document",
@@ -89,7 +98,10 @@ impl EmbeddingProvider for Voyage {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ProviderError::Transport { provider: "voyage".into(), source: e })?;
+            .map_err(|e| ProviderError::Transport {
+                provider: "voyage".into(),
+                source: e,
+            })?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -109,7 +121,10 @@ impl EmbeddingProvider for Voyage {
         let mut embeddings: Vec<Embedding> = parsed
             .data
             .into_iter()
-            .map(|d| Embedding { index: d.index, vector: d.embedding })
+            .map(|d| Embedding {
+                index: d.index,
+                vector: d.embedding,
+            })
             .collect();
         embeddings.sort_by_key(|e| e.index);
         let dimensions = embeddings.first().map(|e| e.vector.len()).unwrap_or(0);

@@ -17,7 +17,11 @@ pub struct Embedder {
 
 impl Embedder {
     pub fn new(registry: Arc<Registry>, cache: Arc<EmbeddingCache>, metrics: Arc<Metrics>) -> Self {
-        Self { registry, cache, metrics }
+        Self {
+            registry,
+            cache,
+            metrics,
+        }
     }
 
     pub async fn embed(
@@ -26,7 +30,10 @@ impl Embedder {
         req: &EmbedRequest,
     ) -> Result<EmbedResponse, ProviderError> {
         let provider = self.registry.resolve(provider_id)?;
-        let model = req.model.clone().unwrap_or_else(|| provider.default_model().to_string());
+        let model = req
+            .model
+            .clone()
+            .unwrap_or_else(|| provider.default_model().to_string());
 
         // Partition inputs into cache hits and misses, preserving order.
         let mut vectors: Vec<Option<Vec<f32>>> = Vec::with_capacity(req.input.len());
@@ -72,7 +79,8 @@ impl Embedder {
             }
             for (sub_idx, &orig_pos) in miss_positions.iter().enumerate() {
                 let v = std::mem::take(&mut sub_vectors[sub_idx]);
-                self.cache.put(provider.id(), req, &model, &miss_texts[sub_idx], &v);
+                self.cache
+                    .put(provider.id(), req, &model, &miss_texts[sub_idx], &v);
                 vectors[orig_pos] = Some(v);
             }
         }
@@ -80,7 +88,10 @@ impl Embedder {
         let embeddings: Vec<Embedding> = vectors
             .into_iter()
             .enumerate()
-            .map(|(index, v)| Embedding { index, vector: v.unwrap_or_default() })
+            .map(|(index, v)| Embedding {
+                index,
+                vector: v.unwrap_or_default(),
+            })
             .collect();
         let dimensions = embeddings.first().map(|e| e.vector.len()).unwrap_or(0);
 

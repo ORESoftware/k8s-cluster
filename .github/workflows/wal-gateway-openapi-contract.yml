@@ -1,0 +1,244 @@
+# DEN-482: verify wal-gateway routes, native OpenAPI, public projection, and SDKs as one contract.
+name: wal-gateway executable OpenAPI
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/wal-gateway-openapi-contract.yml'
+      - 'docs/http-api-openapi-sdk-contract.md'
+      - 'scripts/api-contract/create-wal-gateway-contract-shims.sh'
+      - 'remote/api-contracts/manifest.json'
+      - 'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json'
+      - 'remote/config/api-contracts.json'
+      - 'remote/deployments/wal-gateway-rs/**'
+      - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-docs-index.html'
+      - 'remote/api-sdks/**'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-api-sdks.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+      - 'remote/tools/validate-api-sdks.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+      - 'remote/libs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/wal-gateway-openapi-contract.yml'
+      - 'docs/http-api-openapi-sdk-contract.md'
+      - 'scripts/api-contract/create-wal-gateway-contract-shims.sh'
+      - 'remote/api-contracts/manifest.json'
+      - 'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json'
+      - 'remote/config/api-contracts.json'
+      - 'remote/deployments/wal-gateway-rs/**'
+      - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-docs-index.html'
+      - 'remote/api-sdks/**'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-api-sdks.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+      - 'remote/tools/validate-api-sdks.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+      - 'remote/libs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wal-gateway-openapi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Reject mutable workflow dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/wal-gateway-openapi-contract.yml')
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Verify pinned shared-contract provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='06b3a4ff87bb6e579686e5ced72b6772c4f742ac'
+          actual="$(git ls-files --stage remote/libs | awk '{print $2}')"
+          mode="$(git ls-files --stage remote/libs | awk '{print $1}')"
+          test "$mode" = '160000'
+          test "$actual" = "$expected"
+          printf '%s  %s\n' \
+            '5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46' \
+            'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json' \
+            | sha256sum --check -
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path('remote/api-contracts/manifest.json').read_text())
+          shared = manifest['services']['wal-gateway-rs']['sharedContracts'][0]
+          assert shared['commit'] == '06b3a4ff87bb6e579686e5ced72b6772c4f742ac'
+          assert shared['sha256'] == '5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46'
+          assert shared['vendored'] == 'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json'
+          PY
+
+      - name: Setup Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Setup Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Setup Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Create contract-only private gitlink shims
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/api-contract/create-wal-gateway-contract-shims.sh
+
+      - name: Verify service formatting
+        working-directory: remote/deployments/wal-gateway-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --package dd-wal-gateway -- --check
+
+      - name: Verify service compilation
+        working-directory: remote/deployments/wal-gateway-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked
+
+      - name: Verify service tests
+        working-directory: remote/deployments/wal-gateway-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked
+
+      - name: Prove deterministic native contract
+        working-directory: remote/deployments/wal-gateway-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi > "${{ runner.temp }}/openapi.1.json"
+          cargo run --locked --quiet -- --export-openapi > "${{ runner.temp }}/openapi.2.json"
+          cmp "${{ runner.temp }}/openapi.1.json" "${{ runner.temp }}/openapi.2.json"
+          cmp "${{ runner.temp }}/openapi.1.json" generated/openapi.json
+          python3 -m json.tool generated/openapi.json >/dev/null
+
+      - name: Verify native, fleet, and SDK contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/check-openapi-contracts.mjs
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/generate-api-sdks.mjs
+          node --check remote/tools/generate-openapi-sdks.mjs
+          node --check remote/tools/validate-api-sdks.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/check-openapi-contracts.mjs --service wal-gateway-rs
+          node remote/tools/generate-api-docs.mjs --check --service wal-gateway-rs
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+      - name: Assert fail-closed public contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          public = json.loads(
+              Path('remote/deployments/wal-gateway-rs/generated/api-docs.json').read_text()
+          )
+          expected = {'/', '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api'}
+          actual = set(public.get('paths', {}))
+          if actual != expected:
+              raise SystemExit(f'unexpected public paths: {sorted(actual)}')
+          if public.get('x-dd-contract-scope') != 'public':
+              raise SystemExit('public contract scope marker is missing')
+          encoded = json.dumps(public).lower()
+          forbidden = [
+              '"pod"', '"slot"', '"stream"', '"subjectprefix"',
+              '"leader"', '"lastlsn"', '"database_url"', '"nats_url"',
+          ]
+          leaked = [term for term in forbidden if term in encoded]
+          if leaked:
+              raise SystemExit(f'public contract leaked operational details: {leaked}')
+          PY
+
+      - name: Generate service SDK smoke clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/wal-gateway-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service wal-gateway-rs \
+            --output .tmp/wal-gateway-sdk
+          cargo check --manifest-path .tmp/wal-gateway-sdk/rust/Cargo.toml
+
+      - name: Type-check generated TypeScript service SDK
+        working-directory: .tmp/wal-gateway-sdk/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - name: Analyze generated Dart service SDK
+        working-directory: .tmp/wal-gateway-sdk/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze
+
+      - name: Verify tracked repository cleanliness
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp remote/libs
+          git diff --check
+          git diff --cached --quiet
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          test "$(git ls-files --stage remote/libs | awk '{print $2}')" = '06b3a4ff87bb6e579686e5ced72b6772c4f742ac'
+          git diff --quiet -- . ':(exclude)remote/libs'
+          test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"

@@ -1,0 +1,104 @@
+# Patch 4 — rootless BuildKit; drop the node-root host sockets (audit F1, F4)
+#
+# Finding (CRITICAL): the pod hostPath-mounts /run/containerd/containerd.sock and
+# /run/buildkit/buildkitd.sock. Either socket is full node root (the cap-drop
+# securityContext is cosmetic against it), and on a single-node cluster node-root
+# = cluster-root. It also builds into the `k8s.io` containerd namespace, so a
+# build that tags an existing node image silently replaces what other pods run.
+#
+# Fix: run a rootless `buildkitd` in its own pod exposing a TCP endpoint (mTLS),
+# and point build-server at it via `BUILDKIT_HOST` — no host sockets, no shared
+# containerd namespace. build-server then `buildctl build … | ` pushes straight
+# to ECR; the kubelet pulls the image back down normally. This is a SKETCH:
+# validate resource sizing, the mTLS cert issuance (cert-manager), and the
+# build-server invocation change (`nerdctl` → `buildctl --addr tcp://…`).
+#
+# NOT auto-applied. Adopt after patches 1–3. Rollback: delete this Deployment/
+# Service and restore the socket mounts.
+#
+# ── build-server wiring change (paired code/deploy edit, not shown as YAML) ──
+#   env:
+#     - name: BUILDKIT_HOST
+#       value: tcp://dd-buildkitd.dd-builds.svc.cluster.local:1234
+#   # remove: containerd-sock, buildkit-sock hostPath volumes + mounts
+#   # remove: BUILD_SERVER_CONTAINERD_NAMESPACE=k8s.io (no longer relevant)
+#   # build-server should invoke `buildctl --addr $BUILDKIT_HOST build …`
+#   # (rootless daemon) instead of `nerdctl -n k8s.io build …`.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-buildkitd
+  namespace: dd-builds
+  labels: { app: dd-buildkitd }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector: { matchLabels: { app: dd-buildkitd } }
+  template:
+    metadata:
+      labels: { app: dd-buildkitd }
+      annotations:
+        # Rootless buildkit needs these unless the node default already allows
+        # them; they are namespaced to THIS pod, not the host.
+        container.apparmor.security.beta.kubernetes.io/buildkitd: unconfined
+    spec:
+      containers:
+        - name: buildkitd
+          image: moby/buildkit:v0.16.0-rootless  # pin by digest in CI
+          args:
+            - --addr
+            - tcp://0.0.0.0:1234
+            - --tlscacert=/certs/ca.crt
+            - --tlscert=/certs/tls.crt
+            - --tlskey=/certs/tls.key
+            - --oci-worker-no-process-sandbox
+          readinessProbe:
+            exec: { command: [buildctl, debug, workers] }
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          securityContext:
+            # The whole point: NOT privileged, NOT node-root. Rootless buildkit
+            # runs unprivileged with user-namespaces.
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile: { type: Unconfined }  # required by rootless buildkit
+            allowPrivilegeEscalation: true         # for newuidmap/newgidmap only
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: '1', memory: 2Gi, ephemeral-storage: 8Gi }
+            limits: { cpu: '4', memory: 8Gi, ephemeral-storage: 32Gi }
+          volumeMounts:
+            - { name: buildkitd, mountPath: /home/user/.local/share/buildkit }
+            - { name: certs, mountPath: /certs, readOnly: true }
+      volumes:
+        - name: buildkitd
+          emptyDir: { sizeLimit: 32Gi }
+        - name: certs
+          secret:
+            secretName: dd-buildkitd-tls   # issue via cert-manager (Issuer below)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-buildkitd
+  namespace: dd-builds
+spec:
+  selector: { app: dd-buildkitd }
+  ports:
+    - { name: buildkit, port: 1234, targetPort: 1234 }
+---
+# mTLS material — cert-manager. Client (build-server) presents dd-buildkitd-client.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dd-buildkitd-server
+  namespace: dd-builds
+spec:
+  secretName: dd-buildkitd-tls
+  duration: 2160h
+  dnsNames:
+    - dd-buildkitd.dd-builds.svc.cluster.local
+  issuerRef:
+    name: dd-internal-ca      # existing cluster CA issuer; adjust to your setup
+    kind: ClusterIssuer

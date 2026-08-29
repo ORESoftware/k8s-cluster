@@ -1,0 +1,67 @@
+name: MCP Rust libraries publisher contracts
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mcp-rust-libs-publisher-contracts.yml
+      - .github/workflows/ops-publish-mcp-rust-libs.yml
+      - scripts/ops/publish_mcp_rust_libs.sh
+      - scripts/ops/run_protected_mcp_rust_libs_publisher.sh
+      - scripts/ops/test_publish_mcp_rust_libs_contract.py
+      - docs/operations/mcp-rust-libs-publication.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/mcp-rust-libs-publisher-contracts.yml
+      - .github/workflows/ops-publish-mcp-rust-libs.yml
+      - scripts/ops/publish_mcp_rust_libs.sh
+      - scripts/ops/run_protected_mcp_rust_libs_publisher.sh
+      - scripts/ops/test_publish_mcp_rust_libs_contract.py
+      - docs/operations/mcp-rust-libs-publication.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-rust-libs-publisher-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out exact event commit without credentials
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/publish_mcp_rust_libs.sh
+          bash -n scripts/ops/run_protected_mcp_rust_libs_publisher.sh
+
+      - name: Compile and run focused contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/test_publish_mcp_rust_libs_contract.py
+          python3 scripts/ops/test_publish_mcp_rust_libs_contract.py
+
+      - name: Reject embedded GitHub token material
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -REn '(ghp|github_pat)_[A-Za-z0-9_]+' \
+            .github/workflows/mcp-rust-libs-publisher-contracts.yml \
+            .github/workflows/ops-publish-mcp-rust-libs.yml \
+            scripts/ops/publish_mcp_rust_libs.sh \
+            scripts/ops/run_protected_mcp_rust_libs_publisher.sh \
+            scripts/ops/test_publish_mcp_rust_libs_contract.py; then
+            echo 'PAT-shaped literal detected in publisher contract surface' >&2
+            exit 1
+          fi

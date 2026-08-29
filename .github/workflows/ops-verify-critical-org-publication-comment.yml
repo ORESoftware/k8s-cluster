@@ -1,0 +1,185 @@
+name: Verify critical organization publication from trusted comment
+run-name: Verify critical organization publication for PR #${{ github.event.issue.number }}
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+  statuses: write
+
+concurrency:
+  group: ops-publish-missing-organization-repositories
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: >-
+      github.event.issue.pull_request &&
+      github.actor == 'chatgpt' &&
+      github.event.comment.body == 'ops-verify-critical-org-publication:231:e481ff951e3713913813bc25966745757186bb57'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      TARGET_SHA: e481ff951e3713913813bc25966745757186bb57
+      TARGET_BRANCH: agent/critical-org-publish-trigger-main-20260731-v4
+      PR_NUMBER: '231'
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate the immutable same-repository trigger identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.head.ref' <<<"$pr")" = "$TARGET_BRANCH"
+          test "$(jq -r '.head.sha' <<<"$pr")" = "$TARGET_SHA"
+          test "$(jq -r '.base.ref' <<<"$pr")" = main
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Load, mask, and verify the protected owner publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          printf '::add-mask::%s\n' "$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify exact identity and organization ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = ORESoftware
+          for org in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
+            test "$(gh api "/user/memberships/orgs/$org" --jq '.role + ":" + .state')" = admin:active
+          done
+
+      - name: Idempotently publish, finalize, and persist proof
+        id: verify
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/finalize_missing_org_repositories.py
+
+          log="$RUNNER_TEMP/critical-org-verification.log"
+          success=false
+          for attempt in 1 2 3 4; do
+            echo "=== bounded verification attempt ${attempt} ===" | tee -a "$log"
+            if python3 scripts/ops/publish_missing_org_repositories_current.py \
+              2>&1 | tee -a "$log"; then
+              success=true
+              break
+            fi
+            sleep $((attempt * 8))
+          done
+          test "$success" = true
+
+          python3 scripts/ops/finalize_missing_org_repositories.py \
+            --json-report "$RUNNER_TEMP/critical-org-publication.json" \
+            --markdown-report "$RUNNER_TEMP/critical-org-publication.md" \
+            --close-carriers \
+            2>&1 | tee -a "$log"
+
+          publish_report() {
+            source_path="$1" target_path="$2" message="$3"
+            encoded="$(base64 -w0 "$source_path")"
+            existing_sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${target_path}?ref=main" --jq .sha 2>/dev/null || true)"
+            payload="$RUNNER_TEMP/report-payload.json"
+            if [[ -n "$existing_sha" ]]; then
+              jq -nc --arg message "$message" --arg content "$encoded" --arg branch main --arg sha "$existing_sha" \
+                '{message:$message,content:$content,branch:$branch,sha:$sha}' > "$payload"
+            else
+              jq -nc --arg message "$message" --arg content "$encoded" --arg branch main \
+                '{message:$message,content:$content,branch:$branch}' > "$payload"
+            fi
+            gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/${target_path}" --input "$payload" >/dev/null
+          }
+          publish_report "$RUNNER_TEMP/critical-org-publication.md" \
+            'docs/ops/critical-org-publication-2026-07-31.md' \
+            'docs: record verified critical organization publication'
+          publish_report "$RUNNER_TEMP/critical-org-publication.json" \
+            'docs/ops/critical-org-publication-2026-07-31.json' \
+            'docs: record machine-readable critical organization inventory'
+
+      - name: Report verification result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$RUNNER_TEMP/critical-org-result.md"
+          if [[ "${{ steps.verify.outcome }}" == success ]]; then
+            state=success
+            conclusion=success
+            cp "$RUNNER_TEMP/critical-org-publication.md" "$body"
+            {
+              echo
+              echo 'Durable evidence: `docs/ops/critical-org-publication-2026-07-31.md` on `main`.'
+              echo "Trusted-main run: ${run_url}"
+            } >> "$body"
+            description='critical organization publication verified'
+          else
+            state=failure
+            conclusion=failure
+            description='critical organization verification failed'
+            LOG="$RUNNER_TEMP/critical-org-verification.log" python3 - <<'PY' > "$RUNNER_TEMP/critical-org-redacted.log"
+          import os, re
+          from pathlib import Path
+          path=Path(os.environ['LOG'])
+          text=path.read_text(errors='replace') if path.exists() else 'verification log was not created'
+          for pattern,replacement in [
+            (r'https://x-access-token:[^@\s]+@github\.com/','https://x-access-token:***@github.com/'),
+            (r'github_pat_[A-Za-z0-9_]{20,}','github_pat_***'),
+            (r'gh[pousr]_[A-Za-z0-9_]{20,}','gh*_***'),
+            (r'(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}',r'\1***'),
+          ]:
+            text=re.sub(pattern,replacement,text,flags=re.I)
+          print('\n'.join(text.splitlines()[-200:])[-20000:])
+          PY
+            {
+              echo '### Critical organization publication diagnostic'
+              echo
+              echo "Trusted-main run failed: ${run_url}"
+              echo
+              echo '```text'
+              cat "$RUNNER_TEMP/critical-org-redacted.log"
+              echo '```'
+            } > "$body"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='ops/critical-org-publication' \
+            -f description="$description" \
+            -f target_url="$run_url" >/dev/null
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$body" >/dev/null || true
+          test "$conclusion" = success

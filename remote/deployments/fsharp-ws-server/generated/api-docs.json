@@ -1,409 +1,180 @@
 {
-  "ok": true,
-  "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "fsharp-ws-server",
-  "language": "fsharp",
-  "routeCount": 23,
-  "routeTypeCounts": {
-    "service": 8,
-    "user-generated": 15
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "fsharp-ws-server API (public)",
+    "version": "0.1.0",
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
-  "standardDocsRoutes": [
+  "tags": [
+    {
+      "name": "service"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_1c90f41d31fe",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_api_docs_c918b858495c",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_api_docs_json_877d51a9f4d2",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_docs_api_d4467a9b1dbd",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_healthz_91d6af81f7d0",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/livez": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_livez_235170fa9eff",
+        "summary": "Liveness check.",
+        "description": "Liveness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_metrics_f49aeef914d4",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "fsharp_ws_server_get_readyz_a77660ce2098",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {},
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "fsharp",
+  "x-dd-operation-count": 8,
+  "x-dd-route-count": 8,
+  "x-dd-service": "fsharp-ws-server",
+  "x-dd-standard-docs-routes": [
     "/docs/api",
     "/api/docs",
     "/api/docs.json"
-  ],
-  "routes": [
-    {
-      "path": "/",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
-      "handlers": [
-        "handleIndex"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [
-        "handleApiDocsHtml"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs.json",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
-      "handlers": [
-        "handleApiDocsJson"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/docs/api",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [
-        "handleApiDocsHtml"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [
-        "handleHealth"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/livez",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Liveness check.",
-      "handlers": [
-        "handleLive"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Prometheus metrics.",
-      "handlers": [
-        "handleMetrics"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/readyz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Readiness check.",
-      "handlers": [
-        "handleReady"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/sse/rx-stats",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxStatsSse"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/v1/benchmark",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleBenchmark"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/v1/rx-stats",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxStats"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/v1/rx-stats/history",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxStatsHistory"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/v1/rx-stats/sources",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxStatsSources"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/async",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleAsync"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRx"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-burst",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxBurst"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-nats-echo",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxNatsEcho"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-presence",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxPresence"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-publish",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxPublish"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-sample",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxSample"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-stream",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxStream"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-throttle",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxThrottle"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws/rx-window",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "handleRxWindow"
-      ],
-      "sourceFiles": [
-        "remote/deployments/fsharp-ws-server/Program.fs"
-      ],
-      "notes": ""
-    }
   ]
 }

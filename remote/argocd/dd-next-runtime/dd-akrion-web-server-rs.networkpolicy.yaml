@@ -40,6 +40,18 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # Explicit OTLP/HTTP export to the in-cluster collector. Prometheus reads
+    # application metrics from the collector's prometheus exporter.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 4318
     - to:
         - podSelector:
             matchLabels:

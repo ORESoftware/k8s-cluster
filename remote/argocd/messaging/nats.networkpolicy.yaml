@@ -1,0 +1,101 @@
+# First half of the hardening plan in this directory's readme: scope who can
+# reach the (still unauthenticated) NATS ports at the network layer. Full
+# account/nkey auth remains a deliberate cluster-wide rollout.
+#
+# Client inventory for :4222 — the dd fleet in `default`, the shared-auth
+# tenant, the voxletra tenant, the bridge in this namespace, the ai-ml pipeline
+# (dd-ai-ml-pipeline consumes dd-nats.messaging today), and the daedalus tenant
+# (dd-fabrication-server ships NATS_URL to this broker; its Applications are
+# inert but must not be pre-broken). KEDA reads the :8222 monitoring endpoint
+# for nats-jetstream scalers; observability scrapes :7777 (exporter) and :8222.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-nats
+  namespace: messaging
+  labels:
+    app: dd-nats
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-nats
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # NATS clients currently run only in these GitOps-managed namespaces.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shared-auth
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: voxletra
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-ml
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: daedalus
+      ports:
+        - protocol: TCP
+          port: 4222
+    # Host-network pool workers originate from the EC2 VPC rather than a pod
+    # identity. Keep their exception on the client port only.
+    - from:
+        - ipBlock:
+            cidr: 172.31.0.0/16
+      ports:
+        - protocol: TCP
+          port: 4222
+    # KEDA reads only the :8222 monitoring endpoint for nats-jetstream scalers.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keda
+      ports:
+        - protocol: TCP
+          port: 8222
+    # The monitoring endpoint has no NATS-native authentication. Only the
+    # observability namespace and the three read-only proxy/tooling pods need it.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 7777
+        - protocol: TCP
+          port: 8222
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-cluster-mcp-rs
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-gleam-mcp-server
+      ports:
+        - protocol: TCP
+          port: 7777
+        - protocol: TCP
+          port: 8222
+  # The server and its exporter sidecar make no off-pod connections.
+  egress: []

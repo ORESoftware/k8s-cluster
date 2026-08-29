@@ -1,0 +1,56 @@
+name: nix fleet audit
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/nix-fleet-audit.sh
+      - scripts/tests/nix-fleet-audit-test.sh
+      - .github/workflows/nix-fleet-audit.yml
+      - flake.nix
+      - flake.lock
+      - .nix/**
+  pull_request:
+    paths:
+      - scripts/nix-fleet-audit.sh
+      - scripts/tests/nix-fleet-audit-test.sh
+      - .github/workflows/nix-fleet-audit.yml
+      - flake.nix
+      - flake.lock
+      - .nix/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-fleet-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Lint shell scripts
+        run: |
+          # SC2016 is intentionally excluded: jq programs and jq assertions are
+          # single-quoted so Bash cannot expand jq variables.
+          nix develop -c shellcheck -e SC2016 scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh
+
+      - name: Check shell formatting
+        run: nix develop -c shfmt -d scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh
+
+      - name: Run fixture test
+        run: nix develop -c bash scripts/tests/nix-fleet-audit-test.sh

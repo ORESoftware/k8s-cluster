@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "language": "rust",
+  "scope": "internal",
+  "packageName": "oresoftware-k8s-api-sdk-internal",
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogPath": "remote/api-sdks/contracts/internal.json",
+  "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+  "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
+  "serviceCount": 44,
+  "operationCount": 943,
+  "skippedServices": [
+    {
+      "service": "billing-server-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/billing-server-rs",
+      "sourceRepository": "git@github.com:quaestor-ledger/billing-server.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "dart-server",
+      "language": "dart",
+      "deploymentPath": "remote/deployments/dart-server",
+      "sourceRepository": "git@github.com:sagitta-stack/dart-server.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "fiducia-customer.rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/fiducia-customer.rs",
+      "sourceRepository": "https://github.com/fiducia-cloud/fiducia-customer.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "gleam-lambda-runner",
+      "language": "gleam",
+      "deploymentPath": "remote/deployments/gleam-lambda-runner",
+      "sourceRepository": "git@github.com:scintilla-run/gleam-lambda-runner.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "usacc-rest-api-backend-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
+      "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    }
+  ],
+  "generatedFiles": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "9b6bc555044c0baf54d77c62444e0de3ae60b89501a0234973fb236b540289a8"
+    },
+    {
+      "path": "src/lib.rs",
+      "sha256": "18b4b5e002513a0729b01cdb5a7fcdf8379045d1699cbda2d044eb8566310583"
+    }
+  ]
+}

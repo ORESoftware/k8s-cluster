@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-browser-mcp-rs
+  namespace: default
+  labels:
+    app: dd-browser-mcp-rs
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-browser-mcp-rs

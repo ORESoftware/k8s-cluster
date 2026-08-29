@@ -64,7 +64,10 @@ impl Config {
         Ok(Self {
             addr,
             api_auth_bearer: non_empty(std::env::var("EMBEDDINGS_API_AUTH_BEARER").ok()),
-            qdrant_url: env_or("QDRANT_URL", "http://dd-qdrant.ai-ml.svc.cluster.local:6333"),
+            qdrant_url: env_or(
+                "QDRANT_URL",
+                "http://dd-qdrant.ai-ml.svc.cluster.local:6333",
+            ),
             qdrant_api_key: non_empty(std::env::var("QDRANT_API_KEY").ok()),
             request_timeout_secs: env_or("EMBEDDINGS_REQUEST_TIMEOUT_SECS", "30").parse()?,
             max_concurrency: env_or("EMBEDDINGS_MAX_CONCURRENCY", "32").parse()?,

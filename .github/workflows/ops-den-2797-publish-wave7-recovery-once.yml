@@ -1,0 +1,149 @@
+name: Publish Wave 7 recovery repositories once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2797-publish-wave7-recovery-once.yml
+      - scripts/den-2797-wave7-*.sh
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: den-2797-wave7-recovery-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      CONTROL_REPOSITORY: ${{ github.repository }}
+      CONTROL_BRANCH: main
+      CONTROL_TOKEN: ${{ github.token }}
+      HANDSHAKE_NONCE: 70e9d451f81c1605f9afc4eac486df98
+      PUBLIC_KEY_PATH: .github/tmp/den-2797-wave7-70e9d451f81c1605f9afc4eac486df98.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/den-2797-wave7-70e9d451f81c1605f9afc4eac486df98.enc.b64
+      WORKFLOW_PATH: .github/workflows/ops-den-2797-publish-wave7-recovery-once.yml
+      EVIDENCE_PATH: docs/evidence/den-2797-wave7-publication-2026-08-09.json
+      LED_SOURCE_SHA: 363e628eee12d0060e57301ff3d93be04b4d650a
+      CANONICAL_SOURCE_SHA: 5c9c83e9f453ed7147476f17dae747e887f9c13c
+      EVENTO_SOURCE_SHA: e032dcfcfb70f5798312d2d9eb5f1e570232d543
+      HHM_SOURCE_SHA: 31f4cac1bbcf89b07ced6a76edcb70d9fd7e02fb
+      LEDDY_SYNC_HEAD: eae9e063c693d2f5e89844acf15c4e014100d976
+      LEDDY_SYNC_BUNDLE_SHA256: e793e52dbdf50bdbe137016ace133cdffb1239fc150b9af612c70a287a150478
+      LEDDY_MCP_HEAD: 6b8df986bcdd37a3aafdd1a97e1703c8db0379f6
+      LEDDY_MCP_BUNDLE_SHA256: a95d5338f2bd4b83b474ca8e870ca095e8e3866b357696b6b26e8520b03033d1
+      HHM_RECOVERED_HEAD: 8f3528add2a3c4f29d50de1a49a4cbddc24e64c9
+      HHM_BUNDLE_SHA256: 3920253ae04a1bdadf2b533c1a8288857c180f8008149e07f04d8764f313bc50
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate exact publication scope
+        run: bash scripts/den-2797-wave7-validate.sh
+
+      - name: Prepare and validate exact recovery sources
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          real_npm="$(command -v npm)"
+          test -x "$real_npm"
+          npm_wrapper_dir=/tmp/den-2797-wave7-npm-wrapper
+          rm -rf "$npm_wrapper_dir"
+          mkdir -p "$npm_wrapper_dir"
+          cat > "$npm_wrapper_dir/npm" <<'EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          real_npm="${DEN_2797_REAL_NPM:?DEN_2797_REAL_NPM is required}"
+          test -x "$real_npm"
+          if [[ "${1:-}" == --prefix && -n "${2:-}" ]]; then
+            prefix="$2"
+            shift 2
+            case "${1:-}" in
+              install|ci)
+                test -d "$prefix"
+                test -f "$prefix/package.json"
+                cd "$prefix"
+                "$real_npm" "$@" --package-lock=true
+                if [[ "${1:-}" == install && " $* " == *" --package-lock-only "* ]]; then
+                  test -s package-lock.json
+                fi
+                exit 0
+                ;;
+            esac
+          fi
+          exec "$real_npm" "$@"
+          EOF
+          sed -i 's/^          //' "$npm_wrapper_dir/npm"
+          chmod 700 "$npm_wrapper_dir/npm"
+          export DEN_2797_REAL_NPM="$real_npm"
+          export PATH="$npm_wrapper_dir:$PATH"
+          export NPM_CONFIG_PACKAGE_LOCK=true
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("scripts/den-2797-wave7-prepare.sh")
+          runtime = Path("/tmp/den-2797-wave7-prepare-runtime.sh")
+          text = source.read_text()
+          replacements = (
+              (
+                  'node "$work/evgl-e2e/scripts/validate-structure.mjs"',
+                  '( cd "$work/evgl-e2e" && node scripts/validate-structure.mjs )',
+              ),
+              (
+                  'node --test "$work/evgl-e2e"/tests/contracts/*.test.mjs',
+                  '( cd "$work/evgl-e2e" && node --test tests/contracts/*.test.mjs )',
+              ),
+              (
+                  'node "$work/hhm-e2e/scripts/validate-structure.mjs"',
+                  '( cd "$work/hhm-e2e" && node scripts/validate-structure.mjs )',
+              ),
+              (
+                  'node --test "$work/hhm-e2e"/tests/contracts/*.test.mjs',
+                  '( cd "$work/hhm-e2e" && node --test tests/contracts/*.test.mjs )',
+              ),
+              (
+                  'git -C "$work/hhm-e2e" add --all',
+                  'git -C "$work/hhm-e2e" config user.name "ORESoftware automation"\n'
+                  'git -C "$work/hhm-e2e" config user.email "11139560+ORESoftware@users.noreply.github.com"\n'
+                  'git -C "$work/hhm-e2e" add --all',
+              ),
+          )
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one source-preflight command, found {count}: {old}")
+              text = text.replace(old, new)
+          runtime.write_text(text)
+          runtime.chmod(0o700)
+          PY
+          bash /tmp/den-2797-wave7-prepare-runtime.sh
+
+      - name: Receive one-time encrypted owner credential
+        run: bash scripts/den-2797-wave7-receive.sh
+
+      - name: Create and publish exact repositories without force
+        run: bash scripts/den-2797-wave7-publish.sh
+
+      - name: Persist non-secret evidence and remove one-shot workflow
+        if: success()
+        run: bash scripts/den-2797-wave7-finalize.sh
+
+      - name: Scrub local credential material
+        if: always()
+        run: bash scripts/den-2797-wave7-scrub.sh

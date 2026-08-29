@@ -1,0 +1,34 @@
+# Praxonne repository publication
+
+- Bootstrap: `praxonne-fleet-2026-08-19-v1`
+- Mode: `publish`
+- Repositories: `28`
+
+- `praxonne/praxonne-sync` — `created-and-pushed` — `a7985dffe447e9143348fa79a70d0ab17b400bf6`
+- `praxonne/praxonne-lib-core` — `created-and-pushed` — `0cb89c7697a34db4082b07ae768ef4ddb2cc666f`
+- `praxonne/praxonne-monorepo` — `created-and-pushed` — `47f3f1fb8bf24931749d601c369e7e0163a022f6`
+- `praxonne/praxonne-web-server.rs` — `created-and-pushed` — `a118267cc5e6feadb8e8adaf4a2ce1ab53d98bbd`
+- `praxonne/praxonne-api-server.rs` — `created-and-pushed` — `ba56cf291af8203c2545bf0578aff34cf6c82033`
+- `praxonne/praxonne-flutter` — `created-and-pushed` — `eec11d3c91987f62995c76678ed3bc44b261727c`
+- `praxonne/praxonne-desktop-app.rs` — `created-and-pushed` — `c473576b36f9c221c4e7bfd36ad129e469e3c324`
+- `praxonne/praxonne-infra` — `created-and-pushed` — `588d5e4a7bf486e433f62db1c0b03118ee76b7fd`
+- `praxonne/praxonne-clients` — `created-and-pushed` — `bc306cebbd364be4f9c7aa9ab5b4840fcc638ed9`
+- `praxonne/praxonne-interfaces` — `created-and-pushed` — `7a2916ea8c2011deb04bb3e6e9dab2b7feb4a9f6`
+- `praxonne/praxonne-cli` — `created-and-pushed` — `f29cc61cdde0ff893f692873e75d3c9e05c83f06`
+- `praxonne/prax-bi-proxy-server.rs` — `created-and-pushed` — `5498814859524b854a28853c9ee2955f9aa37bde`
+- `praxonne/prax-forward-proxy-server.rs` — `created-and-pushed` — `0ca9cd8fb26b7b4b238dbdf5099c387188af926c`
+- `praxonne/prax-reverse-proxy-server.rs` — `created-and-pushed` — `066dd984ef897d434d509d1ee196e96d92ef0961`
+- `praxonne-test/praxonne-sync` — `created-and-pushed` — `6539f872328bb55dca6102a4772a03348e14b87a`
+- `praxonne-test/praxonne-lib-core` — `created-and-pushed` — `4366d9b62599368d77f3112498006f0db9f17d3b`
+- `praxonne-test/praxonne-monorepo` — `created-and-pushed` — `209496a7c76cdbb90c868bcf2c4e09cf5be951e3`
+- `praxonne-test/praxonne-web-server.rs` — `created-and-pushed` — `a24a886708c023bc7d5f6ab4614a0bea072d400f`
+- `praxonne-test/praxonne-api-server.rs` — `created-and-pushed` — `04e036f3441882f4393ded08b52d34f6e829f735`
+- `praxonne-test/praxonne-flutter` — `created-and-pushed` — `585b81ac727feadab64063bbed455dafcc89f31d`
+- `praxonne-test/praxonne-desktop-app.rs` — `created-and-pushed` — `ca05c87136d5c51136620f0be0102c4b7ed4266d`
+- `praxonne-test/praxonne-infra` — `created-and-pushed` — `e9d07f12c76ed5421f93ca2c367844b396665134`
+- `praxonne-test/praxonne-clients` — `created-and-pushed` — `60afded812b1b3a88d2676a2ecc0e43e64caa18c`
+- `praxonne-test/praxonne-interfaces` — `created-and-pushed` — `31d12e2bfd02132658c96a7e40e130901d884422`
+- `praxonne-test/praxonne-cli` — `created-and-pushed` — `6a3277ad874f476a0672c366b19628ce837b1716`
+- `praxonne-test/prax-bi-proxy-server.rs` — `created-and-pushed` — `379b29ba10a8be36784ea5beeacdc5db9a194733`
+- `praxonne-test/prax-forward-proxy-server.rs` — `created-and-pushed` — `6d6eec7a609c44f6e9fb8bb5cf7821c3f51d6769`
+- `praxonne-test/prax-reverse-proxy-server.rs` — `created-and-pushed` — `2cb33b32b003b34a20f9f26d9aaf1516c2acc4d3`

@@ -48,6 +48,8 @@ use redis::AsyncCommands;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+mod nats_worker;
+
 const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
 const SERVER_AUTH_HEADER: &str = "x-server-auth";
 const VAPI_SECRET_HEADER: &str = "x-vapi-secret";
@@ -2306,6 +2308,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         redis,
         metrics: Arc::new(Metrics::default()),
     };
+
+    // JetStream work-queue worker (dd.vapi.tasks.>) — enabled by VAPI_NATS_URL.
+    // KEDA scales this deployment off the worker consumer's lag.
+    if let Some(nats_cfg) = nats_worker::NatsWorkerConfig::from_env() {
+        tokio::spawn(nats_worker::run(state.clone(), nats_cfg));
+    }
 
     let app = Router::new()
         .route("/", get(home))

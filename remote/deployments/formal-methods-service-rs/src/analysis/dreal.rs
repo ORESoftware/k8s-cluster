@@ -16,6 +16,8 @@ use crate::analysis::tools::check_tool_present;
 use crate::analysis::workspace::Workspace;
 use crate::analysis::{Analyzer, StepReport, StepStatus};
 
+const MAX_QUERY_FILES: usize = 128;
+
 #[derive(Debug, Clone)]
 pub struct DRealAnalyzer {
     pub queries_dir: PathBuf,
@@ -62,6 +64,7 @@ impl Analyzer for DRealAnalyzer {
         let mut combined_stderr = String::new();
         let mut total_passed = 0usize;
         let mut total_failed = 0usize;
+        let mut files_seen = 0usize;
 
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
@@ -72,19 +75,48 @@ impl Analyzer for DRealAnalyzer {
             if path.file_name().and_then(|n| n.to_str()) == Some("axioms_exp_log.smt2") {
                 continue;
             }
+            files_seen += 1;
+            if files_seen > MAX_QUERY_FILES {
+                total_failed += 1;
+                runner::append_aggregated_tail(
+                    &mut combined_stderr,
+                    &format!("dreal query limit exceeded (max {MAX_QUERY_FILES})\n"),
+                );
+                break;
+            }
+            if !matches!(entry.file_type().await, Ok(file_type) if file_type.is_file() && !file_type.is_symlink())
+            {
+                total_failed += 1;
+                runner::append_aggregated_tail(
+                    &mut combined_stderr,
+                    &format!("refusing non-regular dreal query: {}\n", path.display()),
+                );
+                continue;
+            }
             let path_str = path.display().to_string();
             let args: Vec<&str> = vec!["--precision", precision.as_str(), path_str.as_str()];
+            let remaining = self.timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                total_failed += 1;
+                runner::append_aggregated_tail(
+                    &mut combined_stderr,
+                    "dreal analyzer exhausted its total time budget\n",
+                );
+                break;
+            }
 
-            let outcome = runner::run("dreal", &args, ws.root(), &[], self.timeout).await;
+            let outcome = runner::run("dreal", &args, ws.root(), &[], remaining).await;
 
-            combined_stdout.push_str(&format!("== {path_str}\n"));
-            combined_stdout.push_str(&outcome.stdout_tail);
-            combined_stdout.push('\n');
+            runner::append_aggregated_tail(
+                &mut combined_stdout,
+                &format!("== {path_str}\n{}\n", outcome.stdout_tail),
+            );
 
             if !outcome.stderr_tail.is_empty() {
-                combined_stderr.push_str(&format!("== {path_str}\n"));
-                combined_stderr.push_str(&outcome.stderr_tail);
-                combined_stderr.push('\n');
+                runner::append_aggregated_tail(
+                    &mut combined_stderr,
+                    &format!("== {path_str}\n{}\n", outcome.stderr_tail),
+                );
             }
 
             // dReal returns 0 on `unsat`/`sat` answers; the "result" is in

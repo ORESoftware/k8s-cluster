@@ -69,8 +69,11 @@ async fn validate_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().staking_enabled, "BLOCKCHAIN_STAKING_ENABLED")
-    {
+    if let Err(resp) = require_enabled(
+        bc,
+        bc.config().staking_enabled,
+        "BLOCKCHAIN_STAKING_ENABLED",
+    ) {
         return resp;
     }
     let chain = match parse_chain(&body.chain) {
@@ -118,8 +121,11 @@ async fn positions_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(bc, bc.config().staking_enabled, "BLOCKCHAIN_STAKING_ENABLED")
-    {
+    if let Err(resp) = require_enabled(
+        bc,
+        bc.config().staking_enabled,
+        "BLOCKCHAIN_STAKING_ENABLED",
+    ) {
         return resp;
     }
     let kind = match parse_chain(&chain) {
@@ -141,7 +147,9 @@ async fn positions_http(
                 }
             ]);
             match crate::solana_rpc(&state, "getProgramAccounts", params).await {
-                Ok(result) => json_ok(json!({ "ok": true, "chain": "solana", "address": address, "positions": result })),
+                Ok(result) => json_ok(
+                    json!({ "ok": true, "chain": "solana", "address": address, "positions": result }),
+                ),
                 Err(error) => json_err(StatusCode::BAD_GATEWAY, &error),
             }
         }
@@ -153,7 +161,10 @@ async fn positions_http(
                 );
             }
             // No universal staking ABI; report the staked-balance native view.
-            match bc.evm_rpc("eth_getBalance", json!([address, "latest"])).await {
+            match bc
+                .evm_rpc("eth_getBalance", json!([address, "latest"]))
+                .await
+            {
                 Ok(result) => json_ok(json!({
                     "ok": true, "chain": "evm", "address": address, "balanceWeiHex": result,
                     "note": "per-protocol staking position queries require an ABI call via /executor/simulate",
@@ -176,7 +187,9 @@ async fn intent_http(
         bc.config().staking_execute_enabled,
         "BLOCKCHAIN_STAKING_EXECUTE_ENABLED",
     ) {
-        bc.metrics().broadcast_blocked_total.fetch_add(1, Ordering::Relaxed);
+        bc.metrics()
+            .broadcast_blocked_total
+            .fetch_add(1, Ordering::Relaxed);
         return resp;
     }
     if let Err(resp) = authorize_execute(bc, &headers) {
@@ -188,15 +201,24 @@ async fn intent_http(
     };
     let request_id = body.request_id.trim();
     if request_id.is_empty() || request_id.len() > 128 {
-        return json_err(StatusCode::BAD_REQUEST, "requestId must be 1..=128 characters");
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            "requestId must be 1..=128 characters",
+        );
     }
     let signed = body.signed_transaction.trim();
     if signed.is_empty() || signed.len() > MAX_RAW_TX_BYTES {
-        return json_err(StatusCode::BAD_REQUEST, "signedTransaction missing or too large");
+        return json_err(
+            StatusCode::BAD_REQUEST,
+            "signedTransaction missing or too large",
+        );
     }
     let idem_key = format!("blockchain-staking:{request_id}");
     if !state.claim_idempotency_key(&idem_key) {
-        return json_err(StatusCode::CONFLICT, "duplicate requestId within idempotency window");
+        return json_err(
+            StatusCode::CONFLICT,
+            "duplicate requestId within idempotency window",
+        );
     }
     let outcome = match chain {
         ChainKind::Solana => crate::solana_rpc(

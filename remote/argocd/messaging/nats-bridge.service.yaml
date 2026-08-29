@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-nats-bridge
+  namespace: messaging
+  labels:
+    app: dd-nats-bridge
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-nats-bridge
+  ports:
+    - name: http
+      port: 3004
+      targetPort: 3004

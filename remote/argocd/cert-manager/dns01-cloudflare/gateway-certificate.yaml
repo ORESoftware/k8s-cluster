@@ -1,0 +1,44 @@
+# The object that actually retires the certbot glue on AWS.
+#
+# secretName is deliberately dd-remote-gateway-tls — the SAME secret the gateway
+# Deployment already mounts (remote/argocd/dd-next-runtime/dd-remote-gateway.deployment.yaml
+# mounts it as a volume) and the same one that remote/ec2/renew-letsencrypt-gateway-cert.sh
+# writes with `kubectl create secret tls`. cert-manager takes over that secret in place, so
+# the gateway needs no manifest change to consume the cert-manager-issued cert.
+#
+# ⚠️ TWO WRITERS: once this Certificate exists, cert-manager owns the secret. Stop the
+# host-side renewer FIRST or the two will overwrite each other:
+#     sudo systemctl disable --now dd-letsencrypt-renew.timer
+# Do this on the EC2 node before applying, not after.
+#
+# ⚠️ dnsNames IS A PLACEHOLDER. Today the AWS gateway serves a Let's Encrypt *IP address*
+# certificate (the certbot lineage is literally named after the EC2 public IP). IP-identifier
+# certs CANNOT be issued over DNS-01 — ACME only allows HTTP-01/TLS-ALPN-01 for IP
+# identifiers. So this migration requires giving the AWS gateway a real DNS name under
+# fiducia.cloud first. That is the prerequisite, and it is also the durable fix for the
+# recurring breakage where the EC2 public IP changes and the cert lineage goes stale.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dd-remote-gateway-tls
+  namespace: default
+spec:
+  secretName: dd-remote-gateway-tls
+  issuerRef:
+    kind: ClusterIssuer
+    name: letsencrypt-prod-dns01
+  dnsNames:
+    # Replace with the real record before applying, and create the Cloudflare A record
+    # pointing at the EC2 public IP. Must be inside the fiducia.cloud zone or the issuer's
+    # dnsZones selector will not match it.
+    - aws.fiducia.cloud
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    # Fresh key every issuance — cheap here, and keeps a long-lived key off the node.
+    rotationPolicy: Always
+  # 90d cert, renewed at 30d remaining. cert-manager retries on failure for the whole
+  # 30-day window, which is the property the systemd timer never had: a failed renewal
+  # was silent until the cert expired.
+  duration: 2160h
+  renewBefore: 720h

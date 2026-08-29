@@ -1,0 +1,78 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-sound-recorder-cloud-projection
+  namespace: default
+  labels:
+    app: dd-sound-recorder-cloud-projection
+    app.kubernetes.io/name: dd-sound-recorder-cloud-projection
+    app.kubernetes.io/component: cloud-connection-projection
+    app.kubernetes.io/part-of: dd-next-runtime
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 60
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app: dd-sound-recorder-cloud-projection
+            app.kubernetes.io/name: dd-sound-recorder-cloud-projection
+            app.kubernetes.io/component: cloud-connection-projection
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: project-cloud-connections
+              image: docker.io/library/busybox:1.37.0
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -c
+              args:
+                - |
+                  set -eu
+                  test -n "${SERVER_AUTH_SECRET:-}"
+                  wget \
+                    --quiet \
+                    --output-document=- \
+                    --header="content-type: application/json" \
+                    --header="x-server-auth: ${SERVER_AUTH_SECRET}" \
+                    --post-data='{"maxItems":50}' \
+                    http://dd-sound-recorder-rs.default.svc.cluster.local:8126/internal/cloud-connection-projections/drain
+              env:
+                - name: SERVER_AUTH_SECRET
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-agent-secrets
+                      key: SERVER_AUTH_SECRET
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65534
+                runAsGroup: 65534
+                capabilities:
+                  drop:
+                    - ALL
+              resources:
+                requests:
+                  cpu: 1m
+                  memory: 8Mi
+                limits:
+                  cpu: 50m
+                  memory: 32Mi

@@ -8,6 +8,7 @@ resources:
   - dd-vpn-secrets.externalsecret.yaml
   - dd-vpn.pv.yaml
   - dd-vpn.pvc.yaml
+  - dd-argocd-mobile.configmap.yaml
   - dd-vpn.deployment.yaml
   - dd-vpn-ui.service.yaml
   - dd-vpn.networkpolicy.yaml

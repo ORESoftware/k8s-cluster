@@ -1,0 +1,848 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "dd-document-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "runtime-config"
+    },
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "dd_document_rs_get_2bc142d5b4da",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "home"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "dd_document_rs_get_api_docs_33e0d91e3d81",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "dd_document_rs_get_api_docs_json_4f57fda93437",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_json"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/capabilities": {
+      "get": {
+        "operationId": "dd_document_rs_get_capabilities_ba9514ed9ef6",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "capabilities_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/capabilities",
+        "x-dd-source-paths": [
+          "/capabilities"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/convert": {
+      "post": {
+        "operationId": "dd_document_rs_post_convert_acbbf16d49dd",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "convert_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/convert",
+        "x-dd-source-paths": [
+          "/convert"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/convert-binary": {
+      "post": {
+        "operationId": "dd_document_rs_post_convert_binary_5cdca8717cd5",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "convert_binary_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/convert-binary",
+        "x-dd-source-paths": [
+          "/convert-binary"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/convert-pdf": {
+      "post": {
+        "operationId": "dd_document_rs_post_convert_pdf_b0da17c944a1",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "convert_pdf_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/convert-pdf",
+        "x-dd-source-paths": [
+          "/convert-pdf"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "dd_document_rs_get_docs_api_40b647e65310",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/example": {
+      "get": {
+        "operationId": "dd_document_rs_get_example_9af46fc58725",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "example_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/example",
+        "x-dd-source-paths": [
+          "/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/formats": {
+      "get": {
+        "operationId": "dd_document_rs_get_formats_d1f0ce93bf11",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "formats_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/formats",
+        "x-dd-source-paths": [
+          "/formats"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/from-ast": {
+      "post": {
+        "operationId": "dd_document_rs_post_from_ast_9e01200f064e",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "from_ast_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/from-ast",
+        "x-dd-source-paths": [
+          "/from-ast"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "dd_document_rs_get_healthz_3f20c7b66724",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/image/convert": {
+      "post": {
+        "operationId": "dd_document_rs_post_image_convert_a1b240bf151c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "image_convert_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/image/convert",
+        "x-dd-source-paths": [
+          "/image/convert"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/image/formats": {
+      "get": {
+        "operationId": "dd_document_rs_get_image_formats_f04be62f34cc",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "image_formats_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/image/formats",
+        "x-dd-source-paths": [
+          "/image/formats"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/image/identify": {
+      "post": {
+        "operationId": "dd_document_rs_post_image_identify_81578df1811e",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "image_identify_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/image/identify",
+        "x-dd-source-paths": [
+          "/image/identify"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/image/transform": {
+      "post": {
+        "operationId": "dd_document_rs_post_image_transform_6894d3fb2c04",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "image_transform_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/image/transform",
+        "x-dd-source-paths": [
+          "/image/transform"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/inspect": {
+      "post": {
+        "operationId": "dd_document_rs_post_inspect_858a584f972b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "inspect_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/inspect",
+        "x-dd-source-paths": [
+          "/inspect"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config": {
+      "get": {
+        "operationId": "dd_document_rs_get_internal_runtime_config_c74c62be6fd8",
+        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_get"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config",
+        "x-dd-source-paths": [
+          "/internal/runtime-config"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "operationId": "dd_document_rs_post_internal_runtime_config_reset_a72ebf2a4639",
+        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_reset"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config/reset",
+        "x-dd-source-paths": [
+          "/internal/runtime-config/reset"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/update-runtime-config": {
+      "post": {
+        "operationId": "dd_document_rs_post_internal_update_runtime_config_2a037b426d85",
+        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_apply"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/update-runtime-config",
+        "x-dd-source-paths": [
+          "/internal/update-runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "dd_document_rs_get_metrics_afd9039bdb63",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "dd_document_rs_get_status_63f935612b9f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "status_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/status",
+        "x-dd-source-paths": [
+          "/status"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/stream/convert": {
+      "post": {
+        "operationId": "dd_document_rs_post_stream_convert_82e90f06af4d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "stream_convert_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/stream/convert",
+        "x-dd-source-paths": [
+          "/stream/convert"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/stream/image": {
+      "post": {
+        "operationId": "dd_document_rs_post_stream_image_4db8fc21c94e",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "stream_image_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/stream/image",
+        "x-dd-source-paths": [
+          "/stream/image"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/to-ast": {
+      "post": {
+        "operationId": "dd_document_rs_post_to_ast_28142f5f07b0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "to_ast_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/to-ast",
+        "x-dd-source-paths": [
+          "/to-ast"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/validate": {
+      "post": {
+        "operationId": "dd_document_rs_post_validate_8601fc37e0fe",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "validate_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-document-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/validate",
+        "x-dd-source-paths": [
+          "/validate"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 26,
+  "x-dd-route-count": 26,
+  "x-dd-service": "dd-document-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

@@ -70,6 +70,48 @@ data:
         static_configs:
           - targets:
               - dd-k8s-resource-exporter.observability.svc.cluster.local:9102
+      # Benefactor owns its endpoint in benefactor-cc/backend.rs, while this
+      # central job makes that endpoint an explicit fleet scrape contract.
+      - job_name: benefactor-backend-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - benefactor-backend-rs.default.svc.cluster.local:80
+      # DEN-666 first-party application endpoints. These direct scrapes
+      # complement the existing OTLP pipeline and retain the global 15s cadence.
+      - job_name: fiducia-backend
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - fiducia-backend.fiducia.svc.cluster.local:8117
+      - job_name: canonical-cloud-web
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - canonical-cloud-web.canonical-cloud.svc.cluster.local:8081
+      - job_name: dd-akrion-web-server-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-akrion-web-server-rs.default.svc.cluster.local:8127
+      # DEN-680: the bridge exposes a public, bounded-label Prometheus
+      # endpoint; NetworkPolicy limits this scrape to dd-prometheus.
+      - job_name: dd-ai-agent-bridge
+        metrics_path: /metrics
+        scrape_timeout: 10s
+        static_configs:
+          - targets:
+              - dd-ai-agent-bridge.default.svc.cluster.local:8142
+      - job_name: dd-sonus-auris-site
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-sonus-auris-site.default.svc.cluster.local:9113
+      - job_name: usacc-rest-api-backend-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - usacc-rest-api-backend-rs.default.svc.cluster.local:8121
       - job_name: dd-webrtc-signaling
         metrics_path: /metrics
         static_configs:
@@ -98,11 +140,22 @@ data:
         static_configs:
           - targets:
               - dd-runtime-config.default.svc.cluster.local:8110
+      # daedalus-fab org tenant namespace (was `default` before the tenancy migration).
       - job_name: dd-fabrication-server
         metrics_path: /metrics
         static_configs:
           - targets:
-              - dd-fabrication-server.default.svc.cluster.local:8113
+              - dd-fabrication-server.daedalus.svc.cluster.local:8113
+      - job_name: dd-daedalus-api-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-daedalus-api-server.daedalus.svc.cluster.local:8114
+      - job_name: dd-daedalus-web-server
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-daedalus-web-server.daedalus.svc.cluster.local:8115
       - job_name: dd-economics-server
         metrics_path: /metrics
         static_configs:
@@ -123,6 +176,15 @@ data:
         static_configs:
           - targets:
               - dd-escrow-rs.default.svc.cluster.local:8115
+      # Public browser-automation MCP server. Worth alerting on: this is the one
+      # service reachable anonymously from the internet (no bearer since the
+      # ChatGPT connector cannot present one), so rpc_errors_total and
+      # tool_calls_total are the signal that someone is driving it.
+      - job_name: dd-browser-mcp-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-browser-mcp-rs.default.svc.cluster.local:8092
       - job_name: dd-rust-vapi-phone
         metrics_path: /metrics
         static_configs:
@@ -138,6 +200,11 @@ data:
         static_configs:
           - targets:
               - dd-public-data-server.default.svc.cluster.local:8115
+      - job_name: dd-happy-wakey-gateway
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-happy-wakey-gateway.default.svc.cluster.local:8128
       - job_name: dd-patent-filing-rs
         metrics_path: /metrics
         static_configs:
@@ -248,6 +315,17 @@ data:
         static_configs:
           - targets:
               - gcs-router.default.svc.cluster.local:9100
+      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.
+      - job_name: dd-shared-auth
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth.shared-auth.svc.cluster.local:8120
+      - job_name: dd-shared-auth-nats-bridge
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
       # fiducia data-plane raft metrics. Each fiducia-node StatefulSet pod runs a
       # sidecar (fiducia-node-sidecar) that translates the node's JSON observe API
       # into Prometheus text on :8091/metrics. Addressed per-pod through the
@@ -290,6 +368,204 @@ data:
             annotations:
               summary: "Observability target {{ $labels.job }} is down"
               description: "Prometheus has not scraped {{ $labels.instance }} for job {{ $labels.job }}."
+          - alert: DDFirstPartyApplicationMetricsTargetDown
+            expr: up{job=~"fiducia-backend|canonical-cloud-web|dd-akrion-web-server-rs|dd-sonus-auris-site|usacc-rest-api-backend-rs"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: first-party-applications
+            annotations:
+              summary: "Application metrics target {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape {{ $labels.instance }}/metrics for {{ $labels.job }}."
+          - alert: DDAIAgentBridgeTargetMissing
+            expr: absent(up{job="dd-ai-agent-bridge"})
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge scrape target is missing
+              description: "Prometheus has no dd-ai-agent-bridge target, so bridge transport, queue, persistence, lease, and control-plane metrics are unavailable."
+          - alert: DDAIAgentBridgeTargetDown
+            expr: up{job="dd-ai-agent-bridge"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge metrics target is down
+              description: "Prometheus cannot scrape dd-ai-agent-bridge /metrics; verify the Deployment, Service, NetworkPolicy, probes, and source revision."
+          - alert: DDAIAgentBridgeCapacityNearLimit
+            expr: max by (resource) (ai_agent_bridge_capacity{kind="current"} / clamp_min(ai_agent_bridge_capacity{kind="limit"}, 1)) > 0.8
+            for: 10m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: "AI agent bridge {{ $labels.resource }} capacity is near its limit"
+              description: "A bounded bridge resource has remained above 80% of its configured limit for ten minutes."
+          - alert: DDAIAgentBridgeHttpCapacityRejected
+            expr: sum(increase(ai_agent_bridge_http_rejected_total{reason="capacity"}[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge is rejecting HTTP work at capacity
+              description: "The bridge rejected one or more ordinary HTTP requests before execution because its bounded admission semaphore was exhausted."
+          - alert: DDAIAgentBridgePersistenceWritesShed
+            expr: sum(increase(ai_agent_bridge_persistence_shed_writes_total[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge persistence writes are being shed
+              description: "Best-effort PostgreSQL persistence could not accept one or more writes; in-memory coordination may have advanced without equivalent durable evidence."
+          - alert: DDAIAgentBridgeLeaseErrorsIncreasing
+            expr: sum(increase(ai_agent_bridge_file_lease_errors_total{reason=~"conflict|owner_mismatch|stale_fencing_token"}[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge lease or fencing errors are increasing
+              description: "The bridge recorded conflicting ownership, an owner mismatch, or a stale fencing token; inspect the bounded audit records before accepting repository output."
+          - alert: DDAIAgentBridgeControlPlaneErrorsIncreasing
+            expr: ai_agent_bridge_dependency_configured{dependency="control_plane"} == 1 and on() sum(increase(ai_agent_bridge_control_plane_requests_total{result=~"server_error|transport_error"}[5m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-ai-agent-bridge
+            annotations:
+              summary: AI agent bridge control-plane requests are failing
+              description: "The external Fiducia control plane is configured and recent requests have failed at the server or transport boundary."
+          - alert: SharedAuthServerTargetMissing
+            expr: absent(up{job="dd-shared-auth"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth API."
+          - alert: SharedAuthBridgeTargetMissing
+            expr: absent(up{job="dd-shared-auth-nats-bridge"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth NATS bridge scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth NATS bridge."
+          - alert: SharedAuthMetricsTargetDown
+            expr: up{job=~"dd-shared-auth|dd-shared-auth-nats-bridge"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: shared-auth
+            annotations:
+              summary: "Shared Auth metrics target {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape the cluster-internal /metrics endpoint for {{ $labels.job }}."
+          - alert: SharedAuthVerificationFailuresHigh
+            expr: increase(shared_auth_verify_failures_total[10m]) > 100
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth verification failures are unusually high
+              description: "More than 100 token-verification failures occurred in ten minutes and the condition persisted for five minutes."
+          - alert: SharedAuthBridgePublishFailuresHigh
+            expr: sum(increase(shared_auth_bridge_publishes_total{outcome="failed"}[10m])) > 10
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge publish failures are high
+              description: "More than ten internal HTTP-to-NATS failures occurred in ten minutes. Client rejections are intentionally excluded."
+          - alert: SharedAuthBridgeDeliveryFailuresHigh
+            expr: sum(increase(shared_auth_bridge_deliveries_total{outcome="failed"}[10m])) > 5
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge delivery failures are high
+              description: "More than five NATS-to-webhook delivery failures occurred in ten minutes."
+          - alert: BenefactorBackendTargetMissing
+            expr: absent(up{job="benefactor-backend-rs"})
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend scrape target is missing
+              description: "Prometheus has no benefactor-backend-rs target; backend metrics and target-down detection are unavailable."
+          - alert: BenefactorBackendTargetDown
+            expr: up{job="benefactor-backend-rs"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend scrape target is down
+              description: "Prometheus cannot scrape benefactor-backend-rs /metrics."
+          - alert: BenefactorBackendDependencyNotReady
+            expr: benefactor_backend_dependency_ready == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend dependency is not ready
+              description: "A bounded backend dependency readiness gauge has remained zero for two minutes."
+          - alert: BenefactorBackendPipelineFailuresIncreasing
+            expr: sum(rate(benefactor_backend_pipeline_runs_total{outcome="error"}[10m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor background pipeline failures are increasing
+              description: "The Gmail reply poller or HubSpot synchronization worker is reporting failed runs."
+          - alert: BenefactorBackendWorkloadUnavailable
+            expr: dd:k8s_workload:available_ratio{namespace="default", workload="benefactor-backend-rs"} < 1
+            for: 5m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend deployment has unavailable replicas
+              description: "The benefactor-backend-rs Deployment has fewer available replicas than desired."
+          - alert: BenefactorBackendCpuNearLimit
+            expr: (max(dd_k8s_pod_container_cpu_usage_cores{namespace="default",app="benefactor-backend-rs",container="api"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace="default",app="benefactor-backend-rs",container="api"})) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend CPU usage is near its limit
+              description: "The serving container is using more than 85% of its configured CPU limit."
+          - alert: BenefactorBackendMemoryNearLimit
+            expr: (max(dd_k8s_pod_container_memory_usage_bytes{namespace="default",app="benefactor-backend-rs",container="api"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace="default",app="benefactor-backend-rs",container="api"})) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend memory usage is near its limit
+              description: "The serving container is using more than 85% of its configured memory limit."
+          - alert: DDSonusAurisNginxExporterScrapeFailed
+            expr: absent(nginx_up{job="dd-sonus-auris-site"}) or nginx_up{job="dd-sonus-auris-site"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-sonus-auris-site
+            annotations:
+              summary: Sonus Auris nginx exporter cannot scrape nginx
+              description: "The exporter endpoint is reachable but nginx_up is absent or zero; verify the loopback stub_status route."
           - alert: DDPromtailTargetMissing
             expr: absent(up{job="dd-promtail"})
             for: 5m
@@ -390,7 +666,7 @@ data:
               summary: Fabrication runtime-config push errors are increasing
               description: "dd-runtime-config is failing to deliver stage snapshots to dd-fabrication-server; planning, NATS fan-out, or MDP learning behavior may be using stale runtime configuration."
           - alert: DDFabricationServerWorkloadUnavailable
-            expr: dd:k8s_workload:available_ratio{namespace="default", workload="dd-fabrication-server"} < 1
+            expr: dd:k8s_workload:available_ratio{namespace="daedalus", workload="dd-fabrication-server"} < 1
             for: 5m
             labels:
               severity: warning
@@ -399,7 +675,7 @@ data:
               summary: Fabrication server deployment has unavailable replicas
               description: "The dd-fabrication-server Deployment has fewer available replicas than desired; cold release builds, scheduling pressure, or readiness failures may be blocking fabrication planning capacity."
           - alert: DDFabricationServerRolloutUpdatedReplicasLagging
-            expr: max(dd_k8s_deployment_updated_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"}) < max(dd_k8s_deployment_desired_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"})
+            expr: max(dd_k8s_deployment_updated_replicas{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"}) < max(dd_k8s_deployment_desired_replicas{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"})
             for: 10m
             labels:
               severity: warning
@@ -408,7 +684,7 @@ data:
               summary: Fabrication server rollout has not updated all desired replicas
               description: "The dd-fabrication-server Deployment has fewer updated replicas than desired; the hardened Rust planner image or release-build startup may not be fully rolled out even if older replicas are still serving."
           - alert: DDFabricationServerHpaAtMaxReplicas
-            expr: max(dd_k8s_hpa_current_at_max{namespace="default",app="dd-fabrication-server",hpa="dd-fabrication-server"}) > 0
+            expr: max(dd_k8s_hpa_current_at_max{namespace="daedalus",app="dd-fabrication-server",hpa="dd-fabrication-server"}) > 0
             for: 10m
             labels:
               severity: warning
@@ -417,7 +693,7 @@ data:
               summary: Fabrication server HPA is at max replicas
               description: "The dd-fabrication-server HorizontalPodAutoscaler has held current replicas at its configured maximum; planning or instruction-analysis demand may need a higher replica ceiling or request throttling."
           - alert: DDFabricationServerCpuNearLimit
-            expr: (max(dd_k8s_pod_container_cpu_usage_cores{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace="default",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
+            expr: (max(dd_k8s_pod_container_cpu_usage_cores{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
             for: 10m
             labels:
               severity: warning
@@ -426,7 +702,7 @@ data:
               summary: Fabrication server CPU usage is near its container limit
               description: "The dd-fabrication-server serving container is using more than 85% of its configured CPU limit; planning, instruction analysis, NATS fan-out, or learning feedback may need more replicas or a higher limit before operators rely on generated machine work."
           - alert: DDFabricationServerMemoryNearLimit
-            expr: (max(dd_k8s_pod_container_memory_usage_bytes{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace="default",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
+            expr: (max(dd_k8s_pod_container_memory_usage_bytes{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"})) > 0.85
             for: 10m
             labels:
               severity: warning
@@ -435,7 +711,7 @@ data:
               summary: Fabrication server memory usage is near its container limit
               description: "The dd-fabrication-server serving container is using more than 85% of its configured memory limit; retained job/artifact evidence, learning memory, and active planning work may be at risk of eviction or restart."
           - alert: DDFabricationServerPodRestartsIncreasing
-            expr: sum(increase(dd_k8s_pod_container_restarts_total{namespace="default",app="dd-fabrication-server",container="fabrication-server"}[15m])) > 0
+            expr: sum(increase(dd_k8s_pod_container_restarts_total{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}[15m])) > 0
             for: 2m
             labels:
               severity: warning
@@ -444,7 +720,7 @@ data:
               summary: Fabrication server pods are restarting
               description: "The dd-fabrication-server serving container has restarted recently; retained job/artifact evidence, learning memory, NATS subscriptions, or active planning work may have been interrupted."
           - alert: DDFabricationServerServingContainerWaiting
-            expr: max(dd_k8s_pod_container_waiting{namespace="default",app="dd-fabrication-server",container="fabrication-server"}) > 0
+            expr: max(dd_k8s_pod_container_waiting{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"}) > 0
             for: 5m
             labels:
               severity: warning
@@ -453,7 +729,7 @@ data:
               summary: Fabrication server serving container is waiting
               description: "The dd-fabrication-server serving container is stuck in a Kubernetes waiting state; request planning, instruction analysis, result publication, and learning feedback may be unavailable even if init checks already completed."
           - alert: DDFabricationServerInitContainerWaiting
-            expr: max(dd_k8s_pod_init_container_waiting{namespace="default",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}) > 0
+            expr: max(dd_k8s_pod_init_container_waiting{namespace="daedalus",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}) > 0
             for: 5m
             labels:
               severity: warning
@@ -462,7 +738,7 @@ data:
               summary: Fabrication server init container is waiting
               description: "A dd-fabrication-server init container is waiting; source layout validation or the locked release build may be blocked before the Rust service can become ready."
           - alert: DDFabricationServerInitContainerRestartsIncreasing
-            expr: sum(increase(dd_k8s_pod_init_container_restarts_total{namespace="default",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}[15m])) > 0
+            expr: sum(increase(dd_k8s_pod_init_container_restarts_total{namespace="daedalus",app="dd-fabrication-server",init_container=~"source-layout-check|release-build"}[15m])) > 0
             for: 2m
             labels:
               severity: warning
@@ -479,6 +755,24 @@ data:
             annotations:
               summary: Fabrication server scrape target is down
               description: "Prometheus cannot scrape dd-fabrication-server /metrics; planning, instruction validation, and learning telemetry may be unavailable."
+          - alert: DDDaedalusApiServerTargetDown
+            expr: up{job="dd-daedalus-api-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-daedalus-api-server
+            annotations:
+              summary: Daedalus API server scrape target is down
+              description: "Prometheus cannot scrape dd-daedalus-api-server /metrics; API authorization and rejection telemetry may be unavailable."
+          - alert: DDDaedalusWebServerTargetDown
+            expr: up{job="dd-daedalus-web-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-daedalus-web-server
+            annotations:
+              summary: Daedalus web server scrape target is down
+              description: "Prometheus cannot scrape dd-daedalus-web-server /metrics; web request, authorization, rejection, and page telemetry may be unavailable."
           - alert: DDFabricationServerPodScrapeTargetsMissing
             expr: absent(up{job="dd-fabrication-server-pods"})
             for: 10m
@@ -498,7 +792,7 @@ data:
               summary: Fabrication server pod scrape target is down
               description: "A direct dd-fabrication-server pod scrape target is down; one replica's retained fabrication evidence or learning counters may be invisible even if the Service scrape still succeeds."
           - alert: DDFabricationServerPodScrapeCoverageBelowDesired
-            expr: sum(up{job="dd-fabrication-server-pods"} == bool 1) < max(dd_k8s_deployment_desired_replicas{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"})
+            expr: sum(up{job="dd-fabrication-server-pods"} == bool 1) < max(dd_k8s_deployment_desired_replicas{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"})
             for: 10m
             labels:
               severity: warning
@@ -533,6 +827,42 @@ data:
             annotations:
               summary: Web scraper robots policy overrides are being used
               description: "dd-web-scraper accepted one or more explicit robots.txt overrides; verify that the target is owned or authorized and inspect the corresponding structured audit records in Loki."
+          - alert: DDWebScraperTargetDown
+            expr: up{job="dd-web-scraper"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-web-scraper
+            annotations:
+              summary: Browser worker metrics target is down
+              description: "dd-web-scraper is unreachable, so browser MCP readiness and every browser_act/browser_observe workflow are unavailable."
+          - alert: DDBrowserMcpTargetDown
+            expr: up{job="dd-browser-mcp-rs"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-browser-mcp-rs
+            annotations:
+              summary: Public browser MCP target is down
+              description: "Prometheus cannot scrape dd-browser-mcp-rs; verify its ArgoCD Application, image pull, Service endpoints, and public gateway route."
+          - alert: DDBrowserMcpWorkerNotReady
+            expr: dd_browser_mcp_worker_ready == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-browser-mcp-rs
+            annotations:
+              summary: Browser MCP cannot reach its private worker
+              description: "The MCP process is running but dd-web-scraper /agent/healthz is unavailable, so tool discovery may work while browser calls fail."
+          - alert: DDBrowserMcpWorkerErrorsIncreasing
+            expr: sum(increase(dd_browser_mcp_worker_errors_total[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-browser-mcp-rs
+            annotations:
+              summary: Browser MCP worker calls are failing
+              description: "One or more browser_act/browser_observe calls failed at the private worker boundary in the last five minutes."
           - alert: DDQueueConsumerTargetDown
             expr: up{job="dd-remote-queue-consumer"} == 0
             for: 2m

@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-push-notification-server
+  namespace: default
+  labels:
+    app: dd-push-notification-server
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-push-notification-server

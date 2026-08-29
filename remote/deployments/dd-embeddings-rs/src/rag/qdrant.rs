@@ -31,11 +31,13 @@ struct CollectionExistsResponse {
 }
 
 /// One scored hit from a search.
-#[derive(Debug, serde::Serialize, Deserialize)]
+#[derive(Debug, serde::Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ScoredPoint {
+    #[schema(value_type = Value)]
     pub id: Value,
     pub score: f32,
     #[serde(default)]
+    #[schema(value_type = Value)]
     pub payload: Value,
 }
 
@@ -46,7 +48,11 @@ struct SearchResponse {
 
 impl Qdrant {
     pub fn new(base_url: String, api_key: Option<String>, http: reqwest::Client) -> Self {
-        Self { base_url: base_url.trim_end_matches('/').to_string(), api_key, http }
+        Self {
+            base_url: base_url.trim_end_matches('/').to_string(),
+            api_key,
+            http,
+        }
     }
 
     fn req(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
@@ -64,7 +70,10 @@ impl Qdrant {
             Ok(resp)
         } else {
             let body = resp.text().await.unwrap_or_default();
-            Err(QdrantError::Upstream { status: status.as_u16(), body })
+            Err(QdrantError::Upstream {
+                status: status.as_u16(),
+                body,
+            })
         }
     }
 
@@ -77,7 +86,10 @@ impl Qdrant {
         distance: &str,
     ) -> Result<(), QdrantError> {
         let exists_resp = self
-            .req(reqwest::Method::GET, &format!("/collections/{collection}/exists"))
+            .req(
+                reqwest::Method::GET,
+                &format!("/collections/{collection}/exists"),
+            )
             .send()
             .await?;
         let exists_resp = Self::check(exists_resp).await?;
@@ -149,16 +161,27 @@ impl Qdrant {
 
     /// List collection names.
     pub async fn list_collections(&self) -> Result<Vec<String>, QdrantError> {
-        let resp = self.req(reqwest::Method::GET, "/collections").send().await?;
+        let resp = self
+            .req(reqwest::Method::GET, "/collections")
+            .send()
+            .await?;
         let resp = Self::check(resp).await?;
         let parsed: ListCollectionsResponse = resp.json().await?;
-        Ok(parsed.result.collections.into_iter().map(|c| c.name).collect())
+        Ok(parsed
+            .result
+            .collections
+            .into_iter()
+            .map(|c| c.name)
+            .collect())
     }
 
     /// Delete an entire collection. Idempotent: a missing collection is fine.
     pub async fn delete_collection(&self, collection: &str) -> Result<(), QdrantError> {
         let resp = self
-            .req(reqwest::Method::DELETE, &format!("/collections/{collection}"))
+            .req(
+                reqwest::Method::DELETE,
+                &format!("/collections/{collection}"),
+            )
             .send()
             .await?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
@@ -169,7 +192,11 @@ impl Qdrant {
     }
 
     /// Delete points by id from a collection.
-    pub async fn delete_points(&self, collection: &str, ids: Vec<Value>) -> Result<(), QdrantError> {
+    pub async fn delete_points(
+        &self,
+        collection: &str,
+        ids: Vec<Value>,
+    ) -> Result<(), QdrantError> {
         let resp = self
             .req(
                 reqwest::Method::POST,

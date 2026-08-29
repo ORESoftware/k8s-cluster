@@ -1,0 +1,19 @@
+{
+  "//": "Read-only EC2 cluster MCP endpoints behind the dd-remote-gateway — Claude Code parity with .cursor/mcp.json and .vscode/mcp.json. See mcp/README.md for token setup. Claude Code expands ${DD_MCP_TOKEN} from the environment; set it with: export DD_MCP_TOKEN=\"$(cat ~/.dd-mcp-token)\"",
+  "mcpServers": {
+    "dd-cluster-mcp": {
+      "type": "http",
+      "url": "https://98.90.186.114/cluster-mcp",
+      "headers": {
+        "Authorization": "Bearer ${DD_MCP_TOKEN}"
+      }
+    },
+    "dd-gleam-mcp": {
+      "type": "http",
+      "url": "https://98.90.186.114/mcp",
+      "headers": {
+        "Authorization": "Bearer ${DD_MCP_TOKEN}"
+      }
+    }
+  }
+}

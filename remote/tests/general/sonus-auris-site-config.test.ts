@@ -40,7 +40,10 @@ test("sonus auris site is pinned as a public submodule", async () => {
   assert.match(gitmodules, /url = https:\/\/github\.com\/sonus-auris\/sonus-auris-site\.web/);
   assert.match(gitmodules, /branch = main/);
   assert.equal(packageJson.scripts?.build, "astro build");
-  assert.match(astroConfig, /base:\s*'\/sonus-auris-site\.web'/);
+  assert.match(
+    astroConfig,
+    /base:\s*process\.env\.SONUS_AURIS_SITE_BASE\s*\?\?\s*'\/sonus-auris-site\.web'/,
+  );
 });
 
 test("sonus auris manifests build a cloud-neutral static site service", async () => {

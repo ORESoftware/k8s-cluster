@@ -13,6 +13,11 @@
 !deployments/web-home-rs/**
 !deployments/gleam-lambda-runner/runtime-images/nodejs/**
 !deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs
+!deployments/scintilla-run-monorepo/
+!deployments/scintilla-run-monorepo/apps/
+!deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/
+!deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/runtime-images/nodejs/**
+!deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs
 !deployments/generated-api-docs-index.html
 !deployments/generated-api-docs-index.json
 !libs/nats/subject-defs/generated/rust/**

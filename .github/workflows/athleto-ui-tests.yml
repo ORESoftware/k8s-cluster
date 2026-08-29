@@ -1,0 +1,133 @@
+name: athleto ui tests
+
+# Browser smoke tests for the live AthletO surfaces, driven with node:test
+# under BOTH Playwright and Puppeteer (remote/tests/ui). Targets the public
+# marketing site and storefront, so this is a live-deployment monitor rather
+# than a required PR gate: pull requests run only the dependency-free contract;
+# schedules, pushes, and manual runs execute the live browsers.
+
+on:
+  pull_request:
+    paths:
+      - 'remote/tests/ui/**'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
+      - '.github/workflows/athleto-ui-tests.yml'
+  schedule:
+    # Every 6 hours (UTC); catches a broken deploy without waiting for a push.
+    - cron: '17 */6 * * *'
+  workflow_dispatch: {}
+  push:
+    branches: [dev, main]
+    paths:
+      - 'remote/tests/ui/**'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
+      - '.github/workflows/athleto-ui-tests.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  # PR contracts remain branch-scoped. All live events serialize and preserve
+  # evidence instead of cancelling one another midway through browser setup.
+  group: athleto-ui-${{ github.event_name == 'pull_request' && github.ref || 'live' }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: live-smoke security contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate scheduled live-smoke contract
+        working-directory: remote/tests
+        run: node --test general/scheduled-live-smoke-contract.test.mjs
+
+  ui:
+    name: playwright + puppeteer (live)
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ATHLETO_MARKETING_URL: https://athleto.store
+      ATHLETO_APP_URL: https://app.athleto.store
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Preflight live AthletO surfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in "$ATHLETO_MARKETING_URL" "$ATHLETO_APP_URL"; do
+            case "$target" in
+              https://athleto.store|https://app.athleto.store)
+                ;;
+              *)
+                echo "refusing non-production AthletO target: ${target}" >&2
+                exit 2
+                ;;
+            esac
+
+            echo "checking ${target}"
+            curl \
+              --fail \
+              --silent \
+              --show-error \
+              --location \
+              --proto '=https' \
+              --proto-redir '=https' \
+              --tlsv1.2 \
+              --max-redirs 5 \
+              --connect-timeout 10 \
+              --max-time 30 \
+              --retry 2 \
+              --retry-delay 2 \
+              --retry-max-time 75 \
+              --retry-all-errors \
+              --output /dev/null \
+              "${target}/"
+          done
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Install Playwright chromium (+ system deps)
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: remote/tests
+
+      - name: Install Puppeteer Chrome
+        run: pnpm exec puppeteer browsers install chrome
+        working-directory: remote/tests
+
+      - name: Run AthletO UI suite (both engines)
+        run: >-
+          node --test
+          ui/athleto-app.playwright.test.mjs
+          ui/athleto-marketing.playwright.test.mjs
+          ui/athleto-marketing.puppeteer.test.mjs
+        working-directory: remote/tests

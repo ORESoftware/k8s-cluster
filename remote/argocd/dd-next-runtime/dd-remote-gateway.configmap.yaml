@@ -34,8 +34,8 @@ data:
       1 "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
     }
 
-    # Dedicated read-only MCP bearer token. Scoped to /mcp and /cluster-mcp
-    # only (enforced in those location blocks) so local IDE MCP clients
+    # Dedicated read-only MCP bearer token. Scoped to the three MCP routes
+    # (enforced in those location blocks) so local IDE MCP clients
     # (Cursor, VS Code, Codex) authenticate with a narrow, revocable
     # credential instead of the master operator cookie value. Sourced from the
     # dd-mcp-gateway-token secret (AWS dd/remote-dev/mcp-gateway-token). The
@@ -86,6 +86,28 @@ data:
       POST $binary_remote_addr;
     }
 
+    # AWS reaches this gateway directly, while Hetzner first traverses
+    # ingress-nginx. Normalize the browser MCP client identity so follow-up calls
+    # do not become a different anonymous owner whenever ingress chooses another
+    # pod. Only the cluster pod CIDR may supply the outer proxy's first forwarded
+    # address; direct Internet callers cannot spoof it.
+    geo $dd_browser_mcp_from_cluster_ingress {
+      default 0;
+      10.244.0.0/16 1;
+    }
+
+    map "$dd_browser_mcp_from_cluster_ingress:$http_x_forwarded_for" $dd_browser_mcp_client_ip {
+      default $remote_addr;
+      ~^1:([^,\s]+) $1;
+    }
+
+    # OAuth credential/consent POSTs are deliberately slower than normal MCP
+    # calls so the human operator secret cannot be brute-forced at line speed.
+    map "$request_method:$uri" $dd_browser_mcp_oauth_write_limit_key {
+      default "";
+      ~^POST:/browser-mcp/oauth/(authorize|register|token)$ $dd_browser_mcp_client_ip;
+    }
+
     limit_req_zone $dd_fabrication_write_limit_key zone=dd_fabrication_write:10m rate=12r/m;
     limit_req_zone $dd_auth_write_limit_key zone=dd_auth_write:10m rate=10r/m;
     limit_req_zone $binary_remote_addr zone=dd_music_vote_write:10m rate=20r/m;
@@ -97,6 +119,17 @@ data:
     # directly and are unaffected. 300r/m + burst 60 is far above interactive
     # IDE use but bounds a runaway to ~5 req/s sustained.
     limit_req_zone $binary_remote_addr zone=dd_mcp:10m rate=300r/m;
+    # Browser automation is substantially more expensive and
+    # write-capable; give it a tighter budget than the read-only MCP endpoints.
+    # Allow 30 immediate requests, then pace a bounded second 30 instead of
+    # failing parallel OAuth setup/reconnect flows behind one NAT address. The
+    # sustained ceiling remains 60 requests/minute.
+    # Use the normalized address here as well as in the forwarded headers.
+    # Otherwise every Hetzner caller shares ingress-nginx's pod address and can
+    # exhaust one global bucket, while AWS happens to rate-limit per caller.
+    limit_req_zone $dd_browser_mcp_client_ip zone=dd_browser_mcp:10m rate=60r/m;
+    limit_req_zone $dd_browser_mcp_oauth_write_limit_key zone=dd_browser_mcp_oauth:10m rate=10r/m;
+    limit_conn_zone $dd_browser_mcp_client_ip zone=dd_browser_mcp_conn:10m;
 
     # Redacted path-only access logs make gateway guardrails observable without
     # writing Auth headers, cookies, or query strings into Loki.
@@ -107,6 +140,9 @@ data:
     server {
       listen 80 default_server;
       server_name _;
+      # Override the image's inherited combined log so query parameters are
+      # never emitted alongside the redacted structured record.
+      access_log /dev/stdout dd_gateway_json;
 
       location /.well-known/acme-challenge/ {
         root /var/www/acme;
@@ -122,6 +158,9 @@ data:
     server {
       listen 443 ssl default_server;
       server_name _;
+      # Override the image's inherited combined log so OAuth state, PKCE
+      # challenges, and callback parameters never reach stdout.
+      access_log /dev/stdout dd_gateway_json;
 
       ssl_certificate /etc/nginx/tls/tls.crt;
       ssl_certificate_key /etc/nginx/tls/tls.key;
@@ -866,6 +905,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -886,6 +926,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -906,6 +947,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
@@ -925,10 +967,126 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/;
+      }
+
+      # OAuth-protected browser automation MCP server. Authorization is enforced
+      # inside dd-browser-mcp-rs so its 401 includes RFC 9728 protected-resource
+      # discovery and the OAuth bearer reaches the resource server unchanged.
+      # The gateway owns TLS, abuse limits, and trusted client-IP forwarding.
+      location = /browser-mcp {
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
+        limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 1m;
+        client_body_timeout 10s;
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        # The OAuth bearer must reach the resource server. Ambient browser
+        # cookies are not part of this trust boundary.
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/mcp;
+      }
+
+      # The only anonymous application endpoint. Kubernetes readiness/metrics
+      # remain cluster-internal and are not reachable through this edge.
+      location = /browser-mcp/healthz {
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
+        limit_req_status 429;
+        client_max_body_size 1m;
+        client_body_timeout 10s;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/healthz;
+      }
+
+      # OAuth discovery, dynamic client registration, PKCE authorization, and
+      # token exchange. Exact path matching prevents metrics/readyz/runtime
+      # configuration from becoming public side effects of a broad prefix.
+      location ~ ^/browser-mcp/(?:\.well-known/oauth-(?:protected-resource|authorization-server)|oauth/(?:authorize|register|token))$ {
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
+        limit_req zone=dd_browser_mcp_oauth burst=5 nodelay;
+        limit_req_status 429;
+        # OAuth authorize queries contain PKCE/state parameters. Access logging
+        # is path-only; suppress nginx request-line error records for this
+        # exact route family so those parameters cannot leak on throttling.
+        error_log /dev/stderr crit;
+        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 1m;
+        client_body_timeout 10s;
+        proxy_http_version 1.1;
+        proxy_read_timeout 90;
+        proxy_send_timeout 90;
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        rewrite ^/browser-mcp/(.*)$ /$1 break;
+        proxy_pass http://$dd_browser_mcp_upstream;
+      }
+
+      # RFC 9728/RFC 8414 path-derived fallbacks for a resource/issuer whose
+      # canonical URL contains /browser-mcp.
+      location = /.well-known/oauth-protected-resource/browser-mcp {
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
+        limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 16k;
+        client_body_timeout 10s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/.well-known/oauth-protected-resource;
+      }
+
+      location = /.well-known/oauth-authorization-server/browser-mcp {
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
+        limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 16k;
+        client_body_timeout 10s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/.well-known/oauth-authorization-server;
+      }
+
+      location /browser-mcp/ {
+        return 404;
       }
 
       location = /gcs {
@@ -1301,6 +1459,28 @@ data:
         proxy_pass http://dd-sonus-auris-site.default.svc.cluster.local:8080/;
       }
 
+      location = /sonus-console {
+        return 302 /sonus-console/;
+      }
+
+      location /sonus-console/ {
+        if ($request_method !~ ^(GET|HEAD)$) {
+          return 405;
+        }
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /sonus-console;
+        proxy_set_header Auth "";
+        proxy_set_header Cookie "";
+        proxy_pass http://dd-sonus-auris-console.default.svc.cluster.local:8080/;
+      }
+
       location = /music {
         return 302 /music/;
       }
@@ -1451,7 +1631,7 @@ data:
       }
 
       location /sound-recorder/api/mobile/ {
-        if ($request_method !~ ^(GET|HEAD|POST)$) {
+        if ($request_method !~ ^(GET|HEAD|POST|DELETE)$) {
           return 405;
         }
         limit_req zone=dd_sound_recorder_mobile_write burst=120 nodelay;
@@ -1570,6 +1750,12 @@ data:
         proxy_set_header Auth "";
         proxy_set_header Cookie "";
         proxy_pass http://dd-akrion-web-server-rs.default.svc.cluster.local:8127;
+      }
+
+      # Keep Akrion process metrics on the in-cluster Service even for
+      # authenticated gateway users.
+      location ^~ /akrion-sim/metrics {
+        return 404;
       }
 
       location /akrion-sim/ {
@@ -1850,6 +2036,43 @@ data:
         proxy_pass http://dd-rust-vapi-phone.default.svc.cluster.local:8113/webhook;
       }
 
+      # /vxl/vapi/webhook — the Voxletra platform's own Vapi webhook.
+      #
+      # Deliberately NOT /vapi/webhook: that exact path is the phone screener
+      # above, and the two services answer different assistants (a call
+      # screener vs. a live translator). One Vapi webhook URL can only route to
+      # one service, so each gets its own path and each is configured as the
+      # `server.url` of its own assistant.
+      #
+      # Same posture as the screener: no operator cookie (Vapi cannot send
+      # one), POST only, and vxl-api-server verifies `x-vapi-secret` itself and
+      # fails closed when VAPI_WEBHOOK_SECRET is unset.
+      #
+      # Safe to ship before Voxletra exists: the variable upstream below defers
+      # DNS to request time (same trick as the dd-shared-auth block), so an
+      # undeployed vxl-api-server is a 502 on this one path instead of an
+      # unresolvable host that stops the whole gateway from starting.
+      location = /vxl/vapi/webhook {
+        if ($request_method != POST) {
+          return 405;
+        }
+        client_max_body_size 1m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 10;
+        proxy_read_timeout 30;
+        proxy_send_timeout 30;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        set $dd_up_vxl_api vxl-api-server.voxletra.svc.cluster.local:8080;
+        # proxy_pass with a variable passes the request URI through unchanged,
+        # so rewrite to the service's own path first. The service serves this
+        # webhook at /vapi/webhook; only the public path differs.
+        rewrite ^ /vapi/webhook break;
+        proxy_pass http://$dd_up_vxl_api;
+      }
+
       location = /vapi {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -2065,6 +2288,16 @@ data:
           return 405;
         }
         return 302 /canonical/;
+      }
+
+      # Prometheus exposition is an in-cluster operational surface. Keep both
+      # the exact endpoint and path variants out of the public marketing proxy.
+      location = /canonical/metrics {
+        return 404;
+      }
+
+      location ^~ /canonical/metrics/ {
+        return 404;
       }
 
       location /canonical/ {
@@ -2300,6 +2533,28 @@ data:
         proxy_pass http://$dd_up_46;
       }
 
+      # Inbound webhooks from GitHub (push / workflow_run) and container
+      # registries. Unlike the operator API above, these are NOT gated by the
+      # operator cookie — GitHub cannot present it. Instead the build server
+      # verifies each request itself: the GitHub X-Hub-Signature-256 HMAC
+      # (BUILD_SERVER_GITHUB_WEBHOOK_SECRET) and the registry shared-secret
+      # header. We deliberately do NOT inject the operator X-Server-Auth here,
+      # so this public path carries no privileged credential; the webhook
+      # handlers never consult that header. Body must reach the server intact
+      # for HMAC verification, so buffering stays off and the body is not
+      # altered.
+      location /webhooks/ {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        set $dd_up_build_webhooks dd-build-server.default.svc.cluster.local:8100;
+        proxy_pass http://$dd_up_build_webhooks;
+      }
+
       # /lmx-rs/ — operator HTML status page for the Rust live-mutex
       # broker (dd-rust-network-mutex). The broker's own HTTP front-end
       # listens on `:6971` inside the cluster and serves the page at
@@ -2415,7 +2670,19 @@ data:
         return 200 '{"service":"dd-chron-service","kind":"planned deployment","namespace":"default","httpService":false,"notes":"Cron/at style scheduler should expose an authenticated status and control API when promoted from templates."}';
       }
 
+      # /tasks, /status and /agents are the dd-dev-server-api control plane
+      # (list/create agent tasks). They were the only dev-server routes without
+      # the operator gate, unlike their /agents/tasks, /agents/threads and
+      # /dd-thread/* siblings. dd-dev-server-api fail-closes on a missing
+      # X-Server-Auth, and the gateway only forwards a non-empty
+      # $dd_dev_server_auth_header when $dd_gateway_auth_ok = 1 — so every
+      # caller that works today is already authenticated and the gate is a
+      # no-op for them. It stops unauthenticated traffic from reaching the
+      # control plane at all instead of relying on the backend to reject it.
       location /tasks {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2426,6 +2693,9 @@ data:
       }
 
       location /status {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2436,6 +2706,9 @@ data:
       }
 
       location /agents {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2511,6 +2784,66 @@ data:
         proxy_pass http://$dd_thread_service:8080$dd_thread_proxy_path;
       }
 
+      # /shared-auth/ — the centralized OreSoftware auth server (dd-shared-auth in
+      # the shared-auth namespace). PUBLIC on purpose: a caller presents a
+      # Supabase bearer to /shared-auth/auth/exchange and gets back a unified
+      # OreSoftware JWT; downstream services verify it against
+      # /shared-auth/.well-known/jwks.json. So it is NOT behind the operator
+      # cookie gate ($dd_gateway_auth_ok) — the Supabase token IS the credential.
+      # /metrics is scraped in-cluster (observability) and must not be public.
+      location = /shared-auth/metrics {
+        return 404;
+      }
+
+      location /shared-auth/ {
+        if ($request_method !~ ^(GET|POST|OPTIONS)$) {
+          return 405;
+        }
+        client_max_body_size 64k;
+        # Strip the /shared-auth prefix so the backend sees /auth/exchange,
+        # /.well-known/jwks.json, /readyz, etc.
+        rewrite ^/shared-auth/?(.*)$ /$1 break;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5;
+        proxy_read_timeout 30;
+        proxy_send_timeout 30;
+        # Variable upstream + the server's kube-dns resolver: the gateway starts
+        # even if dd-shared-auth is not yet deployed, resolving at request time.
+        set $dd_up_shared_auth dd-shared-auth.shared-auth.svc.cluster.local:8120;
+        proxy_pass http://$dd_up_shared_auth;
+      }
+
+      # Happy Wakey's product gateway is public but self-authenticating: every
+      # product route verifies a short-lived shared-auth bearer. Cluster
+      # credentials and the NATS contact lane remain behind this boundary.
+      location = /happy-wakey/metrics {
+        return 404;
+      }
+
+      location /happy-wakey/ {
+        if ($request_method !~ ^(GET|POST|PUT|DELETE|OPTIONS)$) {
+          return 405;
+        }
+        client_max_body_size 256k;
+        rewrite ^/happy-wakey/?(.*)$ /$1 break;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_next_upstream off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /happy-wakey;
+        proxy_set_header Cookie "";
+        proxy_connect_timeout 5;
+        proxy_read_timeout 40;
+        proxy_send_timeout 40;
+        set $dd_up_happy_wakey dd-happy-wakey-gateway.default.svc.cluster.local:8128;
+        proxy_pass http://$dd_up_happy_wakey;
+      }
+
       location / {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -2549,6 +2882,12 @@ data:
       resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
       resolver_timeout 2s;
 
+      # Prometheus scrapes the ClusterIP Service directly. Do not publish
+      # process/request telemetry on the customer-facing Fiducia origin.
+      location ^~ /metrics {
+        return 404;
+      }
+
       location / {
         proxy_http_version 1.1;
         proxy_buffering off;
@@ -2563,6 +2902,41 @@ data:
         proxy_set_header Auth "";
         set $fiducia_customer_up fiducia-backend.fiducia.svc.cluster.local:8117;
         proxy_pass http://$fiducia_customer_up;
+      }
+    }
+
+    # api.fiducia.cloud — the fiducia data-plane API (locks, semaphores, KV,
+    # rate limit, cron, elections, discovery) consumed by the generated client
+    # libraries (fiducia-clients). Routed to fiducia-load-balance, which fans
+    # out to fiducia-node and enforces API-key auth via fiducia-auth introspect;
+    # the gateway adds no auth gate of its own. Same cert lineage: add
+    # `-d api.fiducia.cloud`. Long read timeout: coordination clients hold
+    # long-poll waits (lock acquire) well past typical page loads.
+    server {
+      listen 443 ssl;
+      server_name api.fiducia.cloud;
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      add_header Strict-Transport-Security "max-age=15552000" always;
+      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
+      resolver_timeout 2s;
+
+      location / {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 300;
+        proxy_send_timeout 120;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        set $fiducia_api_up fiducia-load-balance.fiducia.svc.cluster.local:8088;
+        proxy_pass http://$fiducia_api_up;
       }
     }
 
@@ -2597,5 +2971,90 @@ data:
         proxy_set_header Auth "";
         set $fiducia_admin_up fiducia-admin.fiducia.svc.cluster.local:8096;
         proxy_pass http://$fiducia_admin_up;
+      }
+    }
+
+    # api.sonusauris.app — the Sonus Auris mobile/desktop API
+    # (sonus-auris-api-server.rs via dd-sound-recorder-rs). Store-production
+    # origin required by the mobile release checklist; the app's
+    # SOUND_RECORDER_PUBLIC_BASE_URL and OAuth redirect allowlist already
+    # name this host. Same cert lineage as the fiducia hosts: add
+    # `-d api.sonusauris.app`, front with a proxied Cloudflare record in
+    # SSL mode Full. Segment audio never transits this origin — clients PUT
+    # ciphertext directly to presigned object-store URLs — so the JSON body
+    # cap matches the path-based /sound-recorder/ route. The API enforces
+    # its own device-token/shared-auth authorization; the gateway adds no
+    # auth gate and strips the operator Auth header.
+    server {
+      listen 443 ssl;
+      server_name api.sonusauris.app;
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      add_header Strict-Transport-Security "max-age=15552000" always;
+      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
+      resolver_timeout 2s;
+
+      # Internal maintenance surfaces stay cluster-only on the public host.
+      location ^~ /internal/ {
+        return 404;
+      }
+      location ^~ /metrics {
+        return 404;
+      }
+
+      location / {
+        client_max_body_size 256k;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        set $sonus_api_up dd-sound-recorder-rs.default.svc.cluster.local:8126;
+        proxy_pass http://$sonus_api_up;
+      }
+    }
+
+    # console.sonusauris.app — the Sonus Auris Flutter web console served at
+    # its own host instead of the /sonus-console/ path prefix. Same cert
+    # lineage: add `-d console.sonusauris.app`; front with a proxied
+    # Cloudflare record in SSL mode Full. The console build served from a
+    # dedicated host needs no prefix rewrite.
+    server {
+      listen 443 ssl;
+      server_name console.sonusauris.app;
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      add_header Strict-Transport-Security "max-age=15552000" always;
+      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
+      resolver_timeout 2s;
+
+      location ^~ /metrics {
+        return 404;
+      }
+
+      location / {
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_read_timeout 120;
+        proxy_send_timeout 120;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Auth "";
+        set $sonus_console_up dd-sonus-auris-console.default.svc.cluster.local:8080;
+        proxy_pass http://$sonus_console_up;
       }
     }

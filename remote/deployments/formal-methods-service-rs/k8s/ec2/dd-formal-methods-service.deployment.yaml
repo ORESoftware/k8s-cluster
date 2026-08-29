@@ -87,7 +87,7 @@ spec:
             - name: ANALYZER_TIMEOUT_SECS
               value: '900'
             - name: FORMAL_METHODS_ALLOWED_REPOS
-              value: '*'
+              value: ORESoftware/*
             - name: FORMAL_METHODS_PATH_PREFIXES
               value: ''
             - name: DELIVERY_DEDUPE_CAPACITY

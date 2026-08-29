@@ -1,0 +1,52 @@
+# TEMPLATE — the Layer-1 tenancy objects the PLATFORM owns for each app. Copy per app,
+# replace <app>. Platform owns these so the app repo's AppProject can forbid all
+# cluster-scoped + quota/limit resources (see _template.appproject.yaml).
+#
+# Pair with an Application (path -> this file's dir) OR fold into clusters/<cloud>/
+# applications.yaml. NOT wired anywhere yet.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: <app>
+  labels:
+    app.kubernetes.io/part-of: <app>
+    # Pod Security Admission — enforce baseline, audit/warn restricted (house posture).
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: <app>-quota
+  namespace: <app>
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "4"
+    limits.memory: 8Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: <app>-limits
+  namespace: <app>
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 512Mi }
+      defaultRequest: { cpu: 100m, memory: 128Mi }
+---
+# Default-deny ingress; explicit allows live in the app repo's own NetworkPolicies.
+# Scoped to this namespace only — safe (unlike a podSelector:{} deny in shared `default`).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: <app>-default-deny-ingress
+  namespace: <app>
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

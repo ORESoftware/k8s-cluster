@@ -1,8 +1,15 @@
-import Fastify from 'fastify';
+import Fastify, {
+  type FastifyBaseLogger,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+  type RouteHandlerMethod,
+  type onRequestHookHandler,
+} from 'fastify';
 import { initTelemetry, instrumentFastify, loggerMixin } from '@dd/telemetry';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 
 const requireFromCwd = createRequire(import.meta.url);
@@ -21,178 +28,80 @@ import {
 } from 'selenium-webdriver';
 import { Options as ChromeOptions } from 'selenium-webdriver/chrome.js';
 
-// dd-browser-test-server
-//
-// Long-running Fastify service that runs Playwright, Puppeteer, and Selenium
-// scenarios on demand from inside the cluster. The intended consumer is the
-// remote test harness — operators POST a scenario describing a sequence of
-// steps and receive structured results (logs, screenshots, extracted text).
-//
-// Goals:
-// - Single binary that exposes all three drivers behind one HTTP API.
-// - Bounded scenario DSL (no arbitrary script eval by default) so accidental
-//   misuse cannot exfiltrate cluster secrets.
-// - Same auth and observability shape as dd-web-scraper (SERVER_AUTH_SECRET,
-//   /healthz, /metrics, /status).
+import {
+  CONTRACT_LIMITS,
+  ConcurrencyResponseSchema,
+  HealthDescriptorSchema,
+  RunRequestSchema,
+  RunResultSchema,
+  ServiceDescriptorSchema,
+  StatusDescriptorSchema,
+  ToolsDescriptorSchema,
+  UnauthorizedResponseSchema,
+  ValidationErrorResponseSchema,
+  TOOLS,
+  type ConsoleLogEntry,
+  type RunRequest,
+  type RunResult,
+  type ScreenshotPayload,
+  type Step,
+  type StepLogEntry,
+  type Tool,
+} from './api-schemas.js';
+import {
+  ApiContractRegistry,
+  ContractValidationError,
+  type ApiDocuments,
+  type ApiRouteContract,
+} from './api-contract.js';
 
-type Tool = 'playwright' | 'puppeteer' | 'selenium';
+const OPENAPI_EXPORT_FLAG = '--export-openapi';
+const OPENAPI_CONTENT_TYPE = 'application/vnd.oai.openapi+json;version=3.1';
+const MAX_BODY_BYTES = 2_097_152;
 
-const TOOLS = ['playwright', 'puppeteer', 'selenium'] as const;
-
-const serverStartedAt = new Date().toISOString();
-const serverInstanceId = randomUUID();
+const configuredMaxTimeoutMs = clampNumber(
+  readNumberEnv('BROWSER_TEST_MAX_TIMEOUT_MS', CONTRACT_LIMITS.maxTimeoutMs),
+  500,
+  CONTRACT_LIMITS.maxTimeoutMs,
+);
+const configuredMaxSteps = clampNumber(
+  readNumberEnv('BROWSER_TEST_MAX_STEPS', CONTRACT_LIMITS.maxSteps),
+  1,
+  CONTRACT_LIMITS.maxSteps,
+);
 
 const config = {
   host: process.env.HOST ?? '0.0.0.0',
-  port: readNumberEnv('PORT', 8104),
+  port: clampNumber(readNumberEnv('PORT', 8104), 1, 65_535),
   serverAuthSecret: process.env.SERVER_AUTH_SECRET ?? null,
   allowUnauthenticated: process.env.BROWSER_TEST_ALLOW_UNAUTHENTICATED === 'true',
   defaultTool: normalizeTool(process.env.BROWSER_TEST_DEFAULT_TOOL ?? 'playwright'),
-  maxConcurrent: readNumberEnv('BROWSER_TEST_MAX_CONCURRENT', 2),
-  defaultTimeoutMs: readNumberEnv('BROWSER_TEST_DEFAULT_TIMEOUT_MS', 30_000),
-  maxTimeoutMs: readNumberEnv('BROWSER_TEST_MAX_TIMEOUT_MS', 180_000),
-  defaultStepTimeoutMs: readNumberEnv('BROWSER_TEST_STEP_TIMEOUT_MS', 15_000),
-  maxSteps: readNumberEnv('BROWSER_TEST_MAX_STEPS', 64),
-  maxScreenshotBytes: readNumberEnv('BROWSER_TEST_MAX_SCREENSHOT_BYTES', 1_500_000),
+  maxConcurrent: clampNumber(readNumberEnv('BROWSER_TEST_MAX_CONCURRENT', 2), 1, 32),
+  defaultTimeoutMs: clampNumber(
+    readNumberEnv('BROWSER_TEST_DEFAULT_TIMEOUT_MS', 30_000),
+    500,
+    configuredMaxTimeoutMs,
+  ),
+  maxTimeoutMs: configuredMaxTimeoutMs,
+  defaultStepTimeoutMs: clampNumber(
+    readNumberEnv('BROWSER_TEST_STEP_TIMEOUT_MS', 15_000),
+    100,
+    CONTRACT_LIMITS.maxStepTimeoutMs,
+  ),
+  maxSteps: configuredMaxSteps,
+  maxScreenshotBytes: clampNumber(
+    readNumberEnv('BROWSER_TEST_MAX_SCREENSHOT_BYTES', 1_500_000),
+    1_024,
+    10_000_000,
+  ),
   screenshotQuality: clampNumber(readNumberEnv('BROWSER_TEST_SCREENSHOT_QUALITY', 70), 1, 100),
   browserHeadless: readBooleanEnv('BROWSER_TEST_HEADLESS', true),
-  // evaluate / arbitrary script execution must be opt-in, since this service
-  // sits behind the gateway and a stolen auth header should not be a remote
-  // code-execution primitive.
   allowEvaluate: readBooleanEnv('BROWSER_TEST_ALLOW_EVALUATE', false),
-  // Optional override for a Chromium binary. Defaults to the Playwright
-  // bundled Chromium (selected at runtime by playwrightChromium.executablePath()).
   chromiumExecutablePath: process.env.BROWSER_TEST_CHROMIUM_PATH ?? null,
 };
 
-const StepBaseSchema = z.object({
-  description: z.string().max(200).optional(),
-  timeoutMs: z.number().int().min(100).max(300_000).optional(),
-});
-
-const StepSchema = z.discriminatedUnion('action', [
-  StepBaseSchema.extend({
-    action: z.literal('goto'),
-    url: z.string().url(),
-    waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('click'),
-    selector: z.string().min(1).max(800),
-    nth: z.number().int().min(0).max(50).optional(),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('fill'),
-    selector: z.string().min(1).max(800),
-    value: z.string().max(20_000),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('select'),
-    selector: z.string().min(1).max(800),
-    value: z.string().max(800),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('press'),
-    selector: z.string().min(1).max(800).optional(),
-    key: z.string().min(1).max(40),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('waitForSelector'),
-    selector: z.string().min(1).max(800),
-    state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional(),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('waitForUrl'),
-    url: z.string().min(1).max(2000),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('waitForTimeout'),
-    ms: z.number().int().min(0).max(60_000),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('extractText'),
-    selector: z.string().min(1).max(800),
-    name: z.string().min(1).max(120).optional(),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('extractAttribute'),
-    selector: z.string().min(1).max(800),
-    attribute: z.string().min(1).max(120),
-    name: z.string().min(1).max(120).optional(),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('screenshot'),
-    name: z.string().min(1).max(120).optional(),
-    fullPage: z.boolean().optional(),
-  }),
-  StepBaseSchema.extend({
-    action: z.literal('evaluate'),
-    script: z.string().min(1).max(20_000),
-    name: z.string().min(1).max(120).optional(),
-  }),
-]);
-
-type Step = z.infer<typeof StepSchema>;
-
-const RunRequestSchema = z.object({
-  requestId: z.string().min(1).max(120).optional(),
-  tool: z.enum(TOOLS).optional(),
-  url: z.string().url().optional(),
-  steps: z.array(StepSchema).min(1).max(config.maxSteps),
-  timeoutMs: z.number().int().min(500).max(config.maxTimeoutMs).optional(),
-  viewport: z
-    .object({
-      width: z.number().int().min(200).max(4000),
-      height: z.number().int().min(200).max(4000),
-    })
-    .optional(),
-  userAgent: z.string().min(1).max(500).optional(),
-  extraHeaders: z.record(z.string().min(1).max(120), z.string().max(2000)).optional(),
-  captureFinalScreenshot: z.boolean().optional(),
-  failOnConsoleError: z.boolean().optional(),
-});
-
-type RunRequest = z.infer<typeof RunRequestSchema>;
-
-type StepLogEntry = {
-  index: number;
-  action: Step['action'];
-  status: 'ok' | 'error';
-  durationMs: number;
-  description?: string;
-  error?: string;
-};
-
-type ConsoleLogEntry = {
-  level: string;
-  text: string;
-  timestamp: string;
-};
-
-type ScreenshotPayload = {
-  name: string;
-  contentType: 'image/png' | 'image/jpeg';
-  base64: string;
-  bytes: number;
-  truncated?: boolean;
-};
-
-type RunResult = {
-  ok: boolean;
-  requestId: string;
-  tool: Tool;
-  durationMs: number;
-  startedAt: string;
-  finishedAt: string;
-  finalUrl?: string;
-  finalTitle?: string;
-  steps: StepLogEntry[];
-  extracted: Record<string, string>;
-  screenshots: ScreenshotPayload[];
-  consoleEntries: ConsoleLogEntry[];
-  pageErrors: string[];
-  error?: string;
-};
+const serverStartedAt = new Date().toISOString();
+const serverInstanceId = randomUUID();
 
 const metrics = {
   inFlight: 0,
@@ -205,102 +114,465 @@ let playwrightBrowser: PlaywrightBrowser | null = null;
 let playwrightBrowserPromise: Promise<PlaywrightBrowser> | null = null;
 let puppeteerBrowser: PuppeteerBrowser | null = null;
 let puppeteerBrowserPromise: Promise<PuppeteerBrowser> | null = null;
+let appLogger: FastifyBaseLogger | null = null;
 
-const telemetry = initTelemetry('dd-browser-test-server');
+export interface BuildAppOptions {
+  authSecret?: string | null;
+  allowUnauthenticated?: boolean;
+  instrumentTelemetry?: boolean;
+}
 
-const fastify = Fastify({
-  logger: { mixin: loggerMixin },
-  bodyLimit: 2_097_152,
-});
+export interface BuiltApp {
+  app: FastifyInstance;
+  documents: ApiDocuments;
+}
 
-instrumentFastify(fastify, { service: 'dd-browser-test-server' });
+function boundedValidationIssues(
+  validation: Array<{ instancePath?: string; message?: string }> | undefined,
+): Array<{ path: string; message: string }> {
+  return (validation ?? [])
+    .slice(0, 20)
+    .map((issue) => ({
+      path: (issue.instancePath || '$').slice(0, 300),
+      message: (issue.message || 'invalid value').slice(0, 500),
+    }));
+}
 
-fastify.addHook('onRequest', async (request, reply) => {
-  const path = request.url.split('?')[0] ?? request.url;
-  if (request.method !== 'POST') return;
-  if (path !== '/run') return;
-  if (isAuthorized(request.headers)) return;
-  return reply.code(401).send({ ok: false, error: 'unauthorized' });
-});
-
-fastify.get('/', async () => serviceDescriptor());
-fastify.get('/browser-test', async () => serviceDescriptor());
-fastify.get('/tools', async () => toolsDescriptor());
-fastify.get('/browser-test/tools', async () => toolsDescriptor());
-fastify.get('/status', async () => statusDescriptor());
-fastify.get('/browser-test/status', async () => statusDescriptor());
-fastify.get('/healthz', async () => healthDescriptor());
-fastify.get('/browser-test/healthz', async () => healthDescriptor());
-fastify.get('/docs/api', async (_request, reply) => {
-  reply.header('content-type', 'text/html; charset=utf-8');
-  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
-});
-fastify.get('/api/docs', async (_request, reply) => {
-  reply.header('content-type', 'text/html; charset=utf-8');
-  return readFile(new URL('../generated/api-docs.html', import.meta.url), 'utf8');
-});
-fastify.get('/api/docs.json', async (_request, reply) => {
-  reply.header('content-type', 'application/json; charset=utf-8');
-  return readFile(new URL('../generated/api-docs.json', import.meta.url), 'utf8');
-});
-fastify.get('/metrics', async (_request, reply) => {
-  reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
-  return renderMetrics();
-});
-fastify.get('/browser-test/metrics', async (_request, reply) => {
-  reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
-  return renderMetrics();
-});
-
-fastify.post('/run', async (request, reply) => {
-  const parsed = RunRequestSchema.safeParse(request.body);
-  if (!parsed.success) {
-    return reply.code(400).send({ ok: false, error: parsed.error.format() });
-  }
-
-  if (metrics.inFlight >= config.maxConcurrent) {
-    return reply.code(429).send({
-      ok: false,
-      error: 'browser-test concurrency limit reached',
-      maxConcurrent: config.maxConcurrent,
-    });
-  }
-
-  const tool: Tool = parsed.data.tool ?? config.defaultTool;
-  const requestId = parsed.data.requestId ?? randomUUID();
-  const startedAtIso = new Date().toISOString();
-  const startedAtMs = Date.now();
-  metrics.inFlight += 1;
-
+function requestAuthorized(
+  headers: Record<string, string | string[] | undefined>,
+  expected: string | null,
+  allowUnauthenticated: boolean,
+): boolean {
+  if (allowUnauthenticated) return true;
+  if (!expected) return false;
+  const candidate =
+    pickHeader(headers, 'x-server-auth') ??
+    pickHeader(headers, 'authorization') ??
+    pickHeader(headers, 'x-auth');
+  if (!candidate) return false;
+  const provided = candidate.replace(/^Bearer\s+/i, '');
+  if (provided.length !== expected.length) return false;
   try {
-    const result = await runScenario(tool, parsed.data, requestId, startedAtIso);
-    recordMetric(tool, result.ok ? 'ok' : 'error', result.durationMs);
-    if (!result.ok) {
-      return reply.code(422).send(result);
-    }
-    return result;
-  } catch (error) {
-    const durationMs = Date.now() - startedAtMs;
-    recordMetric(tool, 'error', durationMs);
-    const message = error instanceof Error ? error.message : String(error);
-    return reply.code(500).send({
-      ok: false,
-      requestId,
-      tool,
-      durationMs,
-      startedAt: startedAtIso,
-      finishedAt: new Date().toISOString(),
-      steps: [],
-      extracted: {},
-      screenshots: [],
-      consoleEntries: [],
-      pageErrors: [],
-      error: message,
-    });
-  } finally {
-    metrics.inFlight -= 1;
+    return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+  } catch {
+    return false;
   }
-});
+}
+
+export async function buildApp(options: BuildAppOptions = {}): Promise<BuiltApp> {
+  const app = Fastify({
+    logger: { mixin: loggerMixin },
+    bodyLimit: MAX_BODY_BYTES,
+  });
+  if (options.instrumentTelemetry) {
+    instrumentFastify(app, { service: 'dd-browser-test-server' });
+  }
+  appLogger = app.log;
+
+  const authSecret =
+    options.authSecret === undefined ? config.serverAuthSecret : options.authSecret;
+  const allowUnauthenticated =
+    options.allowUnauthenticated ?? config.allowUnauthenticated;
+  const requireAuth: onRequestHookHandler = async (request, reply) => {
+    if (
+      requestAuthorized(
+        request.headers as Record<string, string | string[] | undefined>,
+        authSecret,
+        allowUnauthenticated,
+      )
+    ) {
+      return;
+    }
+    await reply.code(401).send({ ok: false, error: 'unauthorized' });
+  };
+
+  app.setErrorHandler(async (error, request, reply) => {
+    if (error instanceof ContractValidationError) {
+      await reply.code(400).send({
+        ok: false,
+        error: 'invalid_request',
+        issues: error.issues,
+      });
+      return;
+    }
+    const fastifyValidation = (
+      error as { validation?: Array<{ instancePath?: string; message?: string }> }
+    ).validation;
+    if (fastifyValidation) {
+      await reply.code(400).send({
+        ok: false,
+        error: 'invalid_request',
+        issues: boundedValidationIssues(fastifyValidation),
+      });
+      return;
+    }
+    request.log.error({ err: error }, 'browser-test request failed before handler completion');
+    await reply.code(500).send({ ok: false, error: 'internal_error' });
+  });
+
+  const registry = new ApiContractRegistry();
+  const register = (route: ApiRouteContract) => registry.register(app, route);
+  let documents: ApiDocuments | undefined;
+  const docs = () => {
+    if (!documents) throw new Error('API documents requested before router finalization');
+    return documents;
+  };
+
+  const serviceHandler: RouteHandlerMethod = async () => serviceDescriptor();
+  const toolsHandler: RouteHandlerMethod = async () => toolsDescriptor();
+  const statusHandler: RouteHandlerMethod = async () => statusDescriptor();
+  const healthHandler: RouteHandlerMethod = async () => healthDescriptor();
+  const metricsHandler: RouteHandlerMethod = async (_request, reply) => {
+    await reply.type('text/plain; version=0.0.4; charset=utf-8').send(renderMetrics());
+  };
+  const publicJsonHandler: RouteHandlerMethod = async (_request, reply) => {
+    await reply.type(OPENAPI_CONTENT_TYPE).send(docs().publicJson);
+  };
+  const internalJsonHandler: RouteHandlerMethod = async (_request, reply) => {
+    await reply.type(OPENAPI_CONTENT_TYPE).send(docs().internalJson);
+  };
+  const publicHtmlHandler: RouteHandlerMethod = async (_request, reply) => {
+    await reply.type('text/html; charset=utf-8').send(docs().publicHtml);
+  };
+  const internalHtmlHandler: RouteHandlerMethod = async (_request, reply) => {
+    await reply.type('text/html; charset=utf-8').send(docs().internalHtml);
+  };
+  const runHandler: RouteHandlerMethod = async (request, reply) => {
+    const input = request.body as RunRequest;
+    const runtimeIssues: Array<{ path: string; message: string }> = [];
+    if (input.steps.length > config.maxSteps) {
+      runtimeIssues.push({
+        path: '$.steps',
+        message: `deployment permits at most ${config.maxSteps} steps`,
+      });
+    }
+    if (input.timeoutMs !== undefined && input.timeoutMs > config.maxTimeoutMs) {
+      runtimeIssues.push({
+        path: '$.timeoutMs',
+        message: `deployment permits at most ${config.maxTimeoutMs}ms`,
+      });
+    }
+    if (runtimeIssues.length > 0) {
+      await reply.code(400).send({
+        ok: false,
+        error: 'invalid_request',
+        issues: runtimeIssues,
+      });
+      return;
+    }
+
+    if (metrics.inFlight >= config.maxConcurrent) {
+      await reply.code(429).send({
+        ok: false,
+        error: 'browser-test concurrency limit reached',
+        maxConcurrent: config.maxConcurrent,
+      });
+      return;
+    }
+
+    const tool: Tool = input.tool ?? config.defaultTool;
+    const requestId = input.requestId ?? randomUUID();
+    const startedAtIso = new Date().toISOString();
+    const startedAtMs = Date.now();
+    metrics.inFlight += 1;
+
+    try {
+      const result = await runScenario(tool, input, requestId, startedAtIso);
+      recordMetric(tool, result.ok ? 'ok' : 'error', result.durationMs);
+      if (!result.ok) {
+        await reply.code(422).send(result);
+        return;
+      }
+      await reply.code(200).send(result);
+    } catch (error) {
+      const durationMs = Date.now() - startedAtMs;
+      recordMetric(tool, 'error', durationMs);
+      request.log.error({ err: error, requestId, tool }, 'browser-test scenario crashed');
+      await reply.code(500).send({
+        ok: false,
+        requestId,
+        tool,
+        durationMs,
+        startedAt: startedAtIso,
+        finishedAt: new Date().toISOString(),
+        steps: [],
+        extracted: {},
+        screenshots: [],
+        consoleEntries: [],
+        pageErrors: [],
+        error: 'internal browser-test failure',
+      } satisfies RunResult);
+    } finally {
+      metrics.inFlight -= 1;
+    }
+  };
+
+  const unauthorized = {
+    description: 'Service authentication is missing or invalid.',
+    schema: UnauthorizedResponseSchema,
+  };
+  const validation = {
+    description: 'The request does not satisfy the executable Zod contract.',
+    schema: ValidationErrorResponseSchema,
+  };
+
+  for (const [path, operationId] of [
+    ['/', 'getBrowserTestService'],
+    ['/browser-test', 'getBrowserTestServiceCompatibilityAlias'],
+  ] as const) {
+    register({
+      method: 'GET',
+      path,
+      operationId,
+      summary: 'Describe the browser-test service and supported HTTP endpoints.',
+      tags: ['service'],
+      visibility: 'internal',
+      auth: 'server-auth',
+      routeType: 'service',
+      responses: {
+        '200': { description: 'Browser-test service descriptor.', schema: ServiceDescriptorSchema },
+        '401': unauthorized,
+      },
+      onRequest: requireAuth,
+      handler: serviceHandler,
+    });
+  }
+
+  for (const [path, operationId] of [
+    ['/tools', 'listBrowserAutomationTools'],
+    ['/browser-test/tools', 'listBrowserAutomationToolsCompatibilityAlias'],
+  ] as const) {
+    register({
+      method: 'GET',
+      path,
+      operationId,
+      summary: 'List supported browser drivers and their runtime versions.',
+      tags: ['browser-automation'],
+      visibility: 'internal',
+      auth: 'server-auth',
+      routeType: 'user-generated',
+      responses: {
+        '200': { description: 'Supported browser drivers.', schema: ToolsDescriptorSchema },
+        '401': unauthorized,
+      },
+      onRequest: requireAuth,
+      handler: toolsHandler,
+    });
+  }
+
+  for (const [path, operationId] of [
+    ['/status', 'getBrowserTestStatus'],
+    ['/browser-test/status', 'getBrowserTestStatusCompatibilityAlias'],
+  ] as const) {
+    register({
+      method: 'GET',
+      path,
+      operationId,
+      summary: 'Return bounded browser-test runtime status.',
+      tags: ['operations'],
+      visibility: 'internal',
+      auth: 'server-auth',
+      routeType: 'user-generated',
+      responses: {
+        '200': { description: 'Browser-test runtime status.', schema: StatusDescriptorSchema },
+        '401': unauthorized,
+      },
+      onRequest: requireAuth,
+      handler: statusHandler,
+    });
+  }
+
+  register({
+    method: 'GET',
+    path: '/healthz',
+    operationId: 'getBrowserTestHealth',
+    summary: 'Return a public liveness response for Kubernetes probes.',
+    tags: ['operations'],
+    visibility: 'public',
+    auth: 'public',
+    routeType: 'service',
+    responses: {
+      '200': { description: 'Browser-test process is alive.', schema: HealthDescriptorSchema },
+    },
+    handler: healthHandler,
+  });
+  register({
+    method: 'GET',
+    path: '/browser-test/healthz',
+    operationId: 'getBrowserTestHealthCompatibilityAlias',
+    summary: 'Authenticated compatibility alias for browser-test liveness.',
+    tags: ['operations'],
+    visibility: 'internal',
+    auth: 'server-auth',
+    routeType: 'service',
+    responses: {
+      '200': { description: 'Browser-test process is alive.', schema: HealthDescriptorSchema },
+      '401': unauthorized,
+    },
+    onRequest: requireAuth,
+    handler: healthHandler,
+  });
+
+  register({
+    method: 'GET',
+    path: '/metrics',
+    operationId: 'getBrowserTestPrometheusMetrics',
+    summary: 'Return bounded Prometheus text exposition.',
+    tags: ['operations'],
+    visibility: 'public',
+    auth: 'public',
+    routeType: 'service',
+    responses: {
+      '200': {
+        description: 'Prometheus metrics for browser-test execution.',
+        schema: z.string(),
+        contentType: 'text/plain',
+      },
+    },
+    handler: metricsHandler,
+  });
+  register({
+    method: 'GET',
+    path: '/browser-test/metrics',
+    operationId: 'getBrowserTestPrometheusMetricsCompatibilityAlias',
+    summary: 'Authenticated compatibility alias for Prometheus metrics.',
+    tags: ['operations'],
+    visibility: 'internal',
+    auth: 'server-auth',
+    routeType: 'service',
+    responses: {
+      '200': {
+        description: 'Prometheus metrics for browser-test execution.',
+        schema: z.string(),
+        contentType: 'text/plain',
+      },
+      '401': unauthorized,
+    },
+    onRequest: requireAuth,
+    handler: metricsHandler,
+  });
+
+  for (const [path, operationId] of [
+    ['/openapi.json', 'getBrowserTestPublicOpenApi'],
+    ['/api/docs.json', 'getBrowserTestPublicOpenApiCompatibilityAlias'],
+  ] as const) {
+    register({
+      method: 'GET',
+      path,
+      operationId,
+      summary: 'Return the fail-closed public OpenAPI 3.1 contract.',
+      tags: ['documentation'],
+      visibility: 'public',
+      auth: 'public',
+      routeType: 'service',
+      responses: {
+        '200': {
+          description: 'Canonical public OpenAPI document.',
+          schema: z.string(),
+          contentType: OPENAPI_CONTENT_TYPE,
+        },
+      },
+      handler: publicJsonHandler,
+    });
+  }
+
+  for (const [path, operationId] of [
+    ['/api/docs', 'getBrowserTestPublicApiReference'],
+    ['/docs/api', 'getBrowserTestPublicApiReferenceCompatibilityAlias'],
+  ] as const) {
+    register({
+      method: 'GET',
+      path,
+      operationId,
+      summary: 'Return the Scalar reference for the fail-closed public contract.',
+      tags: ['documentation'],
+      visibility: 'public',
+      auth: 'public',
+      routeType: 'service',
+      responses: {
+        '200': {
+          description: 'Human-readable public API reference.',
+          schema: z.string(),
+          contentType: 'text/html',
+        },
+      },
+      handler: publicHtmlHandler,
+    });
+  }
+
+  register({
+    method: 'GET',
+    path: '/internal/openapi.json',
+    operationId: 'getBrowserTestInternalOpenApi',
+    summary: 'Return the complete typed OpenAPI contract to trusted callers.',
+    tags: ['documentation'],
+    visibility: 'internal',
+    auth: 'server-auth',
+    routeType: 'service',
+    responses: {
+      '200': {
+        description: 'Complete internal OpenAPI document.',
+        schema: z.string(),
+        contentType: OPENAPI_CONTENT_TYPE,
+      },
+      '401': unauthorized,
+    },
+    onRequest: requireAuth,
+    handler: internalJsonHandler,
+  });
+  register({
+    method: 'GET',
+    path: '/internal/docs/api',
+    operationId: 'getBrowserTestInternalApiReference',
+    summary: 'Return the Scalar reference for the complete internal contract.',
+    tags: ['documentation'],
+    visibility: 'internal',
+    auth: 'server-auth',
+    routeType: 'service',
+    responses: {
+      '200': {
+        description: 'Human-readable internal API reference.',
+        schema: z.string(),
+        contentType: 'text/html',
+      },
+      '401': unauthorized,
+    },
+    onRequest: requireAuth,
+    handler: internalHtmlHandler,
+  });
+
+  register({
+    method: 'POST',
+    path: '/run',
+    operationId: 'runBrowserScenario',
+    summary: 'Run a bounded browser scenario with Playwright, Puppeteer, or Selenium.',
+    description:
+      'Runs the declarative scenario DSL. Arbitrary page evaluation remains disabled unless the deployment explicitly opts in.',
+    tags: ['browser-automation'],
+    visibility: 'internal',
+    auth: 'server-auth',
+    routeType: 'user-generated',
+    body: RunRequestSchema,
+    bodyDescription: 'Browser driver, limits, viewport, and declarative scenario steps.',
+    responses: {
+      '200': { description: 'Scenario completed successfully.', schema: RunResultSchema },
+      '400': validation,
+      '401': unauthorized,
+      '422': { description: 'Scenario ran but a step or page assertion failed.', schema: RunResultSchema },
+      '429': {
+        description: 'The configured concurrent scenario limit is full.',
+        schema: ConcurrencyResponseSchema,
+      },
+      '500': { description: 'The scenario crashed unexpectedly.', schema: RunResultSchema },
+    },
+    onRequest: requireAuth,
+    handler: runHandler,
+  });
+
+  documents = registry.documents();
+  await app.ready();
+  return { app, documents };
+}
 
 async function runScenario(
   tool: Tool,
@@ -320,13 +592,33 @@ async function runScenario(
     500,
     config.maxTimeoutMs,
   );
-  const overallTimer = setTimeoutPromise(overallTimeoutMs).then(() => {
-    throw new Error(`scenario exceeded overall timeout of ${overallTimeoutMs}ms`);
+  const abortController = new AbortController();
+  let activeDriver: ScenarioDriver | null = null;
+  let overallTimerHandle: NodeJS.Timeout | null = null;
+  const timeoutError = new Error(
+    `scenario exceeded overall timeout of ${overallTimeoutMs}ms`,
+  );
+  const overallTimer = new Promise<never>((_resolve, reject) => {
+    overallTimerHandle = setTimeout(() => {
+      abortController.abort(timeoutError);
+      const driver = activeDriver;
+      if (!driver) {
+        reject(timeoutError);
+        return;
+      }
+      void driver
+        .close()
+        .catch(() => undefined)
+        .finally(() => reject(timeoutError));
+    }, overallTimeoutMs);
+    overallTimerHandle.unref?.();
   });
 
   const work = (async (): Promise<{ finalUrl?: string; finalTitle?: string; ok: boolean; error?: string }> => {
     const driver = await openDriver(tool, input);
+    activeDriver = driver;
     try {
+      throwIfAborted(abortController.signal);
       // Optional opening goto: if the request specifies a top-level url and
       // the first step isn't a goto, navigate first to keep the scenario
       // declarative.
@@ -339,7 +631,7 @@ async function runScenario(
       for (const step of input.steps) {
         const stepStart = Date.now();
         try {
-          await runStep(driver, step, extracted, screenshots);
+          await runStep(driver, step, extracted, screenshots, abortController.signal);
           steps.push({
             index: stepIndex,
             action: step.action,
@@ -368,7 +660,7 @@ async function runScenario(
           if (shot) screenshots.push(shot);
         } catch (error) {
           // best effort; do not fail the whole run for a screenshot.
-          fastify.log.warn(
+          appLogger?.warn(
             { err: error, requestId },
             'browser-test final screenshot failed',
           );
@@ -396,6 +688,7 @@ async function runScenario(
 
       return { ok: true, finalUrl, finalTitle };
     } finally {
+      if (activeDriver === driver) activeDriver = null;
       await driver.close().catch(() => undefined);
     }
   })();
@@ -404,8 +697,14 @@ async function runScenario(
   try {
     outcome = await Promise.race([work, overallTimer]);
   } catch (error) {
+    abortController.abort(error);
+    const driver = activeDriver as ScenarioDriver | null;
+    if (driver) await driver.close().catch(() => undefined);
+    await work.catch(() => undefined);
     const message = error instanceof Error ? error.message : String(error);
     outcome = { ok: false, error: message };
+  } finally {
+    if (overallTimerHandle) clearTimeout(overallTimerHandle);
   }
 
   const finishedAtIso = new Date().toISOString();
@@ -441,7 +740,7 @@ interface ScenarioDriver {
     timeoutMs: number,
   ): Promise<void>;
   waitForUrl(pattern: string, timeoutMs: number): Promise<void>;
-  waitForTimeout(ms: number): Promise<void>;
+  waitForTimeout(ms: number, signal: AbortSignal): Promise<void>;
   extractText(selector: string, timeoutMs: number): Promise<string>;
   extractAttribute(selector: string, attribute: string, timeoutMs: number): Promise<string>;
   screenshot(name: string, fullPage: boolean): Promise<ScreenshotPayload | null>;
@@ -464,7 +763,9 @@ async function runStep(
   step: Step,
   extracted: Record<string, string>,
   screenshots: ScreenshotPayload[],
+  signal: AbortSignal,
 ): Promise<void> {
+  throwIfAborted(signal);
   const timeoutMs = step.timeoutMs ?? config.defaultStepTimeoutMs;
   switch (step.action) {
     case 'goto':
@@ -489,7 +790,7 @@ async function runStep(
       await driver.waitForUrl(step.url, timeoutMs);
       return;
     case 'waitForTimeout':
-      await driver.waitForTimeout(step.ms);
+      await driver.waitForTimeout(step.ms, signal);
       return;
     case 'extractText': {
       const value = await driver.extractText(step.selector, timeoutMs);
@@ -593,8 +894,8 @@ async function openPlaywrightDriver(input: RunRequest): Promise<ScenarioDriver> 
     waitForUrl: async (urlPattern, timeoutMs) => {
       await page.waitForURL(urlPattern, { timeout: timeoutMs });
     },
-    waitForTimeout: async (ms) => {
-      await page.waitForTimeout(ms);
+    waitForTimeout: async (ms, signal) => {
+      await abortableDelay(ms, signal);
     },
     extractText: async (selector, timeoutMs) => {
       const handle = await page.waitForSelector(selector, { state: 'attached', timeout: timeoutMs });
@@ -718,7 +1019,8 @@ async function openPuppeteerDriver(input: RunRequest): Promise<ScenarioDriver> {
     },
     waitForUrl: async (urlPattern, timeoutMs) => {
       await page.waitForFunction(
-        (pattern: string, current: string) => {
+        (pattern: string) => {
+          const current = window.location.href;
           if (pattern.startsWith('/') && pattern.endsWith('/')) {
             const re = new RegExp(pattern.slice(1, -1));
             return re.test(current);
@@ -727,11 +1029,10 @@ async function openPuppeteerDriver(input: RunRequest): Promise<ScenarioDriver> {
         },
         { timeout: timeoutMs },
         urlPattern,
-        page.url(),
       );
     },
-    waitForTimeout: async (ms) => {
-      await new Promise((resolve) => setTimeout(resolve, ms));
+    waitForTimeout: async (ms, signal) => {
+      await abortableDelay(ms, signal);
     },
     extractText: async (selector, timeoutMs) => {
       await page.waitForSelector(selector, { timeout: timeoutMs });
@@ -889,8 +1190,8 @@ async function openSeleniumDriver(input: RunRequest): Promise<ScenarioDriver> {
           : seleniumUntil.urlContains(urlPattern);
       await driver.wait(condition, timeoutMs);
     },
-    waitForTimeout: async (ms) => {
-      await driver.sleep(ms);
+    waitForTimeout: async (ms, signal) => {
+      await abortableDelay(ms, signal);
     },
     extractText: async (selector, timeoutMs) => {
       const element = await findOne(selector, 0, timeoutMs);
@@ -925,6 +1226,34 @@ async function openSeleniumDriver(input: RunRequest): Promise<ScenarioDriver> {
 
 // --- Helpers -------------------------------------------------------------
 
+function abortSignalError(signal: AbortSignal): Error {
+  const reason = signal.reason;
+  return reason instanceof Error ? reason : new Error(reason ? String(reason) : 'scenario aborted');
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortSignalError(signal);
+}
+
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback();
+    };
+    const timer = setTimeout(() => finish(resolve), ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      finish(() => reject(abortSignalError(signal)));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+}
 function clampScreenshot(
   name: string,
   contentType: 'image/png' | 'image/jpeg',
@@ -1019,6 +1348,8 @@ function serviceDescriptor() {
       status: 'GET /browser-test/status',
       healthz: 'GET /browser-test/healthz',
       metrics: 'GET /browser-test/metrics',
+      openapi: 'GET /openapi.json',
+      docs: 'GET /docs/api',
     },
     tools: TOOLS,
     defaultTool: config.defaultTool,
@@ -1105,48 +1436,75 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-function setTimeoutPromise(ms: number): Promise<never> {
-  return new Promise((_resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms);
-    timer.unref?.();
-  });
-}
-
-async function shutdown(signal: NodeJS.Signals) {
-  fastify.log.info({ signal }, 'browser-test shutting down');
-  await telemetry.shutdown();
-  try {
-    await fastify.close();
-  } finally {
-    if (playwrightBrowser) {
-      try {
-        await playwrightBrowser.close();
-      } catch {
-        // ignore
-      }
+async function closeBrowsers(): Promise<void> {
+  if (playwrightBrowser) {
+    try {
+      await playwrightBrowser.close();
+    } catch {
+      // best effort during shutdown
     }
-    if (puppeteerBrowser) {
-      try {
-        await puppeteerBrowser.close();
-      } catch {
-        // ignore
-      }
+    playwrightBrowser = null;
+    playwrightBrowserPromise = null;
+  }
+  if (puppeteerBrowser) {
+    try {
+      await puppeteerBrowser.close();
+    } catch {
+      // best effort during shutdown
     }
-    process.exit(0);
+    puppeteerBrowser = null;
+    puppeteerBrowserPromise = null;
   }
 }
 
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('SIGINT', () => void shutdown('SIGINT'));
+async function startServer(): Promise<void> {
+  const telemetry = initTelemetry('dd-browser-test-server');
+  const { app } = await buildApp({ instrumentTelemetry: true });
+  let closing = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (closing) return;
+    closing = true;
+    app.log.info({ signal }, 'browser-test shutting down');
+    try {
+      await app.close();
+    } finally {
+      await closeBrowsers();
+      await telemetry.shutdown();
+    }
+  };
+  process.once('SIGTERM', () => void shutdown('SIGTERM'));
+  process.once('SIGINT', () => void shutdown('SIGINT'));
 
-fastify
-  .listen({ host: config.host, port: config.port })
-  .then((address) => {
-    fastify.log.info({ address }, 'dd-browser-test-server listening');
-  })
-  .catch((err) => {
-    fastify.log.error({ err }, 'dd-browser-test-server failed to start');
-    process.exit(1);
+  const address = await app.listen({ host: config.host, port: config.port });
+  app.log.info({ address }, 'dd-browser-test-server listening');
+}
+
+async function runCli(): Promise<void> {
+  if (process.argv.includes(OPENAPI_EXPORT_FLAG)) {
+    const { app, documents } = await buildApp({
+      authSecret: 'contract-export-only',
+      instrumentTelemetry: false,
+    });
+    try {
+      process.stdout.write(documents.internalJson);
+    } finally {
+      await app.close();
+    }
+    return;
+  }
+  await startServer();
+}
+
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  return entry !== undefined && pathToFileURL(entry).href === import.meta.url;
+}
+
+if (isMainModule()) {
+  runCli().catch((error) => {
+    console.error(error instanceof Error ? error.stack : String(error));
+    process.exitCode = 1;
   });
+}
 
 export type { RunRequest, RunResult, Step };

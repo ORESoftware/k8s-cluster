@@ -1,0 +1,429 @@
+name: Browser MCP public OAuth e2e
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/browser-mcp-public-e2e.yml'
+      - 'scripts/verify-browser-mcp.sh'
+      - 'remote/deployments/browser-mcp-rs/**'
+      - 'remote/deployments/web-scraper-service/**'
+      - 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml'
+      - 'remote/tests/general/browser-mcp-public-e2e.test.ts'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/browser-mcp-public-e2e.yml'
+      - 'scripts/verify-browser-mcp.sh'
+      - 'remote/deployments/browser-mcp-rs/**'
+      - 'remote/deployments/web-scraper-service/**'
+      - 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml'
+      - 'remote/tests/general/browser-mcp-public-e2e.test.ts'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-mcp-public-oauth-e2e-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: workflow contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/browser-mcp-public-e2e.yml
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install test dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Run security and coverage contract
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/browser-mcp-public-e2e.test.ts
+
+  live:
+    name: AWS and Hetzner live OAuth smoke
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Initialize sanitized result
+        env:
+          RESULT_FILE: ${{ runner.temp }}/browser-mcp-public-e2e-result.json
+        run: |
+          jq -n \
+            --arg checked_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg workflow_commit "$GITHUB_SHA" \
+            '{
+              schema_version: 1,
+              checked_at: $checked_at,
+              workflow_commit: $workflow_commit,
+              source_revision: "main",
+              status: "not_started",
+              failure_phase: "pending",
+              aws_outcome: "pending",
+              smoke_outcome: "pending",
+              expected_edges: [
+                "https://98.90.186.114/browser-mcp",
+                "https://hello.95-217-171-250.sslip.io/browser-mcp"
+              ],
+              stdout: "",
+              stderr: ""
+            }' >"$RESULT_FILE"
+
+      - name: Check live verification prerequisites
+        id: preflight
+        env:
+          ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          RESULT_FILE: ${{ runner.temp }}/browser-mcp-public-e2e-result.json
+        run: |
+          set -euo pipefail
+          failure_phase=none
+          if [[ -z "$ROLE_TO_ASSUME" ]]; then
+            failure_phase=aws_role_not_configured
+          elif [[ -z "$INSTANCE_ID" ]]; then
+            failure_phase=aws_ssm_instance_not_configured
+          fi
+
+          jq \
+            --arg failure_phase "$failure_phase" \
+            '.failure_phase = $failure_phase' \
+            "$RESULT_FILE" >"$RESULT_FILE.tmp"
+          mv "$RESULT_FILE.tmp" "$RESULT_FILE"
+
+          if [[ "$failure_phase" == none ]]; then
+            echo 'ready=true' >>"$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials
+        id: aws
+        if: steps.preflight.outputs.ready == 'true'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Run full verifier through the trusted SSM target
+        id: smoke
+        if: steps.preflight.outputs.ready == 'true' && steps.aws.outcome == 'success'
+        continue-on-error: true
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          SOURCE_REVISION: main
+          BROWSER_MCP_SECRET_ID: dd/remote-dev/browser-mcp-secrets
+          RESULT_FILE: ${{ runner.temp }}/browser-mcp-public-e2e-result.json
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+
+          python3 - <<'PY' >"$RUNNER_TEMP/browser-mcp-public-e2e-commands.json"
+          import json
+          import os
+          import shlex
+
+          revision = os.environ.get("SOURCE_REVISION", "main") or "main"
+          secret_id = os.environ["BROWSER_MCP_SECRET_ID"]
+          script = r'''set -euo pipefail
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+
+          git fetch origin "${SOURCE_REVISION:-main}"
+          git show "origin/${SOURCE_REVISION:-main}:scripts/verify-browser-mcp.sh" > /tmp/verify-browser-mcp.sh
+          chmod 700 /tmp/verify-browser-mcp.sh
+
+          expected_image="$(
+            git show "origin/${SOURCE_REVISION:-main}:remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml" |
+              sed -n 's/^[[:space:]]*image:[[:space:]]*\(ghcr.io\/oresoftware\/dd-web-scraper@sha256:[0-9a-f]\{64\}\)$/\1/p' |
+              head -n 1
+          )"
+          test -n "$expected_image"
+
+          echo 'checking AWS Kubernetes rollout and immutable worker image'
+          kubectl -n default rollout status deployment/dd-web-scraper --timeout=300s
+          kubectl -n default rollout status deployment/dd-browser-mcp-rs --timeout=300s
+          deployed_image="$(kubectl -n default get deployment dd-web-scraper -o jsonpath='{.spec.template.spec.containers[0].image}')"
+          if [ "$deployed_image" != "$expected_image" ]; then
+            echo 'deployed worker image does not match the main GitOps pin' >&2
+            echo "expected: $expected_image" >&2
+            echo "actual:   $deployed_image" >&2
+            exit 1
+          fi
+
+          secret_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id "$BROWSER_MCP_SECRET_ID" \
+              --query SecretString \
+              --output text
+          )"
+          operator_secret="$(jq -er '.BROWSER_MCP_OAUTH_OPERATOR_SECRET' <<<"$secret_json")"
+          unset secret_json
+          test "${#operator_secret}" -ge 20
+
+          for endpoint in \
+            'https://98.90.186.114/browser-mcp' \
+            'https://hello.95-217-171-250.sslip.io/browser-mcp'; do
+            echo "verifying Browser MCP edge: $endpoint"
+            BROWSER_MCP_OAUTH_OPERATOR_SECRET="$operator_secret" \
+              bash /tmp/verify-browser-mcp.sh "$endpoint"
+          done
+
+          unset operator_secret
+          rm -f /tmp/verify-browser-mcp.sh
+          echo 'both Browser MCP public edges passed the full OAuth verifier'
+          '''
+
+          print(json.dumps({
+              "commands": [
+                  "set -euo pipefail",
+                  (
+                      "sudo -u ec2-user -H env "
+                      f"SOURCE_REVISION={shlex.quote(revision)} "
+                      f"BROWSER_MCP_SECRET_ID={shlex.quote(secret_id)} "
+                      f"bash -lc {shlex.quote(script)}"
+                  ),
+              ],
+          }))
+          PY
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "browser-mcp-public-oauth-e2e-${GITHUB_SHA}" \
+              --parameters "file://$RUNNER_TEMP/browser-mcp-public-e2e-commands.json" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "SSM command id: $command_id"
+
+          status='Pending'
+          for _ in $(seq 1 360); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Cancelled|Cancelling|Failed|TimedOut)
+                break
+                ;;
+            esac
+            sleep 5
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json >"$RUNNER_TEMP/browser-mcp-public-e2e-raw.json"
+
+          python3 - <<'PY' \
+            "$RUNNER_TEMP/browser-mcp-public-e2e-raw.json" \
+            "$RESULT_FILE" \
+            "$GITHUB_SHA"
+          import json
+          import re
+          import sys
+          from datetime import datetime, timezone
+
+          source, target, workflow_sha = sys.argv[1:]
+          data = json.load(open(source, encoding="utf-8"))
+
+          def redact(value: str) -> str:
+              value = re.sub(r'(?i)Bearer\s+[A-Za-z0-9._~+\-/]+=*', 'Bearer [REDACTED]', value)
+              value = re.sub(r'(?i)(access_token|refresh_token|operator_secret|signing_secret)(["=: ]+)[^\s"&]+', r'\1\2[REDACTED]', value)
+              value = re.sub(r'([?&]code=)[^&\s]+', r'\1[REDACTED]', value)
+              value = re.sub(r'(?i)(BROWSER_MCP_OAUTH_OPERATOR_SECRET=)[^\s]+', r'\1[REDACTED]', value)
+              return value
+
+          result = {
+              "schema_version": 1,
+              "checked_at": datetime.now(timezone.utc).isoformat(),
+              "workflow_commit": workflow_sha,
+              "source_revision": "main",
+              "status": data.get("Status", "Unknown"),
+              "failure_phase": "none",
+              "expected_edges": [
+                  "https://98.90.186.114/browser-mcp",
+                  "https://hello.95-217-171-250.sslip.io/browser-mcp",
+              ],
+              "stdout": redact(data.get("Stdout", "")),
+              "stderr": redact(data.get("Stderr", "")),
+          }
+          with open(target, "w", encoding="utf-8") as handle:
+              json.dump(result, handle, indent=2)
+              handle.write("\n")
+          print(json.dumps({
+              "status": result["status"],
+              "checked_at": result["checked_at"],
+              "stdout_lines": len(result["stdout"].splitlines()),
+              "stderr_lines": len(result["stderr"].splitlines()),
+          }, indent=2))
+          PY
+
+          test "$(jq -r '.status' "$RESULT_FILE")" = 'Success'
+
+      - name: Finalize sanitized result metadata
+        if: always()
+        env:
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+          AWS_OUTCOME: ${{ steps.aws.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          RESULT_FILE: ${{ runner.temp }}/browser-mcp-public-e2e-result.json
+        run: |
+          set -euo pipefail
+          current_failure_phase="$(jq -r '.failure_phase // "pending"' "$RESULT_FILE")"
+          failure_phase="$current_failure_phase"
+
+          if [[ "$current_failure_phase" == pending || "$PREFLIGHT_OUTCOME" != success ]]; then
+            failure_phase=preflight_internal_error
+          elif [[ "$current_failure_phase" == none && "$AWS_OUTCOME" != success ]]; then
+            failure_phase=aws_oidc_assume_role_failed
+          elif [[ "$current_failure_phase" == none && "$SMOKE_OUTCOME" != success ]]; then
+            failure_phase=ssm_or_live_verifier_failed
+          fi
+
+          jq \
+            --arg failure_phase "$failure_phase" \
+            --arg aws_outcome "$AWS_OUTCOME" \
+            --arg smoke_outcome "$SMOKE_OUTCOME" \
+            '
+              .failure_phase = $failure_phase |
+              .aws_outcome = $aws_outcome |
+              .smoke_outcome = $smoke_outcome |
+              if .status == "not_started" then
+                .status = if $failure_phase == "none"
+                  then "workflow_internal_error"
+                  else "workflow_precondition_failed"
+                end
+              else . end
+            ' "$RESULT_FILE" >"$RESULT_FILE.tmp"
+          mv "$RESULT_FILE.tmp" "$RESULT_FILE"
+
+      - name: Upload sanitized verification result
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: browser-mcp-public-oauth-e2e-result
+          path: ${{ runner.temp }}/browser-mcp-public-e2e-result.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce live verification result
+        if: always()
+        env:
+          AWS_OUTCOME: ${{ steps.aws.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          test "$AWS_OUTCOME" = 'success'
+          test "$SMOKE_OUTCOME" = 'success'
+
+  publish:
+    name: publish sanitized result
+    if: always() && github.event_name != 'pull_request'
+    needs:
+      - live
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Download sanitized live result
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: browser-mcp-public-oauth-e2e-result
+          path: ${{ runner.temp }}/browser-mcp-result
+
+      - name: Validate result contains no credentials
+        env:
+          RESULT_FILE: ${{ runner.temp }}/browser-mcp-result/browser-mcp-public-e2e-result.json
+        run: |
+          set -euo pipefail
+          test -s "$RESULT_FILE"
+          jq -e '.schema_version == 1 and (.status | type == "string") and (.failure_phase | type == "string")' "$RESULT_FILE" >/dev/null
+          failure_phase="$(jq -r '.failure_phase' "$RESULT_FILE")"
+          case "$failure_phase" in
+            none|aws_role_not_configured|aws_ssm_instance_not_configured|preflight_internal_error|aws_oidc_assume_role_failed|ssm_or_live_verifier_failed)
+              ;;
+            *)
+              echo "unexpected Browser MCP failure phase: $failure_phase" >&2
+              exit 1
+              ;;
+          esac
+          ! grep -Eqi -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|Bearer[[:space:]]+eyJ|[?&]code=[^[]|BROWSER_MCP_OAUTH_OPERATOR_SECRET=[^[]' "$RESULT_FILE"
+
+      - name: Publish result to the automation branch
+        env:
+          RESULT_FILE: ${{ runner.temp }}/browser-mcp-result/browser-mcp-public-e2e-result.json
+          RESULTS_BRANCH: automation/browser-mcp-verification-results
+        run: |
+          set -euo pipefail
+          cp "$RESULT_FILE" "$RUNNER_TEMP/result.json"
+          git fetch origin "$RESULTS_BRANCH" || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$RESULTS_BRANCH"; then
+            git switch --force-create "$RESULTS_BRANCH" "origin/$RESULTS_BRANCH"
+          else
+            git switch --orphan "$RESULTS_BRANCH"
+            git rm -rf .
+          fi
+
+          mkdir -p browser-mcp
+          jq \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg source_commit "$GITHUB_SHA" \
+            --arg published_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '. + {
+              workflow_run_id: $run_id,
+              workflow_run_attempt: $run_attempt,
+              source_commit: $source_commit,
+              published_at: $published_at
+            }' "$RUNNER_TEMP/result.json" >browser-mcp/latest.json
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add browser-mcp/latest.json
+          if git diff --cached --quiet; then
+            echo 'sanitized result is unchanged'
+          else
+            git commit -m 'DEN-405 publish sanitized Browser MCP verification'
+            git push origin "HEAD:$RESULTS_BRANCH"
+          fi

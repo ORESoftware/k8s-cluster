@@ -1,0 +1,89 @@
+# Patch 3 — ValidatingAdmissionPolicy: dd-build-server cannot author an
+# escalating PodSpec (audit F5, defense-in-depth)
+#
+# Finding (HIGH): even scoped to one namespace (patch 2), `create/patch
+# deployments` lets the SA set a PodSpec that borrows a privileged identity or
+# breaks out. PSA `baseline` (patch 2) blocks privileged/hostPath/hostNetwork,
+# but does NOT block `serviceAccountName: <more-privileged SA>`. This policy
+# closes that gap and adds a second, RBAC-independent layer on the rest.
+#
+# Requires Kubernetes >= 1.30 (ValidatingAdmissionPolicy GA). The EC2 cluster is
+# on kubectl v1.32 per the GitOps workflow, so the server side should support it.
+#
+# NOT auto-applied. `kubectl apply -f` this file. Test in `audit`-equivalent by
+# first setting the binding `validationActions: [Warn, Audit]`, watch the audit
+# log / warnings, then switch to `[Deny]`.
+#
+# Rollback: delete the policy + binding; no workload references it.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: dd-build-server-podspec-guard
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets, replicasets]
+      - apiGroups: ['']
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: podSpec
+      # Deployments/StatefulSets/etc. nest the PodSpec under
+      # spec.template.spec; bare Pods use spec. Coalesce.
+      expression: >-
+        has(object.spec.template) ? object.spec.template.spec : object.spec
+    - name: allowedServiceAccounts
+      expression: "['dd-build-server', 'default']"
+  validations:
+    - expression: >-
+        !has(variables.podSpec.serviceAccountName) ||
+        variables.podSpec.serviceAccountName in variables.allowedServiceAccounts
+      message: "dd-build-server may not deploy workloads that run as another ServiceAccount"
+    - expression: "!has(variables.podSpec.hostPID) || variables.podSpec.hostPID == false"
+      message: "hostPID is not permitted in build-server-authored workloads"
+    - expression: "!has(variables.podSpec.hostIPC) || variables.podSpec.hostIPC == false"
+      message: "hostIPC is not permitted in build-server-authored workloads"
+    - expression: "!has(variables.podSpec.hostNetwork) || variables.podSpec.hostNetwork == false"
+      message: "hostNetwork is not permitted in build-server-authored workloads"
+    - expression: >-
+        !has(variables.podSpec.volumes) ||
+        variables.podSpec.volumes.all(v, !has(v.hostPath))
+      message: "hostPath volumes are not permitted in build-server-authored workloads"
+    - expression: >-
+        !has(variables.podSpec.containers) ||
+        variables.podSpec.containers.all(c,
+          !has(c.securityContext) ||
+          !has(c.securityContext.privileged) ||
+          c.securityContext.privileged == false)
+      message: "privileged containers are not permitted in build-server-authored workloads"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: dd-build-server-podspec-guard-binding
+spec:
+  policyName: dd-build-server-podspec-guard
+  # Start with [Warn, Audit], flip to [Deny] once the audit log is clean.
+  validationActions: [Deny]
+  matchResources:
+    # Scope the policy to objects created by the build-server SA. K8s evaluates
+    # the policy for the matched resources above; this binding limits WHICH
+    # requests it denies to those from the build-server SA, so other controllers
+    # (Argo CD, operators) are unaffected.
+    namespaceSelector: {}
+    objectSelector:
+      matchLabels:
+        app.kubernetes.io/managed-by: dd-build-server
+# NOTE: for the objectSelector to work, build-server must stamp
+# `app.kubernetes.io/managed-by: dd-build-server` on the manifests it applies
+# (a one-line kustomize commonLabel or a kubectl label step). If you cannot
+# guarantee that label, bind by userName instead via a matchConditions clause:
+#   matchConditions:
+#     - name: only-build-server-sa
+#       expression: "request.userInfo.username == 'system:serviceaccount:dd-builds:dd-build-server'"

@@ -40,7 +40,7 @@ const RERANK_POOL: usize = 100;
 
 // --- request / response types ----------------------------------------------
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct EdgeRef {
     /// external_id of the destination document.
     pub to: String,
@@ -50,18 +50,20 @@ pub struct EdgeRef {
     pub weight: Option<f64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct IndexDoc {
     #[serde(default)]
     pub external_id: Option<String>,
     pub content: String,
     #[serde(default)]
+    #[schema(value_type = Value)]
     pub attributes: Value,
     #[serde(default)]
     pub edges: Vec<EdgeRef>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[schema(as = SearchIndexRequest)]
 pub struct IndexRequest {
     pub collection: String,
     pub provider: String,
@@ -70,7 +72,8 @@ pub struct IndexRequest {
     pub documents: Vec<IndexDoc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[schema(as = SearchIndexResponse)]
 pub struct IndexResponse {
     pub collection: String,
     pub indexed: usize,
@@ -81,7 +84,7 @@ fn weight_one() -> f64 {
     1.0
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct Signals {
     #[serde(default = "weight_one")]
     pub lexical: f64,
@@ -93,11 +96,15 @@ pub struct Signals {
 
 impl Default for Signals {
     fn default() -> Self {
-        Self { lexical: 1.0, trigram: 1.0, semantic: 1.0 }
+        Self {
+            lexical: 1.0,
+            trigram: 1.0,
+            semantic: 1.0,
+        }
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct GraphCfg {
     /// Seed documents by external_id; results are docs reachable from them.
     #[serde(default)]
@@ -110,14 +117,15 @@ pub struct GraphCfg {
     pub weight: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct RerankCfg {
     pub provider: String,
     #[serde(default)]
     pub model: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[schema(as = SearchQueryRequest)]
 pub struct SearchRequest {
     pub collection: String,
     pub query: String,
@@ -128,6 +136,7 @@ pub struct SearchRequest {
     pub signals: Option<Signals>,
     /// Structured filters (see `filters` module). Defaults to no filter.
     #[serde(default)]
+    #[schema(value_type = Value)]
     pub filters: Value,
     #[serde(default)]
     pub graph: Option<GraphCfg>,
@@ -141,31 +150,34 @@ fn default_top_k() -> usize {
     10
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct Hit {
     pub id: String,
     pub external_id: Option<String>,
     pub content: String,
+    #[schema(value_type = Value)]
     pub attributes: Value,
     pub score: f64,
     /// Per-signal 1-based rank of this doc within each signal that matched it.
     pub signals: BTreeMap<String, usize>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[schema(as = SearchQueryResponse)]
 pub struct SearchResponse {
     pub collection: String,
     pub signals_used: Vec<String>,
     pub hits: Vec<Hit>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[schema(as = SearchAddEdgesRequest)]
 pub struct AddEdgesRequest {
     pub collection: String,
     pub edges: Vec<EdgeTriple>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct EdgeTriple {
     pub from: String,
     pub to: String,
@@ -175,7 +187,8 @@ pub struct EdgeTriple {
     pub weight: Option<f64>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[schema(as = SearchDeleteRequest)]
 pub struct DeleteRequest {
     pub collection: String,
     pub external_ids: Vec<String>,
@@ -218,12 +231,22 @@ impl SearchService {
         candidate_k: usize,
         max_hops: u32,
     ) -> Self {
-        Self { pool, embedder, rerank, search_dim, candidate_k, max_hops }
+        Self {
+            pool,
+            embedder,
+            rerank,
+            search_dim,
+            candidate_k,
+            max_hops,
+        }
     }
 
     pub async fn health(&self) -> Result<(), ApiError> {
         self.pool
-            .query_one(Statement::from_string(DatabaseBackend::Postgres, "select 1"))
+            .query_one(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "select 1",
+            ))
             .await
             .map_err(db_err)?;
         Ok(())
@@ -262,7 +285,9 @@ impl SearchService {
 
     pub async fn index(&self, req: IndexRequest) -> Result<IndexResponse, ApiError> {
         let contents: Vec<String> = req.documents.iter().map(|d| d.content.clone()).collect();
-        let vectors = self.embed(&req.provider, &req.model, contents, InputType::Document).await?;
+        let vectors = self
+            .embed(&req.provider, &req.model, contents, InputType::Document)
+            .await?;
 
         let tx = self.pool.begin().await.map_err(db_err)?;
 
@@ -298,11 +323,10 @@ impl SearchService {
                         lit.into(),
                     ],
                 );
-                let row = tx
-                    .query_one(stmt)
-                    .await
-                    .map_err(db_err)?
-                    .ok_or_else(|| ApiError::Db("insert returning id produced no row".into()))?;
+                let row =
+                    tx.query_one(stmt).await.map_err(db_err)?.ok_or_else(|| {
+                        ApiError::Db("insert returning id produced no row".into())
+                    })?;
                 let row_id: Uuid = row.try_get("", "id").map_err(db_err)?;
                 id_by_ext.insert(ext.clone(), row_id);
                 row_id
@@ -318,11 +342,10 @@ impl SearchService {
                         lit.into(),
                     ],
                 );
-                let row = tx
-                    .query_one(stmt)
-                    .await
-                    .map_err(db_err)?
-                    .ok_or_else(|| ApiError::Db("insert returning id produced no row".into()))?;
+                let row =
+                    tx.query_one(stmt).await.map_err(db_err)?.ok_or_else(|| {
+                        ApiError::Db("insert returning id produced no row".into())
+                    })?;
                 row.try_get("", "id").map_err(db_err)?
             };
             doc_ids.push(id);
@@ -352,7 +375,11 @@ impl SearchService {
         }
 
         tx.commit().await.map_err(db_err)?;
-        Ok(IndexResponse { collection: req.collection, indexed: doc_ids.len(), edges: edge_count })
+        Ok(IndexResponse {
+            collection: req.collection,
+            indexed: doc_ids.len(),
+            edges: edge_count,
+        })
     }
 
     async fn resolve_one<C: ConnectionTrait>(
@@ -372,7 +399,11 @@ impl SearchService {
             .map_err(db_err)
     }
 
-    async fn resolve_ids(&self, collection: &str, externals: &[String]) -> Result<Vec<Uuid>, ApiError> {
+    async fn resolve_ids(
+        &self,
+        collection: &str,
+        externals: &[String],
+    ) -> Result<Vec<Uuid>, ApiError> {
         search_documents::Entity::find()
             .select_only()
             .column(search_documents::Column::Id)
@@ -389,7 +420,8 @@ impl SearchService {
     /// dynamically composed (rendered filter predicates, optional clauses) and
     /// use pgvector/tsquery/pg_trgm operators the entity API cannot express.
     async fn candidates(&self, sql: &str, binds: Vec<Bound>) -> Result<Vec<Uuid>, ApiError> {
-        let stmt = Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, to_values(&binds));
+        let stmt =
+            Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, to_values(&binds));
         let rows = self.pool.query_all(stmt).await.map_err(db_err)?;
         rows.iter()
             .map(|r| r.try_get::<Uuid>("", "id").map_err(db_err))
@@ -408,13 +440,21 @@ impl SearchService {
             let q = push(&mut b, Bound::Text(req.query.clone()));
             let f = filters::render(&req.filters, &mut b)?;
             let lim = push(&mut b, Bound::Int(k as i64));
-            let fw = if f.is_empty() { String::new() } else { format!(" and {f}") };
+            let fw = if f.is_empty() {
+                String::new()
+            } else {
+                format!(" and {f}")
+            };
             let sql = format!(
                 "select id from search_documents \
                  where collection = ${c} and content_tsv @@ websearch_to_tsquery('english', ${q}){fw} \
                  order by ts_rank(content_tsv, websearch_to_tsquery('english', ${q})) desc limit ${lim}"
             );
-            ranked_lists.push(("lexical".into(), signals.lexical, self.candidates(&sql, b).await?));
+            ranked_lists.push((
+                "lexical".into(),
+                signals.lexical,
+                self.candidates(&sql, b).await?,
+            ));
         }
 
         // 2. trigram
@@ -424,19 +464,32 @@ impl SearchService {
             let q = push(&mut b, Bound::Text(req.query.clone()));
             let f = filters::render(&req.filters, &mut b)?;
             let lim = push(&mut b, Bound::Int(k as i64));
-            let fw = if f.is_empty() { String::new() } else { format!(" and {f}") };
+            let fw = if f.is_empty() {
+                String::new()
+            } else {
+                format!(" and {f}")
+            };
             let sql = format!(
                 "select id from search_documents \
                  where collection = ${c} and content % ${q}{fw} \
                  order by content <-> ${q} asc limit ${lim}"
             );
-            ranked_lists.push(("trigram".into(), signals.trigram, self.candidates(&sql, b).await?));
+            ranked_lists.push((
+                "trigram".into(),
+                signals.trigram,
+                self.candidates(&sql, b).await?,
+            ));
         }
 
         // 3. semantic
         if signals.semantic > 0.0 {
             let qv = self
-                .embed(&req.provider, &req.model, vec![req.query.clone()], InputType::Query)
+                .embed(
+                    &req.provider,
+                    &req.model,
+                    vec![req.query.clone()],
+                    InputType::Query,
+                )
                 .await?;
             if let Some(vec) = qv.into_iter().next() {
                 let mut b = Vec::new();
@@ -444,13 +497,21 @@ impl SearchService {
                 let v = push(&mut b, Bound::Text(vector_literal(&vec)));
                 let f = filters::render(&req.filters, &mut b)?;
                 let lim = push(&mut b, Bound::Int(k as i64));
-                let fw = if f.is_empty() { String::new() } else { format!(" and {f}") };
+                let fw = if f.is_empty() {
+                    String::new()
+                } else {
+                    format!(" and {f}")
+                };
                 let sql = format!(
                     "select id from search_documents \
                      where collection = ${c} and embedding is not null{fw} \
                      order by embedding <=> ${v}::vector asc limit ${lim}"
                 );
-                ranked_lists.push(("semantic".into(), signals.semantic, self.candidates(&sql, b).await?));
+                ranked_lists.push((
+                    "semantic".into(),
+                    signals.semantic,
+                    self.candidates(&sql, b).await?,
+                ));
             }
         }
 
@@ -473,7 +534,11 @@ impl SearchService {
                     let c = push(&mut b, Bound::Text(req.collection.clone()));
                     let f = filters::render(&req.filters, &mut b)?;
                     let lim = push(&mut b, Bound::Int(k as i64));
-                    let fw = if f.is_empty() { String::new() } else { format!(" and {f}") };
+                    let fw = if f.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" and {f}")
+                    };
                     let sql = format!(
                         "with recursive reach(id, hops) as ( \
                             select id, 0 from search_documents where id = any(${s}) \
@@ -502,7 +567,10 @@ impl SearchService {
             }
             for (rank, id) in ids.iter().enumerate() {
                 *scores.entry(*id).or_insert(0.0) += weight / (RRF_K + (rank as f64) + 1.0);
-                per_signal.entry(*id).or_default().insert(name.clone(), rank + 1);
+                per_signal
+                    .entry(*id)
+                    .or_default()
+                    .insert(name.clone(), rank + 1);
             }
         }
 
@@ -510,11 +578,17 @@ impl SearchService {
         ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Pool to fetch: enough for an optional rerank, else just top_k.
-        let pool_n = if req.rerank.is_some() { RERANK_POOL.max(req.top_k) } else { req.top_k };
+        let pool_n = if req.rerank.is_some() {
+            RERANK_POOL.max(req.top_k)
+        } else {
+            req.top_k
+        };
         let pool_ids: Vec<Uuid> = ranked.iter().take(pool_n).map(|(id, _)| *id).collect();
         let score_by_id: HashMap<Uuid, f64> = ranked.iter().cloned().collect();
 
-        let mut hits = self.fetch_hits(&pool_ids, &score_by_id, &per_signal).await?;
+        let mut hits = self
+            .fetch_hits(&pool_ids, &score_by_id, &per_signal)
+            .await?;
 
         // Optional rerank stage over the fused pool.
         if let Some(rc) = &req.rerank {
@@ -541,7 +615,11 @@ impl SearchService {
         }
 
         hits.truncate(req.top_k);
-        Ok(SearchResponse { collection: req.collection, signals_used, hits })
+        Ok(SearchResponse {
+            collection: req.collection,
+            signals_used,
+            hits,
+        })
     }
 
     async fn fetch_hits(
@@ -591,7 +669,9 @@ impl SearchService {
         for e in &req.edges {
             let src = self.resolve_one(&tx, &req.collection, &e.from).await?;
             let dst = self.resolve_one(&tx, &req.collection, &e.to).await?;
-            let (Some(src), Some(dst)) = (src, dst) else { continue };
+            let (Some(src), Some(dst)) = (src, dst) else {
+                continue;
+            };
             upsert_edge(
                 &tx,
                 src,

@@ -183,7 +183,22 @@ export const runtimeConfigStore = new RuntimeConfigStore();
  * Call this once, before fastify.listen().
  */
 export function registerRuntimeConfigRoutes(fastify: FastifyInstance): void {
-  fastify.get('/internal/runtime-config', async () => runtimeConfigStore.snapshot());
+  // server.ts's global preHandler deliberately skips auth for
+  // /internal/runtime-config* so this module can enforce its own
+  // RUNTIME_CONFIG_SERVER_SECRET. That means the check below is the ONLY thing
+  // guarding the snapshot — without it the whole `entries` map was readable
+  // unauthenticated by anything that could reach the pod.
+  fastify.get('/internal/runtime-config', async (req, reply) => {
+    const auth = runtimeConfigStore.requireServerAuth(
+      typeof req.headers['x-server-auth'] === 'string'
+        ? (req.headers['x-server-auth'] as string)
+        : undefined,
+    );
+    if (!auth.ok) {
+      return reply.code(401).send({ ok: false, error: 'unauthorized' });
+    }
+    return runtimeConfigStore.snapshot();
+  });
 
   fastify.post('/internal/update-runtime-config', async (req, reply) => {
     const auth = runtimeConfigStore.requireServerAuth(

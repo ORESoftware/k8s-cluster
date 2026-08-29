@@ -8,6 +8,9 @@ This folder is the GitOps bridge between ArgoCD and the cluster's selected secre
 - the selected cloud secret backend stores the real values.
 - External Secrets Operator reconciles those values into Kubernetes `Secret` objects consumed by
   the deployments through `envFrom` / `secretKeyRef`.
+- Fiducia KV is available as a second application-secret backend through
+  `ClusterSecretStore/dd-fiducia-kv`; see
+  [`../../../docs/fiducia-secret-delivery.md`](../../../docs/fiducia-secret-delivery.md).
 
 `remote/argocd/apps/external-secrets-operator.application.yaml` installs the operator through the
 official Helm chart with CRDs enabled.
@@ -21,6 +24,10 @@ Required secret names:
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
 - `dd/remote-dev/gleamlang-server-secrets` -> creates `dd-gleamlang-server-secrets`
 - `dd/remote-dev/lmx-admin-token` -> creates `dd-lmx-admin-token`
+- `dd/remote-dev/fiducia-eso-reader` -> creates the private
+  `external-secrets/fiducia-eso-reader` bootstrap credential for `dd-fiducia-kv`
+- `dd/remote-dev/fiducia-kv-protection` -> creates the private
+  `fiducia/fiducia-kv-protection` AES-256-GCM keyring used before values enter Raft
 - `dd/remote-dev/ai-ml-platform-secrets` -> consumed by the optional AI/ML chart
   `ExternalSecret`s in `remote/argocd/ai-ml-platform`
 - `dd/remote-dev/big-data-secrets` -> consumed by the optional
@@ -45,8 +52,10 @@ Expected Git keys are:
 Never commit deploy-key material or bake it into a worker image. `dd-dev-server` writes
 `GH_DEPLOY_KEY` from the Kubernetes secret to a private key file at container startup.
 
-All `ExternalSecret` manifests reference the cloud-neutral `dd-cluster-secrets`
-`ClusterSecretStore`. Provider directories under `providers/` decide how that store is backed:
+Bootstrap and cloud-backed `ExternalSecret` manifests reference the cloud-neutral
+`dd-cluster-secrets` `ClusterSecretStore`. Applications may instead reference
+`dd-fiducia-kv` when their values are stored in Fiducia. Provider directories under `providers/`
+decide how the bootstrap store is backed:
 
 - `providers/aws` uses AWS Secrets Manager through the External Secrets controller pod's default AWS
   credential chain. On EC2 this is the node instance role `dd-remote-k8s-role`, which also backs the
@@ -77,6 +86,15 @@ policy `ManageRemoteDevSecrets` covers both consumers:
       "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*"
     },
     {
+      "Sid": "ReadBenefactorGhcrPullCredential",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/benefactor/ghcr-pull-*"
+    },
+    {
       "Sid": "ListSecretsForInspect",
       "Effect": "Allow",
       "Action": "secretsmanager:ListSecrets", // not resource-scopeable
@@ -86,9 +104,12 @@ policy `ManageRemoteDevSecrets` covers both consumers:
 }
 ```
 
-Do not split this back into separate read-only and write policies — the bootstrap path
-needs `CreateSecret` and the inspect path needs `ListSecrets`, and the ESO read path is a
-strict subset of those actions on the same resource prefix.
+Do not split the `dd/remote-dev/*` statement back into separate read-only and
+write policies — the bootstrap path needs `CreateSecret` and the inspect path
+needs `ListSecrets`, and the ESO read path is a strict subset of those actions
+on the same resource prefix. The benefactor registry statement is deliberately
+separate and read-only so the cluster can pull its private image without gaining
+write access to that credential.
 
 `dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the Gleam lambda runner
 consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda

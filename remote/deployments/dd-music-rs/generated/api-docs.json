@@ -1,239 +1,161 @@
 {
-  "ok": true,
-  "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "dd-music-rs",
-  "language": "rust",
-  "routeCount": 13,
-  "routeTypeCounts": {
-    "service": 7,
-    "user-generated": 6
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "dd-music-rs API (public)",
+    "version": "0.1.0",
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
-  "standardDocsRoutes": [
+  "tags": [
+    {
+      "name": "service"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "dd_music_rs_get_94d116e31efd",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "dd_music_rs_get_api_docs_84253df393b3",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "dd_music_rs_get_api_docs_json_a0d8b9337eca",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "dd_music_rs_get_docs_api_a8f5989c5cb4",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "dd_music_rs_get_healthz_61963fb8dd78",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "dd_music_rs_get_metrics_b0c68a2cbe03",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "dd_music_rs_get_readyz_462c1a5cb38e",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {},
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 7,
+  "x-dd-service": "dd-music-rs",
+  "x-dd-standard-docs-routes": [
     "/docs/api",
     "/api/docs",
     "/api/docs.json"
-  ],
-  "routes": [
-    {
-      "path": "/",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
-      "handlers": [
-        "home"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [
-        "api_docs_html"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs.json",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
-      "handlers": [
-        "api_docs_json"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/docs/api",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [
-        "api_docs_html"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [
-        "healthz"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/internal/generate",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "generate_internal"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Prometheus metrics.",
-      "handlers": [
-        "metrics"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/readyz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Readiness check.",
-      "handlers": [
-        "readyz"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/songs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "list_songs"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/songs/:song_id",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "get_song"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/songs/:song_id/audio",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "song_audio"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/songs/:song_id/votes",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "vote_song"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/songs/shelf",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "songs_shelf"
-      ],
-      "sourceFiles": [
-        "remote/deployments/dd-music-rs/src/main.rs"
-      ],
-      "notes": ""
-    }
   ]
 }

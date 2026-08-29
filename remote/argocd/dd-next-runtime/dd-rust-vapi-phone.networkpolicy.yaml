@@ -63,6 +63,15 @@ spec:
       ports:
         - protocol: TCP
           port: 6379
+    # JetStream work queue (DD_VAPI_TASKS) — KEDA scales this deployment by
+    # consumer lag; the pod pulls tasks from dd-nats.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+      ports:
+        - protocol: TCP
+          port: 4222
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

@@ -1,6 +1,5 @@
-# ArgoCD tracks the backend repo directly because repo-server has submodule
-# loading disabled. The same repo is also present as a k8s-cluster submodule at
-# remote/deployments/benefactor-backend-rs for local operator workflows.
+# The cluster repository owns deployment state. Backend CI promotes the exact
+# private GHCR image digest into the Kustomize overlay after tests pass.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -9,9 +8,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/benefactor-cc/backend.rs.git
-    targetRevision: main
-    path: k8s/ec2
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/benefactor-backend-rs
   destination:
     server: https://kubernetes.default.svc
     namespace: default

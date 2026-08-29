@@ -6,9 +6,12 @@ metadata:
   labels:
     app: dd-web-scraper
 spec:
-  replicas: 0
+  # Brought online to serve the persistent browser-agent (/agent/*) sessions
+  # driven by dd-browser-mcp-rs, in addition to the stateless /scrape surface.
+  replicas: 1
   minReadySeconds: 5
-  progressDeadlineSeconds: 1800
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -20,18 +23,29 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-16-responsible-scraping'
+        dd.dev/telemetry-revision: '2026-07-27-den-267-sensitive-field-98d6f2adeb01'
       labels:
         app: dd-web-scraper
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: web-scraper
-          image: mcr.microsoft.com/playwright:v1.56.0-noble
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/oresoftware/dd-web-scraper@sha256:24d891d671d00f97e183d3a9f0ac972418f39c8e5b847e4e6186e39aa30f6cac
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
@@ -40,29 +54,11 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export COREPACK_HOME=/tmp/corepack
-              export npm_config_cache=/tmp/.npm
-              mkdir -p "$PNPM_HOME" "$COREPACK_HOME" "$XDG_CACHE_HOME" "$npm_config_cache"
-              cd /opt/dd-next-1/remote/deployments/web-scraper-service
-              corepack prepare pnpm@9.15.4 --activate
-              corepack pnpm install --frozen-lockfile --ignore-workspace --prod=false
-              corepack pnpm run build
-              exec corepack pnpm run start
           env:
             - name: HOME
               value: /tmp
-            - name: PNPM_HOME
-              value: /tmp/pnpm
             - name: XDG_CACHE_HOME
               value: /tmp/.cache
-            - name: COREPACK_HOME
-              value: /tmp/corepack
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -159,6 +155,41 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+            # Persistent browser-agent session surface (/agent/*), consumed by
+            # dd-browser-mcp-rs. Reuses SERVER_AUTH_SECRET for the auth gate.
+            - name: BROWSER_AGENT_ENABLED
+              value: 'true'
+            - name: BROWSER_AGENT_MAX_SESSIONS_TOTAL
+              value: '12'
+            - name: BROWSER_AGENT_MAX_SESSIONS_PER_OWNER
+              value: '3'
+            - name: BROWSER_AGENT_IDLE_TTL_MS
+              value: '1800000'
+            - name: BROWSER_AGENT_ABSOLUTE_TTL_MS
+              value: '14400000'
+            - name: BROWSER_AGENT_ALLOW_PRIVATE_NETWORKS
+              value: 'false'
+            - name: BROWSER_AGENT_ACCEPT_DOWNLOADS
+              value: 'false'
+            # Process-level ceiling for persistent browser-agent navigation.
+            # Per-call scopes are intersected with this list and cannot widen
+            # it. This must stay byte-for-byte aligned with the browser MCP's
+            # reviewed Fiducia applications, platform-jobs, and appointments profiles. Root hostnames include
+            # that vendor's subdomains; non-root entries are exact form hosts.
+            # Independently of this allowlist, the app blocks SSRF to private,
+            # reserved, and cloud-metadata addresses on EVERY navigation, with
+            # the NetworkPolicy as a backstop — so an empty or over-wide list
+            # still cannot reach the node or the metadata service.
+            - name: BROWSER_AGENT_ALLOWED_DOMAINS
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,greenhouse.io,lever.co,ashbyhq.com,myworkdayjobs.com,workday.com,smartrecruiters.com,icims.com,jobvite.com,workable.com,bamboohr.com,recruitee.com,applytojob.com,ats.rippling.com,breezy.hr,jobscore.com,candidateportalin.ceipal.com,candidateportalnew.ceipal.com,cal.com,calendly.com,httpbingo.org'
+            # Optional JSON secret store for secret_ref resolution (never logged
+            # or returned). Absent by default -> secret refs are rejected.
+            - name: BROWSER_AGENT_SECRETS_FILE
+              value: ''
+            # One-shot Selenium bridge target (dd-selenium-server). Set to enable
+            # /agent/selenium-run. Empty -> bridge returns "not configured".
+            - name: BROWSER_AGENT_SELENIUM_URL
+              value: http://dd-selenium-server.default.svc.cluster.local:8105
             - name: BROWSERLESS_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -170,17 +201,22 @@ spec:
               containerPort: 8097
           resources:
             requests:
-              cpu: 25m
-              memory: 512Mi
+              cpu: 50m
+              memory: 640Mi
+              ephemeral-storage: 256Mi
             limits:
               cpu: '2'
-              memory: 2Gi
+              # Raised from 2Gi: persistent browser-agent sessions hold multiple
+              # long-lived BrowserContexts in addition to one-shot scrapes.
+              memory: 3Gi
+              ephemeral-storage: 2Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            timeoutSeconds: 3
+            failureThreshold: 24
           readinessProbe:
             httpGet:
               path: /healthz
@@ -196,14 +232,9 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 2Gi

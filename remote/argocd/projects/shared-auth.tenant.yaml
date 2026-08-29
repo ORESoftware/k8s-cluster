@@ -1,0 +1,49 @@
+# Layer-1 tenancy for the shared-auth server (ORESoftware/shared-auth-server.rs).
+# Platform-owned: the app repo declares NO Namespace/quota/limit, so its
+# AppProject enforces clusterResourceWhitelist: [] strictly.
+#
+# Houses: dd-shared-auth (8120) — centralized Supabase-verifying auth server.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shared-auth
+  labels:
+    app.kubernetes.io/part-of: shared-auth
+    kubernetes.io/metadata.name: shared-auth
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: shared-auth-quota
+  namespace: shared-auth
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    pods: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: shared-auth-limits
+  namespace: shared-auth
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 256Mi }
+      defaultRequest: { cpu: 50m, memory: 64Mi }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shared-auth-default-deny-ingress
+  namespace: shared-auth
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

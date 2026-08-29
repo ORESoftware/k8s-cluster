@@ -1,0 +1,146 @@
+# flags-2-env declaration for dd-browser-mcp-rs.
+# https://github.com/ORESoftware/flags-2-env
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The service's configuration surface was previously implicit: eight `env::var`
+# calls scattered through `config_from_env()`, with the authoritative list of
+# names living only in the Kubernetes manifest. Nothing declared the types, the
+# defaults, or — critically — which values are credentials. This file makes the
+# contract explicit and gives the CLI the same surface as the env.
+#
+# CREDENTIALS HAVE NO DEFAULTS
+# ----------------------------
+# A well-known "dummy" credential is still a credential an attacker can present.
+# Secret flags are optional in generated types and must be supplied by the
+# operator. The Rust process independently refuses to start without the private
+# worker secret, or with public bearer auth enabled but no bearer secret.
+#
+# CHATGPT OAUTH CONTRACT
+# ----------------------
+# ChatGPT custom MCP apps cannot present an arbitrary operator bearer. The
+# public surface therefore uses OAuth 2.1 discovery, dynamic public-client
+# registration, PKCE S256, short-lived audience-bound access tokens, and
+# rotating refresh tokens. Rust startup requires both OAuth secrets and a
+# non-empty hostname ceiling.
+
+[help]
+url = "https://github.com/ORESoftware/k8s-cluster/blob/main/docs/browser-mcp-chatgpt-2026-07-25.md"
+columns = ["options", "env", "type", "default", "description"]
+
+# ---- listener -------------------------------------------------------------
+
+[flags.host]
+env = "HOST"
+aliases = ["host", "bind", "bind-address"]
+short = "H"
+type = "string"
+default = "0.0.0.0"
+help = "Address to bind the MCP HTTP listener to."
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "listen-port"]
+short = "p"
+type = "integer"
+default = 8092
+help = "TCP port for the MCP HTTP listener (JSON-RPC at /mcp)."
+
+# ---- private browser worker (dd-web-scraper /agent/*) ---------------------
+
+[flags.worker_url]
+env = "BROWSER_MCP_WORKER_URL"
+aliases = ["worker-url", "browser-worker-url"]
+type = "string"
+default = "http://dd-web-scraper.default.svc.cluster.local:8097"
+help = "Base URL of the private Playwright worker. Trailing slashes are stripped."
+
+[flags.worker_timeout_ms]
+env = "BROWSER_MCP_WORKER_TIMEOUT_MS"
+aliases = ["worker-timeout-ms", "worker-timeout"]
+type = "integer"
+default = 65000
+help = "Per-call worker timeout in ms. The server clamps this to 120000."
+
+[flags.worker_auth_secret]
+env = "SERVER_AUTH_SECRET"
+aliases = ["worker-auth-secret", "server-auth-secret"]
+type = "string"
+help = "Required shared secret sent as X-Server-Auth to the worker. CREDENTIAL - supply it from dd-agent-secrets or a local secret source."
+
+# ---- public MCP surface gate ---------------------------------------------
+
+[flags.require_auth]
+env = "BROWSER_MCP_REQUIRE_AUTH"
+aliases = ["require-auth", "auth-required"]
+type = "bool"
+default = "true"
+help = "Require an OAuth access token on the MCP endpoint. Production uses true; false is only for isolated local development."
+
+[flags.public_base_urls]
+env = "BROWSER_MCP_PUBLIC_BASE_URLS"
+aliases = ["public-base-urls", "oauth-issuers", "resources"]
+type = "string"
+default = "https://98.90.186.114/browser-mcp,https://hello.95-217-171-250.sslip.io/browser-mcp"
+help = "Comma-separated trusted public HTTPS MCP endpoint URLs. Host matching selects the OAuth issuer/resource and audience."
+
+[flags.oauth_signing_secret]
+env = "BROWSER_MCP_OAUTH_SIGNING_SECRET"
+aliases = ["oauth-signing-secret"]
+type = "string"
+help = "Required 32+ byte HMAC key for signed client IDs, authorization requests, and access tokens. CREDENTIAL - supply from dd-browser-mcp-rs-secrets."
+
+[flags.oauth_operator_secret]
+env = "BROWSER_MCP_OAUTH_OPERATOR_SECRET"
+aliases = ["oauth-operator-secret"]
+type = "string"
+help = "Required 20+ byte human authorization secret used by the OAuth consent page. CREDENTIAL - supply from dd-browser-mcp-rs-secrets."
+
+[flags.oauth_redis_url]
+env = "BROWSER_MCP_OAUTH_REDIS_URL"
+aliases = ["oauth-redis-url"]
+type = "string"
+default = "redis://dd-redis-cache.default.svc.cluster.local:6379/4"
+help = "Redis database for single-use authorization codes and rotating refresh grants."
+
+[flags.oauth_access_ttl_seconds]
+env = "BROWSER_MCP_OAUTH_ACCESS_TTL_SECONDS"
+aliases = ["oauth-access-ttl-seconds"]
+type = "integer"
+default = 900
+help = "Access-token lifetime in seconds, clamped to 3600."
+
+[flags.oauth_code_ttl_seconds]
+env = "BROWSER_MCP_OAUTH_CODE_TTL_SECONDS"
+aliases = ["oauth-code-ttl-seconds"]
+type = "integer"
+default = 300
+help = "Single-use authorization-code lifetime in seconds, clamped to 600."
+
+[flags.oauth_refresh_ttl_seconds]
+env = "BROWSER_MCP_OAUTH_REFRESH_TTL_SECONDS"
+aliases = ["oauth-refresh-ttl-seconds"]
+type = "integer"
+default = 2592000
+help = "Rotating refresh-token lifetime in seconds, clamped to 90 days."
+
+# ---- navigation policy ----------------------------------------------------
+
+[flags.allowed_domains]
+env = "BROWSER_MCP_ALLOWED_DOMAINS"
+aliases = ["allowed-domains", "allowlist", "domain-allowlist"]
+type = "string"
+help = "Required comma-separated process-level hostname ceiling injected into every browser_act call and enforced for all Playwright traffic. There is deliberately no implicit navigation profile; anonymous startup rejects an empty value."
+
+[flags.default_workflow]
+env = "BROWSER_MCP_DEFAULT_WORKFLOW"
+aliases = ["default-workflow", "workflow"]
+type = "string"
+default = "default"
+help = "Default server-defined workflow allowlist profile used when browser_act omits workflow_id."
+
+[flags.workflow_allowlists_json]
+env = "BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON"
+aliases = ["workflow-allowlists-json"]
+type = "string"
+help = "JSON object mapping workflow IDs to non-empty hostname lists. Every hostname must be a subset of BROWSER_MCP_ALLOWED_DOMAINS; callers can select but never define or widen a profile."

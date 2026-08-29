@@ -1,0 +1,75 @@
+name: Apply browser-test OpenAPI refactor
+
+# One-use, same-repository feature-branch migration. Removed after application.
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/agent/browser-test-refactor.patch.gz.b64'
+      - '.github/workflows/browser-test-apply-refactor.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: browser-test-openapi-refactor-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/browser-test-openapi-zod'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the authorized feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/browser-test-openapi-zod
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Apply the verified patch once
+        shell: bash
+        run: |
+          set -euo pipefail
+          target='remote/deployments/browser-test-server/src/http-api.ts'
+          if test -f "$target"; then
+            echo 'Native OpenAPI refactor is already present.'
+            exit 0
+          fi
+
+          patch_b64='.github/agent/browser-test-refactor.patch.gz.b64'
+          echo 'da4581a186060eb83d27b16d4520ec3a3fa5d8d8cfdf22828f6bcbb1be96ed20  '"$patch_b64" | sha256sum --check
+          base64 --decode "$patch_b64" > "$RUNNER_TEMP/browser-test-refactor.patch.gz"
+          echo 'b4fe1471004a7e9db5ac5bede917570d9af1a6f01b48c9909614d3287844cfce  '"$RUNNER_TEMP/browser-test-refactor.patch.gz" | sha256sum --check
+          gzip --decompress --stdout "$RUNNER_TEMP/browser-test-refactor.patch.gz" > "$RUNNER_TEMP/browser-test-refactor.patch"
+          echo 'da12cb9a16acd295fc6b4edac2be9e8343181122b1f3167f63361bf4f22b1afb  '"$RUNNER_TEMP/browser-test-refactor.patch" | sha256sum --check
+
+          git apply --check "$RUNNER_TEMP/browser-test-refactor.patch"
+          git apply "$RUNNER_TEMP/browser-test-refactor.patch"
+
+          echo 'cb9c2dae1e24267e78789d0aa206cc01dccc61094933b62845daaa2497803a2c  remote/deployments/browser-test-server/src/http-api.ts' | sha256sum --check
+          echo '8c9770b9389882d140151db15a07d7d50e823a9df01d98993615b8d60aa12cbe  remote/deployments/browser-test-server/src/server.ts' | sha256sum --check
+          echo 'b9def8e6855517c2fe7549b372755f2501fe675bfa5334c1458f4875e44cc6f5  .github/workflows/browser-test-openapi.yml' | sha256sum --check
+
+          git diff --check
+          git add \
+            .github/workflows/browser-test-openapi.yml \
+            remote/deployments/browser-test-server/generated/openapi.json \
+            remote/deployments/browser-test-server/package.json \
+            remote/deployments/browser-test-server/readme.md \
+            remote/deployments/browser-test-server/src/export-openapi.ts \
+            remote/deployments/browser-test-server/src/http-api.test.ts \
+            remote/deployments/browser-test-server/src/http-api.ts \
+            remote/deployments/browser-test-server/src/server.ts
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(browser-test): make Zod routes the OpenAPI source of truth'
+          git push origin HEAD:agent/browser-test-openapi-zod

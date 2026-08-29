@@ -245,24 +245,15 @@ spec:
             # egress allowance for :4222 lives in the NetworkPolicy.
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
-            # Optional bearer gate on POST /mcp. Off here (pool workers call
-            # /mcp unauthenticated over the node network). Set MCP_REQUIRE_AUTH
-            # to "true" and provide MCP_AUTH_SECRET (e.g. from a Secret) to
-            # require Authorization: Bearer <secret> / X-Server-Auth on every
-            # JSON-RPC call without changing the NetworkPolicy.
+            # Defense in depth behind the NetworkPolicy: gateway and agent SDK
+            # clients inject the shared cluster credential as X-Server-Auth.
             - name: MCP_REQUIRE_AUTH
-              value: 'false'
-            # The only key this pod actually consumes from
-            # dd-gleam-mcp-server-secrets. Mounted explicitly (rather than via a
-            # whole-secret envFrom) so the pod never inherits unrelated keys.
-            # Absent today; populate the secret + flip MCP_REQUIRE_AUTH=true to
-            # enable the in-pod bearer gate.
+              value: 'true'
             - name: MCP_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: dd-gleam-mcp-server-secrets
-                  key: MCP_AUTH_SECRET
-                  optional: true
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
             - name: MCP_OBSERVABILITY_TIMEOUT_MS
               value: '1200'
             - name: MCP_OBSERVABILITY_BODY_LIMIT_BYTES

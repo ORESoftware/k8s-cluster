@@ -1,0 +1,56 @@
+name: GitHub App submodule authentication
+
+on:
+  pull_request:
+    paths:
+      - '.gitmodules'
+      - '.github/workflows/github-app-submodule-auth.yml'
+      - '.github/workflows/repo-checks.yml'
+      - 'config/ci/k8s-submodule-github-app-allowlist.json'
+      - 'scripts/ci/init-submodules-with-github-app.sh'
+      - 'scripts/ci/init-submodules-with-report.sh'
+      - 'scripts/ci/mint-github-app-installation-token.sh'
+      - 'remote/tests/general/github-app-submodule-token.test.ts'
+      - 'remote/tests/general/private-submodule-ci-contract.test.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Validate workflows
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/github-app-submodule-auth.yml .github/workflows/repo-checks.yml
+      - name: Parse shell helpers
+        run: |
+          bash -n scripts/ci/init-submodules-with-github-app.sh
+          bash -n scripts/ci/init-submodules-with-report.sh
+          bash -n scripts/ci/mint-github-app-installation-token.sh
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run GitHub App authentication contracts
+        run: >-
+          pnpm exec tsx --test
+          general/github-app-submodule-token.test.ts
+          general/private-submodule-ci-contract.test.ts
+        working-directory: remote/tests

@@ -1,0 +1,176 @@
+name: browser mcp external smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/browser-mcp-external-smoke.yml'
+      - '.github/workflows/browser-mcp-public-e2e.yml'
+      - '.github/workflows/athleto-ui-tests.yml'
+      - 'scripts/verify-browser-mcp.sh'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-mcp-external-smoke.yml'
+      - '.github/workflows/browser-mcp-public-e2e.yml'
+      - 'scripts/verify-browser-mcp.sh'
+      - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  # Pull requests validate independently; all live callers serialize so two
+  # schedule/manual/push events cannot claim the same child workflow run.
+  group: browser-mcp-external-smoke-${{ github.event_name == 'pull_request' && github.ref || 'live' }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: scheduled smoke contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify scheduled live-smoke invariants
+        working-directory: remote/tests
+        run: node --test general/scheduled-live-smoke-contract.test.mjs
+
+  verify:
+    name: dispatch and await the protected public OAuth verifier
+    if: github.event_name != 'pull_request'
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_WORKFLOW: browser-mcp-public-e2e.yml
+    steps:
+      - name: Dispatch the current-main public verifier
+        id: dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          main_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha'
+          )"
+          previous_run_id="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs?event=workflow_dispatch&branch=main&per_page=100" |
+              jq -r '[.workflow_runs[].id] | max // 0'
+          )"
+          dispatch_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/dispatches" \
+            -f ref=main
+
+          post_dispatch_main_sha="$(
+            gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha'
+          )"
+          if [[ "$post_dispatch_main_sha" != "$main_sha" ]]; then
+            echo 'main advanced while dispatching; refusing to correlate a different revision' >&2
+            printf 'before=%s after=%s\n' "$main_sha" "$post_dispatch_main_sha" >&2
+            exit 1
+          fi
+
+          printf 'main_sha=%s\nprevious_run_id=%s\ndispatch_started_at=%s\n' \
+            "$main_sha" \
+            "$previous_run_id" \
+            "$dispatch_started_at" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Resolve exactly one dispatched run
+        id: run
+        env:
+          MAIN_SHA: ${{ steps.dispatch.outputs.main_sha }}
+          PREVIOUS_RUN_ID: ${{ steps.dispatch.outputs.previous_run_id }}
+          DISPATCH_STARTED_AT: ${{ steps.dispatch.outputs.dispatch_started_at }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id=''
+          for _ in $(seq 1 90); do
+            candidates="$(
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs?event=workflow_dispatch&branch=main&per_page=100" |
+                jq -c \
+                  --arg main_sha "$MAIN_SHA" \
+                  --arg dispatch_started_at "$DISPATCH_STARTED_AT" \
+                  --argjson previous_run_id "$PREVIOUS_RUN_ID" \
+                  '[
+                    .workflow_runs[] |
+                    select(
+                      .id > $previous_run_id and
+                      .head_sha == $main_sha and
+                      .head_branch == "main" and
+                      .event == "workflow_dispatch" and
+                      .created_at >= $dispatch_started_at
+                    )
+                  ] |
+                  sort_by(.id)'
+            )"
+            candidate_count="$(jq -r 'length' <<<"$candidates")"
+            if [[ "$candidate_count" == '1' ]]; then
+              run_id="$(jq -r '.[0].id' <<<"$candidates")"
+              break
+            fi
+            if (( candidate_count > 1 )); then
+              echo 'ambiguous protected verifier runs; refusing to watch the wrong run' >&2
+              jq '[.[] | {id, head_sha, head_branch, event, created_at, actor: .actor.login}]' \
+                <<<"$candidates" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [[ -z "$run_id" ]]; then
+            echo 'timed out resolving the newly dispatched protected verifier run' >&2
+            exit 1
+          fi
+          printf 'run_id=%s\n' "$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Validate child-run identity
+        env:
+          MAIN_SHA: ${{ steps.dispatch.outputs.main_sha }}
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}" |
+            jq -e \
+              --arg main_sha "$MAIN_SHA" \
+              --argjson run_id "$RUN_ID" \
+              '
+                .id == $run_id and
+                .head_sha == $main_sha and
+                .head_branch == "main" and
+                .event == "workflow_dispatch"
+              ' >/dev/null
+
+      - name: Await the protected verifier result
+        env:
+          RUN_ID: ${{ steps.run.outputs.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run watch "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --exit-status \
+            --interval 10
+          gh run view "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json url,headSha,event,status,conclusion |
+            tee -a "$GITHUB_STEP_SUMMARY"

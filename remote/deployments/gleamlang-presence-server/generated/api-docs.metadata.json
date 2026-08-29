@@ -1,0 +1,325 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "gleamlang-presence-server",
+  "language": "gleam",
+  "routeCount": 17,
+  "routeTypeCounts": {
+    "service": 7,
+    "user-generated": 7,
+    "runtime-config": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Presence service help",
+      "handlers": [
+        "getPresenceHelp"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Interactive API reference",
+      "handlers": [
+        "getPresenceApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Public OpenAPI contract alias",
+      "handlers": [
+        "getPresenceOpenApiAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/conv/{conv_id}/broadcast",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Broadcast to a conversation",
+      "handlers": [
+        "broadcastPresenceConversation"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/conv/{conv_id}/members",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "List conversation members",
+      "handlers": [
+        "listPresenceConversationMembers"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/conv/{conv_id}/members/{user_id}",
+      "methods": [
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Remove a conversation member",
+      "handlers": [
+        "removePresenceConversationMember"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/conv/{conv_id}/members/{user_id}",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Add a conversation member",
+      "handlers": [
+        "addPresenceConversationMember"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Interactive API reference alias",
+      "handlers": [
+        "getPresenceApiReferenceAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Presence process health",
+      "handlers": [
+        "getPresenceHealth"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "Get applied runtime configuration",
+      "handlers": [
+        "getPresenceRuntimeConfig"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "Reset runtime configuration",
+      "handlers": [
+        "resetPresenceRuntimeConfig"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "Apply runtime configuration",
+      "handlers": [
+        "applyPresenceRuntimeConfig"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/nodes",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "List connected BEAM nodes",
+      "handlers": [
+        "listPresenceNodes"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Public OpenAPI contract",
+      "handlers": [
+        "getPresenceOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/user/{user_id}/broadcast",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Broadcast to a user",
+      "handlers": [
+        "broadcastPresenceUser"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/user/{user_id}/devices/{device_id}/logout",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Log out one user device",
+      "handlers": [
+        "logoutPresenceDevice"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/ws",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Open a presence WebSocket",
+      "handlers": [
+        "connectPresenceWebSocket"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    }
+  ]
+}

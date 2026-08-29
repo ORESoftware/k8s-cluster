@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+# Hetzner's current 32 GiB workers cannot safely host the learner, whose
+# protective memory limit is 64 GiB. The base's explicit zero replicas is the
+# desired state here; queue/tournament jobs still run through dd-next-runtime.

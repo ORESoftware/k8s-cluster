@@ -20,43 +20,93 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  private-contract-scope:
+    name: classify private-contract scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      private_contracts_required: ${{ steps.scope.outputs.private_contracts_required }}
+      scope_reason: ${{ steps.scope.outputs.scope_reason }}
+    steps:
+      - name: Checkout changed-file metadata without credentials or submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Classify whether private gitlinks are relevant
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          changed_files="${RUNNER_TEMP}/repo-checks-changed-files.zlist"
+          : > "${changed_files}"
+          if [[ "${EVENT_NAME}" == 'pull_request' ]]; then
+            test -n "${BASE_SHA}"
+            test -n "${HEAD_SHA}"
+            git diff --name-only -z "${BASE_SHA}...${HEAD_SHA}" > "${changed_files}"
+          fi
+          python3 scripts/ci/classify_repo_check_scope.py \
+            --event-name "${EVENT_NAME}" \
+            --changed-files "${changed_files}" \
+            --nul-delimited \
+            --github-output "${GITHUB_OUTPUT}" \
+            --json-output "${RUNNER_TEMP}/repo-check-scope.json"
+
+      - name: Publish scope decision to the job summary
+        run: cat "${RUNNER_TEMP}/repo-check-scope.json" >> "${GITHUB_STEP_SUMMARY}"
+
   static-contracts:
     name: api docs + static repo contracts
+    needs: private-contract-scope
+    if: needs.private-contract-scope.outputs.private_contracts_required == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Require private-submodule read token
+      - name: Require private libraries deploy key
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: test -n "$K8S_SUBMODULE_TOKEN"
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Initialize required contract submodule
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --depth 1 -- remote/libs
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
+      - name: Setup Gleam contract toolchain
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: '27.3.4.14'
+          gleam-version: '1.17.0'
+          rebar3-version: '3'
+
       - name: Install remote test dependencies
         run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Install Chromium for static UI contracts
+        run: pnpm exec playwright install --with-deps chromium
         working-directory: remote/tests
 
       - name: Verify generated API docs are current
@@ -70,24 +120,28 @@ jobs:
       - name: Run static repo contract tests
         run: |
           set -euo pipefail
+          # Tests that read private deployment gitlinks are intentionally run in
+          # backend-contracts after the owner-scoped GitHub App checkout.
           static_tests=(
             general/agent-breadcrumb-pipeline.test.ts
             general/ai-ml-platform-config.test.ts
+            general/athleto-app-routing.test.ts
             general/bastion-config.test.ts
             general/browser-job-runner-config.test.ts
+            general/browser-mcp-exposure.test.ts
+            general/browser-mcp-appointment-profile.test.ts
             general/browser-test-server-config.test.ts
             general/build-server-config.test.ts
+            general/canonical-cloud-gitops.test.ts
             general/cluster-doctor-cron.test.ts
-            general/cluster-hardening.test.ts
             general/container-pool-config.test.ts
             general/contract-service-config.test.ts
+            general/daedalus-observability.test.ts
             general/des-simulator-config.test.ts
             general/dev-server-container-pool-config.test.ts
-            general/fabrication-cad-source-intake.test.ts
             general/fsharp-ws-server-config.test.ts
-            general/gateway-service-directory.test.ts
             general/gcs-chat-config.test.ts
-            general/gleam-lambda-runner-config.test.ts
+            general/github-app-submodule-token.test.ts
             general/gleam-mcp-server-config.test.ts
             general/gleam-mcp-server-observability.test.ts
             general/gleam-websocket-nats-fanout.test.ts
@@ -97,10 +151,12 @@ jobs:
             general/nats-config.test.ts
             general/nats-connect-resilience.test.ts
             general/nats-shadow-handoff.test.ts
-            general/observability-config.test.ts
+            general/private-submodule-ci-contract.test.ts
             general/redis-cache-config.test.ts
+            general/remote-libs-submodule-contract.test.ts
             general/remote-dev-worker-git-hardening.test.ts
             general/runtime-split-config.test.ts
+            general/security-hardening-contract.test.ts
             general/selenium-server-config.test.ts
             general/thread-fleet-exporter-go-config.test.ts
             general/thread-operator-go-config.test.ts
@@ -117,13 +173,136 @@ jobs:
           pnpm exec tsx --test "${static_tests[@]}"
         working-directory: remote/tests
 
+  fiducia-secret-contract:
+    name: Fiducia KV secret-delivery contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: v1.32.2
+
+      - name: Render and verify the hardened Fiducia secret contract
+        id: fiducia-contract
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p "${RUNNER_TEMP}/fiducia-contract"
+          kubectl kustomize ../../remote/argocd/secrets/common > "${RUNNER_TEMP}/fiducia-contract/common.yaml"
+          kubectl kustomize ../../remote/argocd/fiducia > "${RUNNER_TEMP}/fiducia-contract/fiducia.yaml"
+          node --experimental-strip-types --test general/fiducia-secret-delivery.test.ts \
+            > "${RUNNER_TEMP}/fiducia-contract/test.log" 2>&1
+        working-directory: remote/tests
+
+      - name: Upload Fiducia contract failure diagnostics
+        if: steps.fiducia-contract.outcome == 'failure'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: fiducia-secret-contract-diagnostics
+          path: ${{ runner.temp }}/fiducia-contract
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce Fiducia secret contract result
+        if: steps.fiducia-contract.outcome == 'failure'
+        run: exit 1
+
+  backend-contracts:
+    name: backend pins + private deployment contracts
+    needs: private-contract-scope
+    if: needs.private-contract-scope.outputs.private_contracts_required == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Require private libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Initialize pinned shared libraries
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+
+      - name: Initialize pinned backend repositories with owner-scoped installation tokens
+        id: backend-submodules
+        continue-on-error: true
+        env:
+          SUBMODULE_REPORT_PATH: ${{ runner.temp }}/backend-submodule-access.tsv
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          GITHUB_API_VERSION: '2026-03-10'
+        run: bash scripts/ci/init-submodules-with-github-app.sh remote/deployments
+
+      - name: Upload sanitized backend submodule access report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: backend-submodule-access-report
+          path: ${{ runner.temp }}/backend-submodule-access.tsv
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail when backend submodules are unavailable
+        if: steps.backend-submodules.outcome == 'failure'
+        run: |
+          echo "One or more backend repositories are unavailable; inspect the sanitized access-report artifact."
+          exit 1
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Verify pinned backend architecture and NATS subjects
+        run: pnpm exec tsx --test general/backend-architecture-contract.test.ts general/nats-subject-contract.test.ts general/workflow-branch-trigger-contract.test.ts
+        working-directory: remote/tests
+
+      - name: Verify contracts that read private deployment sources
+        run: |
+          set -euo pipefail
+          private_deployment_tests=(
+            general/cluster-hardening.test.ts
+            general/fabrication-cad-source-intake.test.ts
+            general/gateway-service-directory.test.ts
+            general/gleam-lambda-runner-config.test.ts
+            general/observability-config.test.ts
+          )
+          pnpm exec tsx --test "${private_deployment_tests[@]}"
+        working-directory: remote/tests
+
   kustomize-render:
     name: render kustomize overlays
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Initialize required public overlay submodule
         run: |
@@ -132,7 +311,7 @@ jobs:
           git submodule update --init --depth 1 -- remote/deployments/mip-solver-node.rs
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
         with:
           version: v1.32.2
 

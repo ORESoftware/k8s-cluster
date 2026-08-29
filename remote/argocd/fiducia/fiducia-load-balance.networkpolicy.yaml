@@ -13,19 +13,26 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # The LB is the KV/lock entry point. Known callers:
-    #   - fiducia-auth (in-namespace) — durable API-key KV writes.
-    #   - dd-contract-service + dd-billing-server (namespace `default`) —
-    #     idempotency leases / fencing tokens (their manifests point
-    #     FIDUCIA_* at fiducia-load-balance.fiducia:8088); new in-cluster
-    #     clients advertise the dd.dev/fiducia-client=true pod label.
+    # The LB is the KV/lock entry point. Network access is an explicit workload
+    # allowlist; a self-applied `dd.dev/fiducia-client=true` label is not a trust
+    # boundary. Application-layer auth and scopes remain mandatory.
+    #   - fiducia-auth: durable API-key KV reads/writes using a trusted service identity.
+    #   - dd-contract-service, dd-billing-server, dd-build-server: leases/fencing.
+    #   - dd-fabrication-server: legacy allowlisted secret overlay (replicas=0;
+    #     migrate to ESO before production use).
+    #   - dd-remote-gateway: public api.fiducia.cloud hop.
+    #   - External Secrets Operator: read-only Fiducia KV webhook provider.
     #   - observability scrapers.
-    # The public gateway does NOT route to the LB (only app./admin.fiducia.cloud
-    # exist), so no dd-remote-gateway ingress here.
     - from:
         - podSelector:
             matchLabels:
               app: fiducia-auth
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-remote-gateway
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: default
@@ -36,12 +43,14 @@ spec:
                 values:
                   - dd-contract-service
                   - dd-billing-server
+                  - dd-build-server
+                  - dd-fabrication-server
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: default
+              kubernetes.io/metadata.name: external-secrets
           podSelector:
             matchLabels:
-              dd.dev/fiducia-client: 'true'
+              app.kubernetes.io/name: external-secrets
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

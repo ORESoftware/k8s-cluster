@@ -47,7 +47,7 @@ pub enum ProviderError {
 }
 
 /// What a caller asks for, independent of which upstream serves it.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct EmbedRequest {
     /// One or more texts to embed.
     pub input: Vec<String>,
@@ -66,7 +66,7 @@ pub struct EmbedRequest {
     pub input_type: InputType,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum InputType {
     #[default]
@@ -75,13 +75,13 @@ pub enum InputType {
 }
 
 /// One embedding vector plus its position in the request.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct Embedding {
     pub index: usize,
     pub vector: Vec<f32>,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, utoipa::ToSchema)]
 pub struct Usage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_tokens: Option<u32>,
@@ -90,7 +90,7 @@ pub struct Usage {
 }
 
 /// Normalized result returned to callers.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct EmbedResponse {
     pub provider: String,
     pub model: String,
@@ -132,20 +132,33 @@ impl Registry {
                 providers.insert(p.id().to_string(), p);
             } else if spec.keyless {
                 // Self-hosted (Ollama, HF TEI) — no key required.
-                let p = Arc::new(openai::OpenAiCompatible::new(spec, String::new(), http.clone()));
+                let p = Arc::new(openai::OpenAiCompatible::new(
+                    spec,
+                    String::new(),
+                    http.clone(),
+                ));
                 providers.insert(p.id().to_string(), p);
             }
         }
 
         // --- Bespoke wire formats ----------------------------------------
         if let Some(key) = cfg.provider_key("GEMINI_API_KEY") {
-            providers.insert("gemini".into(), Arc::new(gemini::Gemini::new(key, http.clone())));
+            providers.insert(
+                "gemini".into(),
+                Arc::new(gemini::Gemini::new(key, http.clone())),
+            );
         }
         if let Some(key) = cfg.provider_key("COHERE_API_KEY") {
-            providers.insert("cohere".into(), Arc::new(cohere::Cohere::new(key, http.clone())));
+            providers.insert(
+                "cohere".into(),
+                Arc::new(cohere::Cohere::new(key, http.clone())),
+            );
         }
         if let Some(key) = cfg.provider_key("VOYAGE_API_KEY") {
-            providers.insert("voyage".into(), Arc::new(voyage::Voyage::new(key, http.clone())));
+            providers.insert(
+                "voyage".into(),
+                Arc::new(voyage::Voyage::new(key, http.clone())),
+            );
         }
 
         // Anthropic has no embeddings API; route the alias to Voyage, which is

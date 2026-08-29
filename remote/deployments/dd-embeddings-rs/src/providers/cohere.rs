@@ -14,7 +14,11 @@ use super::{
 
 const URL: &str = "https://api.cohere.com/v1/embed";
 const DEFAULT_MODEL: &str = "embed-english-v3.0";
-const MODELS: &[&str] = &["embed-english-v3.0", "embed-multilingual-v3.0", "embed-english-light-v3.0"];
+const MODELS: &[&str] = &[
+    "embed-english-v3.0",
+    "embed-multilingual-v3.0",
+    "embed-english-light-v3.0",
+];
 
 pub struct Cohere {
     api_key: String,
@@ -76,7 +80,10 @@ impl EmbeddingProvider for Cohere {
 
     async fn embed(&self, req: &EmbedRequest) -> Result<EmbedResponse, ProviderError> {
         validate_input(req)?;
-        let model = req.model.clone().unwrap_or_else(|| DEFAULT_MODEL.to_string());
+        let model = req
+            .model
+            .clone()
+            .unwrap_or_else(|| DEFAULT_MODEL.to_string());
         let input_type = match req.input_type {
             InputType::Query => "search_query",
             InputType::Document => "search_document",
@@ -94,7 +101,10 @@ impl EmbeddingProvider for Cohere {
             }))
             .send()
             .await
-            .map_err(|e| ProviderError::Transport { provider: "cohere".into(), source: e })?;
+            .map_err(|e| ProviderError::Transport {
+                provider: "cohere".into(),
+                source: e,
+            })?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -130,7 +140,10 @@ impl EmbeddingProvider for Cohere {
             model,
             dimensions,
             embeddings,
-            usage: Usage { prompt_tokens, total_tokens: prompt_tokens },
+            usage: Usage {
+                prompt_tokens,
+                total_tokens: prompt_tokens,
+            },
         })
     }
 }

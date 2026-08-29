@@ -1,0 +1,112 @@
+name: Publication carrier uniqueness
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/publication-carrier-uniqueness.yml'
+      - 'scripts/ops/validate_publication_carrier_uniqueness.py'
+      - 'scripts/ops/tests/test_publication_carrier_uniqueness.py'
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, edited]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publication-carrier-uniqueness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/publication-carrier-uniqueness.yml
+
+      - name: Compile and test the classifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/validate_publication_carrier_uniqueness.py \
+            scripts/ops/tests/test_publication_carrier_uniqueness.py
+          python3 -m unittest -v scripts/ops/tests/test_publication_carrier_uniqueness.py
+          git diff --check
+
+  enforce:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_target' &&
+        (startsWith(github.event.pull_request.title, 'DO NOT MERGE:') ||
+         startsWith(github.event.pull_request.title, '[DO NOT MERGE]') ||
+         startsWith(github.event.pull_request.title, 'TRIGGER:')))
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out exact trusted default-branch workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Fetch open pull-request metadata without carrier checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/pulls?state=open&per_page=100" \
+            --template '{{range .}}{{toJSON .}}{{"\n"}}{{end}}' \
+            > "$RUNNER_TEMP/open-pull-requests.jsonl"
+          test -s "$RUNNER_TEMP/open-pull-requests.jsonl"
+
+      - name: Enforce one active carrier per publication intent
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/publication-carrier-uniqueness.json"
+          stdout="$RUNNER_TEMP/publication-carrier-uniqueness.stdout"
+          args=(
+            --input "$RUNNER_TEMP/open-pull-requests.jsonl"
+            --report "$report"
+          )
+          if [[ "${GITHUB_EVENT_NAME}" == pull_request_target ]]; then
+            test -n "${PR_NUMBER:-}"
+            args+=(--current-pr "$PR_NUMBER")
+          fi
+
+          set +e
+          python3 scripts/ops/validate_publication_carrier_uniqueness.py \
+            "${args[@]}" > "$stdout"
+          status=$?
+          set -e
+          cat "$report"
+
+          if [[ "$status" -ne 0 && "${GITHUB_EVENT_NAME}" == pull_request_target ]]; then
+            details="$(jq -r '.violations | map("- `" + .code + "`: " + .message + " (PRs " + (.pull_requests | map(tostring) | join(", ")) + ")") | join("\n")' "$report")"
+            body="<!-- publication-carrier-uniqueness -->
+Publication carrier rejected before owner authorization or repository mutation.
+
+${details}
+
+Keep exactly one open draft carrier for this publication intent, close superseded attempts, then reopen or synchronize the surviving carrier."
+            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --edit-last --body "$body" >/dev/null 2>&1 \
+              || gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null
+          fi
+          exit "$status"

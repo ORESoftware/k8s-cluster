@@ -28,6 +28,47 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # Source comes from a per-pod clone of the (public) repo into an emptyDir,
+      # NOT a host path. The previous `hostPath: /home/ec2-user/codes/dd/dd-next-1`
+      # only exists on the AWS EC2 node, so every Hetzner pod crash-looped `cd`-ing
+      # into a missing directory. Cloning makes the pod self-contained on any node
+      # in any cluster (build-server audit F13 pattern).
+      initContainers:
+        - name: fetch-source
+          image: docker.io/library/maven:3.9.9-eclipse-temurin-17
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              # safe.directory guards against git's "dubious ownership" abort if
+              # this ever runs non-root; harmless as root.
+              export HOME=/tmp
+              git config --global --add safe.directory '*'
+              # Idempotent across init restarts (the emptyDir persists). The
+              # selenium-server Maven build is self-contained, so ONLY the public
+              # superproject is needed — no (private) remote/libs submodule.
+              if [ ! -e /opt/dd-next-1/.git ]; then
+                git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
+              fi
+              test -e /opt/dd-next-1/remote/deployments/selenium-server/pom.xml
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          # Shallow clone of the public superproject only. Generous enough not
+          # to OOM the clone, bounded so a wedged init cannot take the node.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
       containers:
         # --- Selenium Grid (the actual long-lived Selenium server) ------------------
         # The official standalone image bundles Chromium + chromedriver + a Selenium
@@ -108,6 +149,15 @@ spec:
             - |
               set -euo pipefail
               cd /opt/dd-next-1/remote/deployments/selenium-server
+              # Fail fast, and distinctly, when the module directory is present but
+              # not actually populated — e.g. the fetch-source initContainer produced
+              # a partial clone. Without this the failure surfaces deep inside Maven
+              # and reads as an application crash-loop rather than the provisioning
+              # fault it is. Exit 78 (EX_CONFIG) keeps it alertable on its own.
+              if [ ! -f pom.xml ]; then
+                echo "FATAL: /opt/dd-next-1/remote/deployments/selenium-server is mounted but contains no pom.xml." >&2
+                exit 78
+              fi
               if [ ! -f target/dd-selenium-server.jar ]; then
                 echo "Building dd-selenium-server with Maven..."
                 mvn -B -e -DskipTests package
@@ -179,9 +229,10 @@ spec:
               mountPath: /opt/dd-next-1
       volumes:
         - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+          # Was hostPath (AWS-node-only). Now a per-pod emptyDir populated by the
+          # fetch-source initContainer, so it works on every node/cluster.
+          emptyDir:
+            sizeLimit: 4Gi
         - name: dshm
           emptyDir:
             medium: Memory

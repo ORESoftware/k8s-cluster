@@ -1,0 +1,7 @@
+.git
+**/.git
+**/node_modules
+**/target
+**/dist
+**/.cache
+**/.DS_Store

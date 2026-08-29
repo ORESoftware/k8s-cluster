@@ -20,6 +20,18 @@ function yamlScalar(value: string): string {
   return `['"]?${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]?`;
 }
 
+function yamlNamedListItem(source: string, name: string): string {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const marker = new RegExp(`^( +)- name:\\s*${escapedName}\\s*$`, 'm').exec(source);
+  assert.ok(marker, `missing YAML list item named ${name}`);
+  const start = marker.index;
+  const indent = marker[1]!.length;
+  const remaining = source.slice(start + marker[0].length);
+  const next = new RegExp(`^ {${indent}}- name:\\s*`, 'm').exec(remaining);
+  const end = next ? start + marker[0].length + next.index : source.length;
+  return source.slice(start, end);
+}
+
 function assertLoadtestMatrix(manifest: string, label: string): void {
   assert.match(
     manifest,
@@ -43,6 +55,12 @@ test('ws loadtest manifests configure rust + gleam clients against websocket end
   const gleamServerDeployment = await readRepoFile(
     'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
   );
+  const gleamServerBuild = yamlNamedListItem(
+  gleamServerDeployment,
+  'build-gleamlang-server',
+);
+const gleamServerRuntime = yamlNamedListItem(gleamServerDeployment, 'gleamlang-server');
+const gleamServerNatsBridge = yamlNamedListItem(gleamServerDeployment, 'nats-bridge');
 
   const rustCount = parseNumericEnv(rustDeployment, 'CLIENT_COUNT');
   const gleamCount = parseNumericEnv(gleamDeployment, 'CLIENT_COUNT');
@@ -90,19 +108,40 @@ test('ws loadtest manifests configure rust + gleam clients against websocket end
     'gleam server deployment should use gleam 1.16 erlang runtime',
   );
   assert.match(
-    gleamServerDeployment,
-    new RegExp(
-      `requests:\\s*[\\s\\S]*cpu:\\s*${yamlScalar('250m')}[\\s\\S]*memory:\\s*${yamlScalar('2Gi')}`,
-    ),
-    'gleam server deployment should request enough CPU and memory for steady serving',
-  );
-  assert.match(
-    gleamServerDeployment,
-    new RegExp(
-      `limits:\\s*[\\s\\S]*cpu:\\s*${yamlScalar('6')}[\\s\\S]*memory:\\s*${yamlScalar('8Gi')}`,
-    ),
-    'gleam server deployment should cap benchmark CPU while reserving 8Gi memory',
-  );
+  gleamServerBuild,
+  /requests:\s*\n\s*cpu:\s*250m\s*\n\s*memory:\s*512Mi\s*\n\s*ephemeral-storage:\s*512Mi/,
+  'the build init container should reserve bounded compilation resources',
+);
+assert.match(
+  gleamServerBuild,
+  /limits:\s*\n\s*cpu:\s*['"]?2['"]?\s*\n\s*memory:\s*8Gi\s*\n\s*ephemeral-storage:\s*4Gi/,
+  'the build init container should retain enough headroom for Gleam compilation',
+);
+assert.match(
+  gleamServerRuntime,
+  /scale replicas horizontally rather[\s\S]*than letting one Erlang VM reserve multiple GiB/,
+  'steady serving should scale horizontally instead of reserving build-sized memory',
+);
+assert.match(
+  gleamServerRuntime,
+  /ERL_FLAGS[\s\S]*\+S 2:2 \+SDcpu 1:1 \+SDio 1 \+Q 4096 \+P 65536/,
+  'the runtime should bound BEAM schedulers and process capacity',
+);
+assert.match(
+  gleamServerRuntime,
+  /requests:\s*\n\s*cpu:\s*100m\s*\n\s*memory:\s*128Mi/,
+  'the steady-state Gleam server should use its measured low baseline request',
+);
+assert.match(
+  gleamServerRuntime,
+  /limits:\s*\n\s*cpu:\s*['"]?2['"]?\s*\n\s*memory:\s*300Mi/,
+  'the steady-state Gleam server should remain tightly memory bounded',
+);
+assert.match(
+  gleamServerNatsBridge,
+  /requests:\s*\n\s*cpu:\s*50m\s*\n\s*memory:\s*64Mi[\s\S]*limits:\s*\n\s*cpu:\s*500m\s*\n\s*memory:\s*256Mi/,
+  'the NATS bridge sidecar should keep an independent bounded resource envelope',
+);
 });
 
 test('gcs websocket loadtest deployments advertise the encoding and transport matrix', async () => {

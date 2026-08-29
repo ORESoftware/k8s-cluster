@@ -1,0 +1,83 @@
+# Patch 2 — dedicated `dd-builds` namespace + scoped RBAC (audit F5, F3)
+#
+# Finding (HIGH): the dd-build-server SA has `create deployments` in `default`,
+# and `default` carries NO Pod Security Admission label (it is PSA-privileged).
+# So the SA can author a Deployment with hostPath:/ / privileged / hostPID, or
+# `serviceAccountName: <any SA in default>`, and borrow a more-privileged
+# identity — the classic "pod-create is secret-read by proxy" escalation. It can
+# also patch neighbours like dd-remote-gateway (the auth front door).
+#
+# Fix: give the build server its own PSA-labelled namespace and grant deploy
+# rights THERE only. Cross-namespace rollout goes through Argo CD, which already
+# owns GitOps reconciliation. This does NOT relabel the shared `default`
+# namespace (that would affect every other workload and is a separate rollout).
+#
+# NOT auto-applied. To adopt: `kubectl apply -f` this file, move the deployment +
+# its Service/NetworkPolicy/ConfigMap into `dd-builds` (namespace: dd-builds),
+# and set BUILD_SERVER_ALLOWED_NAMESPACES=dd-builds. Pair with patch 03 so even
+# in-namespace deploy rights cannot author an escalating PodSpec.
+#
+# Rollback: delete the namespace (prune-safe; nothing else references it until
+# the deployment is moved).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dd-builds
+  labels:
+    # Enforce baseline (blocks privileged/hostPath/hostPID/hostNetwork PodSpecs);
+    # audit+warn at the stricter `restricted` level so we see what would break
+    # before ratcheting enforce up.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-build-server
+  namespace: dd-builds
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-build-server-deployer
+  namespace: dd-builds
+rules:
+  # Same surface the service uses today, scoped to its own namespace. `delete`
+  # is dropped from workload/networking objects — `apply` only needs
+  # create,patch,update; a build should not be able to remove a live Service or
+  # Ingress. Re-add per-resource only if a build genuinely garbage-collects.
+  - apiGroups: ['']
+    resources: [configmaps, services]
+    verbs: [get, list, watch, create, patch, update]
+  - apiGroups: ['']
+    resources: [events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, patch, update]
+  - apiGroups: [apps]
+    resources: [deployments/scale]
+    verbs: [get, patch, update]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch, create, patch, update]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list, watch, create, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-build-server-deployer
+  namespace: dd-builds
+subjects:
+  - kind: ServiceAccount
+    name: dd-build-server
+    namespace: dd-builds
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-build-server-deployer

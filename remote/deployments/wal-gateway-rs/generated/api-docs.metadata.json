@@ -1,0 +1,216 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "wal-gateway-rs",
+  "language": "rust",
+  "routeCount": 11,
+  "routeTypeCounts": {
+    "service": 8,
+    "runtime-config": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "getWalGatewayDescriptor"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "getWalGatewayPublicApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "getWalGatewayPublicOpenApiDocumentCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "getWalGatewayPublicApiReferenceCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Health check.",
+      "handlers": [
+        "getWalGatewayHealth"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+      "handlers": [
+        "getRuntimeConfigSnapshot"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+      "handlers": [
+        "resetRuntimeConfigSnapshot"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+      "handlers": [
+        "applyRuntimeConfigSnapshot"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "getWalGatewayPrometheusMetrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "getWalGatewayPublicOpenApiDocument"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "getWalGatewayReadiness"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    }
+  ]
+}

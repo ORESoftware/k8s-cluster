@@ -1,3 +1,5 @@
+mod auth;
+
 use std::{
     collections::HashMap,
     env,
@@ -27,8 +29,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, RwLock};
 
+use crate::auth::{sanitize_client_metadata, PeerIdentity, SignalAuthConfig, SignalAuthError};
+
 static STARTED_AT: Lazy<Instant> = Lazy::new(Instant::now);
 static PEER_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+const MAX_SIGNAL_FRAME_BYTES: usize = 64 * 1024;
 static HTTP_REQUESTS: Lazy<IntCounterVec> = Lazy::new(|| {
     let counter = IntCounterVec::new(
         Opts::new(
@@ -109,6 +114,7 @@ static SIGNAL_ERRORS: Lazy<IntCounterVec> = Lazy::new(|| {
 struct AppState {
     rooms: Arc<RwLock<HashMap<String, RoomState>>>,
     admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,
+    signal_auth: SignalAuthConfig,
 }
 
 #[derive(Clone, Default)]
@@ -130,6 +136,8 @@ struct PeerSummary {
     connected_at_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]
     user_agent: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    identity: Option<PeerIdentity>,
     metadata: Value,
 }
 
@@ -413,7 +421,24 @@ async fn handle_signal_text(
         "hello" => {
             SIGNAL_MESSAGES.with_label_values(&["hello", "local"]).inc();
             if !metadata.is_null() {
-                update_peer_metadata(state, room_id, peer_id, metadata).await;
+                match sanitize_client_metadata(metadata) {
+                    Ok(metadata) => {
+                        update_peer_metadata(state, room_id, peer_id, metadata).await;
+                    }
+                    Err(message) => {
+                        SIGNAL_ERRORS.with_label_values(&["invalid_metadata"]).inc();
+                        send_json(
+                            own_tx,
+                            json!({
+                                "type": "error",
+                                "code": "invalid_metadata",
+                                "message": message,
+                                "atMs": now_ms(),
+                            }),
+                        );
+                        return true;
+                    }
+                }
             }
             send_json(
                 own_tx,
@@ -504,6 +529,7 @@ async fn signal_socket(
     room_id: String,
     peer_id: String,
     user_agent: Option<String>,
+    identity: Option<PeerIdentity>,
 ) {
     let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
     let connected_at_ms = now_ms();
@@ -511,6 +537,7 @@ async fn signal_socket(
         peer_id: peer_id.clone(),
         connected_at_ms,
         user_agent,
+        identity,
         metadata: Value::Null,
     };
 
@@ -796,6 +823,17 @@ async fn signal_ws(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> Response {
+    let identity = match state.signal_auth.identity_from_headers(&headers) {
+        Ok(identity) => identity,
+        Err(
+            error @ (SignalAuthError::AuthenticationRequired
+            | SignalAuthError::UntrustedProxy
+            | SignalAuthError::InvalidIdentity),
+        ) => {
+            record_http("GET", "/signal", StatusCode::UNAUTHORIZED);
+            return (StatusCode::UNAUTHORIZED, error.public_message()).into_response();
+        }
+    };
     let room_id = match normalize_id(query.room, "room") {
         Ok(room_id) => room_id,
         Err(message) => {
@@ -816,7 +854,11 @@ async fn signal_ws(
         .map(str::to_string);
 
     record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);
-    ws.on_upgrade(move |socket| signal_socket(socket, state, room_id, peer_id, user_agent))
+    ws.max_message_size(MAX_SIGNAL_FRAME_BYTES)
+        .max_frame_size(MAX_SIGNAL_FRAME_BYTES)
+        .on_upgrade(move |socket| {
+            signal_socket(socket, state, room_id, peer_id, user_agent, identity)
+        })
 }
 
 async fn root() -> impl IntoResponse {
@@ -921,9 +963,13 @@ async fn main() {
     let addr: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("HOST/PORT must form a socket address");
+    let signal_auth =
+        SignalAuthConfig::from_env().expect("invalid WebRTC shared-auth configuration");
+    tracing::info!(auth_mode = ?signal_auth.mode, "configured WebRTC upgrade authentication");
     let state = AppState {
         rooms: Arc::new(RwLock::new(HashMap::new())),
         admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+        signal_auth,
     };
 
     let app = Router::new()
@@ -958,4 +1004,740 @@ async fn main() {
         })
         .await
         .expect("dd-webrtc-signaling server failed");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // -------------------------------------------------------------------
+    // helpers
+    // -------------------------------------------------------------------
+
+    fn test_state() -> AppState {
+        AppState {
+            rooms: Arc::new(RwLock::new(HashMap::new())),
+            admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+            signal_auth: SignalAuthConfig::disabled(),
+        }
+    }
+
+    /// Insert a peer into `room` exactly like `signal_socket` does, and return
+    /// (its outbound sender, its receiver). The sender doubles as `own_tx`.
+    async fn insert_peer(
+        state: &AppState,
+        room: &str,
+        peer: &str,
+    ) -> (
+        mpsc::UnboundedSender<Message>,
+        mpsc::UnboundedReceiver<Message>,
+    ) {
+        let (tx, rx) = mpsc::unbounded_channel::<Message>();
+        let mut rooms = state.rooms.write().await;
+        let room_state = rooms.entry(room.to_string()).or_default();
+        room_state.peers.insert(
+            peer.to_string(),
+            PeerConnection {
+                info: PeerSummary {
+                    peer_id: peer.to_string(),
+                    connected_at_ms: 0,
+                    user_agent: None,
+                    identity: None,
+                    metadata: Value::Null,
+                },
+                tx: tx.clone(),
+            },
+        );
+        (tx, rx)
+    }
+
+    /// Non-blocking drain of every queued text frame, parsed as JSON.
+    fn drain(rx: &mut mpsc::UnboundedReceiver<Message>) -> Vec<Value> {
+        let mut out = Vec::new();
+        loop {
+            match rx.try_recv() {
+                Ok(Message::Text(text)) => {
+                    out.push(serde_json::from_str::<Value>(&text).expect("frame is valid json"));
+                }
+                Ok(other) => panic!("expected a text frame, got {other:?}"),
+                Err(_) => break,
+            }
+        }
+        out
+    }
+
+    async fn handle(
+        state: &AppState,
+        room: &str,
+        peer: &str,
+        own_tx: &mpsc::UnboundedSender<Message>,
+        text: &str,
+    ) -> bool {
+        handle_signal_text(state, room, peer, own_tx, text.to_string()).await
+    }
+
+    async fn peer_metadata(state: &AppState, room: &str, peer: &str) -> Value {
+        state
+            .rooms
+            .read()
+            .await
+            .get(room)
+            .and_then(|room| room.peers.get(peer))
+            .map(|peer| peer.info.metadata.clone())
+            .unwrap_or(Value::Null)
+    }
+
+    async fn room_exists(state: &AppState, room: &str) -> bool {
+        state.rooms.read().await.contains_key(room)
+    }
+
+    async fn peer_exists(state: &AppState, room: &str, peer: &str) -> bool {
+        state
+            .rooms
+            .read()
+            .await
+            .get(room)
+            .map(|room| room.peers.contains_key(peer))
+            .unwrap_or(false)
+    }
+
+    // env-var tests mutate process-global state; serialize them and restore.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn save(keys: &[&str]) -> Vec<(String, Option<String>)> {
+        keys.iter()
+            .map(|&k| (k.to_string(), env::var(k).ok()))
+            .collect()
+    }
+
+    fn restore(saved: &[(String, Option<String>)]) {
+        for (key, value) in saved {
+            match value {
+                Some(value) => env::set_var(key, value),
+                None => env::remove_var(key),
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------
+    // normalize_id: the room/peer id validation applied at join time
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn normalize_id_accepts_and_trims_valid() {
+        assert_eq!(
+            normalize_id(Some("  room-1  ".into()), "room").unwrap(),
+            "room-1"
+        );
+        assert_eq!(normalize_id(Some("peer".into()), "peer").unwrap(), "peer");
+    }
+
+    #[test]
+    fn normalize_id_accepts_full_allowed_charset() {
+        let id = "Abc-123_foo.BAR";
+        assert_eq!(normalize_id(Some(id.into()), "peer").unwrap(), id);
+    }
+
+    #[test]
+    fn normalize_id_rejects_empty_and_whitespace() {
+        assert!(normalize_id(Some(String::new()), "room").is_err());
+        assert!(normalize_id(Some("    ".into()), "room").is_err());
+    }
+
+    #[test]
+    fn normalize_id_length_boundary_96_ok_97_rejected() {
+        let ok = "a".repeat(96);
+        assert_eq!(normalize_id(Some(ok.clone()), "room").unwrap(), ok);
+        // length is measured on the trimmed value
+        let padded = format!("  {}  ", "a".repeat(96));
+        assert_eq!(normalize_id(Some(padded), "room").unwrap(), "a".repeat(96));
+        assert!(normalize_id(Some("a".repeat(97)), "room").is_err());
+    }
+
+    #[test]
+    fn normalize_id_rejects_illegal_characters() {
+        // path-traversal / spoofing / injection shaped inputs must be rejected
+        for bad in [
+            "room/1", "room 1", "a:b", "a@b", "a$b", "a\tb", "café", "a\nb", "../etc", "a*b",
+            "a?b", "a=b", "a,b", "a;b", "a#b", "a%b",
+        ] {
+            assert!(
+                normalize_id(Some(bad.to_string()), "peer").is_err(),
+                "expected {bad:?} to be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn normalize_id_none_generates_unique_fallback_ids() {
+        let a = normalize_id(None, "peer").unwrap();
+        let b = normalize_id(None, "peer").unwrap();
+        assert!(a.starts_with("peer-"), "got {a}");
+        assert!(b.starts_with("peer-"), "got {b}");
+        assert_ne!(a, b, "fallback ids must be unique");
+        // a generated id is itself a valid id
+        assert_eq!(normalize_id(Some(a.clone()), "peer").unwrap(), a);
+    }
+
+    // -------------------------------------------------------------------
+    // admin-runtime forward filter / serialization / header auth / clock
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn should_forward_admin_runtime_message_accepts_allowed_types() {
+        assert!(should_forward_admin_runtime_message(
+            r#"{"type":"k8s-runtime-event","x":1}"#
+        ));
+        assert!(should_forward_admin_runtime_message(
+            r#"{"type":"task-event"}"#
+        ));
+    }
+
+    #[test]
+    fn should_forward_admin_runtime_message_rejects_others_and_malformed() {
+        assert!(!should_forward_admin_runtime_message(r#"{"type":"chat"}"#));
+        assert!(!should_forward_admin_runtime_message(r#"{"no_type":true}"#));
+        assert!(!should_forward_admin_runtime_message(r#"{"type":5}"#));
+        assert!(!should_forward_admin_runtime_message("not json"));
+        assert!(!should_forward_admin_runtime_message("[1,2,3]"));
+        assert!(!should_forward_admin_runtime_message(
+            "\"k8s-runtime-event\""
+        ));
+    }
+
+    #[test]
+    fn json_text_roundtrips_value() {
+        let value = json!({"type":"x","nested":{"a":[1,2,3]},"n":42});
+        match json_text(value.clone()) {
+            Message::Text(text) => {
+                let back: Value = serde_json::from_str(&text).unwrap();
+                assert_eq!(back, value);
+            }
+            other => panic!("expected a text frame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn authorized_admin_ws_requires_exact_flag() {
+        let mut yes = HeaderMap::new();
+        yes.insert("x-dd-admin", HeaderValue::from_static("1"));
+        assert!(authorized_admin_ws(&yes));
+
+        let mut zero = HeaderMap::new();
+        zero.insert("x-dd-admin", HeaderValue::from_static("0"));
+        assert!(!authorized_admin_ws(&zero));
+
+        let mut two = HeaderMap::new();
+        two.insert("x-dd-admin", HeaderValue::from_static("2"));
+        assert!(!authorized_admin_ws(&two));
+
+        assert!(!authorized_admin_ws(&HeaderMap::new()));
+    }
+
+    #[test]
+    fn now_ms_is_a_millisecond_epoch_after_2020() {
+        // 1_600_000_000_000 ms == 2020-09-13; guards against unit/precision drift
+        assert!(now_ms() > 1_600_000_000_000);
+    }
+
+    // -------------------------------------------------------------------
+    // config-from-env: defaults, overrides, secret precedence
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn env_string_trims_and_filters_empty() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+        let saved = save(&["DD_TEST_ENV_STRING"]);
+
+        env::set_var("DD_TEST_ENV_STRING", "  hello  ");
+        assert_eq!(env_string("DD_TEST_ENV_STRING"), Some("hello".to_string()));
+
+        env::set_var("DD_TEST_ENV_STRING", "   ");
+        assert_eq!(env_string("DD_TEST_ENV_STRING"), None);
+
+        env::remove_var("DD_TEST_ENV_STRING");
+        assert_eq!(env_string("DD_TEST_ENV_STRING"), None);
+
+        restore(&saved);
+    }
+
+    #[test]
+    fn nats_url_default_and_override() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+        let saved = save(&["NATS_URL"]);
+
+        env::remove_var("NATS_URL");
+        assert_eq!(
+            nats_url(),
+            "nats://dd-nats.messaging.svc.cluster.local:4222"
+        );
+
+        env::set_var("NATS_URL", "nats://localhost:4222");
+        assert_eq!(nats_url(), "nats://localhost:4222");
+
+        restore(&saved);
+    }
+
+    #[test]
+    fn runtime_admin_subject_default_and_override() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+        let saved = save(&["RUNTIME_ADMIN_EVENT_SUBJECT"]);
+
+        env::remove_var("RUNTIME_ADMIN_EVENT_SUBJECT");
+        assert_eq!(runtime_admin_subject(), RUNTIME_EVENTS_SUBJECT);
+
+        env::set_var("RUNTIME_ADMIN_EVENT_SUBJECT", "custom.subject");
+        assert_eq!(runtime_admin_subject(), "custom.subject");
+
+        restore(&saved);
+    }
+
+    #[test]
+    fn runtime_broadcast_secret_precedence() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+        let keys = [
+            "RUNTIME_BROADCAST_SECRET",
+            "REMOTE_DEV_SERVER_SECRET",
+            "SERVER_AUTH_SECRET",
+        ];
+        let saved = save(&keys);
+        for key in keys {
+            env::remove_var(key);
+        }
+
+        assert_eq!(runtime_broadcast_secret(), None);
+
+        env::set_var("SERVER_AUTH_SECRET", "third");
+        assert_eq!(runtime_broadcast_secret(), Some("third".to_string()));
+
+        env::set_var("REMOTE_DEV_SERVER_SECRET", "second");
+        assert_eq!(runtime_broadcast_secret(), Some("second".to_string()));
+
+        env::set_var("RUNTIME_BROADCAST_SECRET", "first");
+        assert_eq!(runtime_broadcast_secret(), Some("first".to_string()));
+
+        restore(&saved);
+    }
+
+    #[test]
+    fn authorized_runtime_broadcast_matches_any_accepted_header() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|poison| poison.into_inner());
+        let keys = [
+            "RUNTIME_BROADCAST_SECRET",
+            "REMOTE_DEV_SERVER_SECRET",
+            "SERVER_AUTH_SECRET",
+        ];
+        let saved = save(&keys);
+        for key in keys {
+            env::remove_var(key);
+        }
+
+        // no secret configured -> deny even when a header is present
+        let mut header = HeaderMap::new();
+        header.insert("x-server-auth", HeaderValue::from_static("whatever"));
+        assert!(!authorized_runtime_broadcast(&header));
+
+        env::set_var("RUNTIME_BROADCAST_SECRET", "s3cret");
+
+        for name in ["x-server-auth", "x-dd-internal-auth", "x-agent-auth"] {
+            let mut ok = HeaderMap::new();
+            ok.insert(name, HeaderValue::from_str("s3cret").unwrap());
+            assert!(authorized_runtime_broadcast(&ok), "{name} should authorize");
+        }
+
+        let mut wrong = HeaderMap::new();
+        wrong.insert("x-server-auth", HeaderValue::from_str("nope").unwrap());
+        assert!(!authorized_runtime_broadcast(&wrong));
+
+        // right secret under an unaccepted header name is ignored
+        let mut unrelated = HeaderMap::new();
+        unrelated.insert("authorization", HeaderValue::from_str("s3cret").unwrap());
+        assert!(!authorized_runtime_broadcast(&unrelated));
+
+        restore(&saved);
+    }
+
+    // -------------------------------------------------------------------
+    // room routing primitives: broadcast_to_room / send_to_peer
+    // -------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn broadcast_to_room_excludes_sender_and_counts() {
+        let state = test_state();
+        let (_a, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        let (_c, mut rc) = insert_peer(&state, "r1", "C").await;
+
+        let sent = broadcast_to_room(&state, "r1", Some("A"), json!({"type":"x"})).await;
+        assert_eq!(sent, 2);
+        assert!(drain(&mut ra).is_empty(), "sender must be excluded");
+        assert_eq!(drain(&mut rb).len(), 1);
+        assert_eq!(drain(&mut rc).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn broadcast_to_room_none_except_hits_all() {
+        let state = test_state();
+        let (_a, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        let sent = broadcast_to_room(&state, "r1", None, json!({"type":"x"})).await;
+        assert_eq!(sent, 2);
+        assert_eq!(drain(&mut ra).len(), 1);
+        assert_eq!(drain(&mut rb).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn broadcast_to_room_unknown_room_is_zero() {
+        let state = test_state();
+        let sent = broadcast_to_room(&state, "ghost", None, json!({"type":"x"})).await;
+        assert_eq!(sent, 0);
+    }
+
+    #[tokio::test]
+    async fn broadcast_to_room_is_isolated_across_rooms() {
+        let state = test_state();
+        let (_a, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_x, mut rx) = insert_peer(&state, "r2", "X").await;
+        let sent = broadcast_to_room(&state, "r1", None, json!({"type":"x"})).await;
+        assert_eq!(sent, 1);
+        assert_eq!(drain(&mut ra).len(), 1);
+        assert!(
+            drain(&mut rx).is_empty(),
+            "a peer in another room must never receive"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_to_peer_targets_a_single_peer() {
+        let state = test_state();
+        let (_a, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        assert!(send_to_peer(&state, "r1", "B", json!({"type":"x"})).await);
+        assert!(drain(&mut ra).is_empty());
+        assert_eq!(drain(&mut rb).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn send_to_peer_missing_target_is_false() {
+        let state = test_state();
+        let _a = insert_peer(&state, "r1", "A").await;
+        assert!(!send_to_peer(&state, "r1", "ghost", json!({"type":"x"})).await);
+    }
+
+    #[tokio::test]
+    async fn send_to_peer_is_isolated_across_rooms() {
+        let state = test_state();
+        let _a = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r2", "B").await;
+        // B exists, but only in r2: a targeted send scoped to r1 must fail and never leak
+        assert!(!send_to_peer(&state, "r1", "B", json!({"type":"x"})).await);
+        assert!(drain(&mut rb).is_empty());
+    }
+
+    // -------------------------------------------------------------------
+    // membership state machine: update_peer_metadata / remove_peer
+    // -------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn update_peer_metadata_only_touches_target() {
+        let state = test_state();
+        let _a = insert_peer(&state, "r1", "A").await;
+        let _b = insert_peer(&state, "r1", "B").await;
+        update_peer_metadata(&state, "r1", "A", json!({"role":"host"})).await;
+        assert_eq!(
+            peer_metadata(&state, "r1", "A").await,
+            json!({"role":"host"})
+        );
+        assert_eq!(peer_metadata(&state, "r1", "B").await, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn remove_peer_broadcasts_left_and_keeps_room_with_survivors() {
+        let state = test_state();
+        let (_a, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        remove_peer(&state, "r1", "A").await;
+
+        assert!(!peer_exists(&state, "r1", "A").await);
+        assert!(
+            room_exists(&state, "r1").await,
+            "room persists while B remains"
+        );
+
+        let frames = drain(&mut rb);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["type"], json!("peer-left"));
+        assert_eq!(frames[0]["peerId"], json!("A"));
+        assert_eq!(frames[0]["room"], json!("r1"));
+        assert!(
+            drain(&mut ra).is_empty(),
+            "the leaving peer is excluded from its own peer-left"
+        );
+    }
+
+    #[tokio::test]
+    async fn remove_peer_reclaims_empty_room() {
+        let state = test_state();
+        let _a = insert_peer(&state, "r1", "A").await;
+        remove_peer(&state, "r1", "A").await;
+        assert!(
+            !room_exists(&state, "r1").await,
+            "an emptied room must be reclaimed"
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // signaling protocol: handle_signal_text (offer/answer/ICE/hello/bye)
+    // -------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn handle_ping_replies_pong() {
+        let state = test_state();
+        let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+        assert!(handle(&state, "r1", "solo", &tx, r#"{"type":"ping"}"#).await);
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["type"], json!("pong"));
+        assert_eq!(frames[0]["room"], json!("r1"));
+        assert_eq!(frames[0]["peerId"], json!("solo"));
+    }
+
+    #[tokio::test]
+    async fn handle_hello_acks_and_stores_metadata() {
+        let state = test_state();
+        let (tx, mut rx) = insert_peer(&state, "r1", "A").await;
+        assert!(
+            handle(
+                &state,
+                "r1",
+                "A",
+                &tx,
+                r#"{"type":"hello","metadata":{"ua":"firefox"}}"#,
+            )
+            .await
+        );
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["type"], json!("hello-ack"));
+        assert_eq!(
+            peer_metadata(&state, "r1", "A").await,
+            json!({"ua":"firefox"})
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_hello_without_metadata_keeps_null() {
+        let state = test_state();
+        let (tx, mut rx) = insert_peer(&state, "r1", "A").await;
+        assert!(handle(&state, "r1", "A", &tx, r#"{"type":"hello"}"#).await);
+        let frames = drain(&mut rx);
+        assert_eq!(frames[0]["type"], json!("hello-ack"));
+        assert_eq!(peer_metadata(&state, "r1", "A").await, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn handle_bye_broadcasts_and_closes() {
+        let state = test_state();
+        let (tx, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        let keep = handle(
+            &state,
+            "r1",
+            "A",
+            &tx,
+            r#"{"type":"bye","payload":{"reason":"done"}}"#,
+        )
+        .await;
+        assert!(!keep, "bye closes the connection");
+        assert!(
+            drain(&mut ra).is_empty(),
+            "sender gets no echo of its own bye"
+        );
+        let frames = drain(&mut rb);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["type"], json!("signal"));
+        assert_eq!(frames[0]["signalType"], json!("bye"));
+        assert_eq!(frames[0]["from"], json!("A"));
+        assert_eq!(frames[0]["payload"], json!({"reason":"done"}));
+    }
+
+    #[tokio::test]
+    async fn handle_targeted_offer_delivers_wrapped_signal() {
+        let state = test_state();
+        let (tx, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        assert!(
+            handle(
+                &state,
+                "r1",
+                "A",
+                &tx,
+                r#"{"type":"offer","to":"B","payload":{"sdp":"v=0"}}"#,
+            )
+            .await
+        );
+        assert!(drain(&mut ra).is_empty(), "no echo to sender on success");
+        let frames = drain(&mut rb);
+        assert_eq!(frames.len(), 1);
+        let frame = &frames[0];
+        assert_eq!(frame["type"], json!("signal"));
+        assert_eq!(frame["signalType"], json!("offer"));
+        assert_eq!(frame["room"], json!("r1"));
+        assert_eq!(frame["from"], json!("A"));
+        assert_eq!(frame["to"], json!("B"));
+        assert_eq!(frame["payload"], json!({"sdp":"v=0"}));
+    }
+
+    #[tokio::test]
+    async fn handle_targeted_offer_missing_target_errors_back_to_sender() {
+        let state = test_state();
+        let (tx, mut ra) = insert_peer(&state, "r1", "A").await;
+        assert!(
+            handle(
+                &state,
+                "r1",
+                "A",
+                &tx,
+                r#"{"type":"offer","to":"ghost","payload":{}}"#,
+            )
+            .await
+        );
+        let frames = drain(&mut ra);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["type"], json!("error"));
+        assert_eq!(frames[0]["code"], json!("target_missing"));
+        assert_eq!(frames[0]["targetPeerId"], json!("ghost"));
+    }
+
+    #[tokio::test]
+    async fn handle_broadcast_answer_reaches_others_only() {
+        let state = test_state();
+        let (tx, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        let (_c, mut rc) = insert_peer(&state, "r1", "C").await;
+        assert!(
+            handle(
+                &state,
+                "r1",
+                "A",
+                &tx,
+                r#"{"type":"answer","payload":{"sdp":"a"}}"#,
+            )
+            .await
+        );
+        assert!(drain(&mut ra).is_empty());
+        let fb = drain(&mut rb);
+        let fc = drain(&mut rc);
+        assert_eq!(fb.len(), 1);
+        assert_eq!(fc.len(), 1);
+        assert_eq!(fb[0]["signalType"], json!("answer"));
+        assert_eq!(fb[0]["from"], json!("A"));
+        assert!(fb[0]["to"].is_null(), "a broadcast frame has a null target");
+    }
+
+    #[tokio::test]
+    async fn handle_untyped_frame_defaults_to_message_broadcast() {
+        let state = test_state();
+        let (tx, _ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "B").await;
+        // absent "type" defaults to "message" and broadcasts
+        assert!(handle(&state, "r1", "A", &tx, r#"{"payload":{"k":1}}"#).await);
+        let frames = drain(&mut rb);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["signalType"], json!("message"));
+        assert_eq!(frames[0]["payload"], json!({"k":1}));
+    }
+
+    #[tokio::test]
+    async fn handle_unknown_type_errors() {
+        let state = test_state();
+        let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+        assert!(
+            handle(&state, "r1", "A", &tx, r#"{"type":"frobnicate"}"#).await,
+            "an unknown type keeps the connection open"
+        );
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["type"], json!("error"));
+        assert_eq!(frames[0]["code"], json!("unsupported_type"));
+        assert_eq!(frames[0]["receivedType"], json!("frobnicate"));
+    }
+
+    #[tokio::test]
+    async fn handle_invalid_json_errors() {
+        let state = test_state();
+        let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+        assert!(handle(&state, "r1", "A", &tx, "definitely not json {").await);
+        let frames = drain(&mut rx);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0]["type"], json!("error"));
+        assert_eq!(frames[0]["code"], json!("invalid_json"));
+    }
+
+    #[tokio::test]
+    async fn handle_targeted_offer_does_not_cross_rooms() {
+        // B lives in r2; a targeted offer scoped to r1 must not reach it.
+        let state = test_state();
+        let (tx, mut ra) = insert_peer(&state, "r1", "A").await;
+        let (_b, mut rb) = insert_peer(&state, "r2", "B").await;
+        assert!(
+            handle(
+                &state,
+                "r1",
+                "A",
+                &tx,
+                r#"{"type":"offer","to":"B","payload":{}}"#,
+            )
+            .await
+        );
+        assert!(
+            drain(&mut rb).is_empty(),
+            "cross-room targeted delivery must not leak"
+        );
+        let frames = drain(&mut ra);
+        assert_eq!(frames[0]["code"], json!("target_missing"));
+    }
+
+    #[tokio::test]
+    async fn handle_broadcast_does_not_cross_rooms() {
+        let state = test_state();
+        let (tx, _ra) = insert_peer(&state, "r1", "A").await;
+        let (_x, mut rx) = insert_peer(&state, "r2", "X").await;
+        handle(
+            &state,
+            "r1",
+            "A",
+            &tx,
+            r#"{"type":"offer","payload":{"sdp":"o"}}"#,
+        )
+        .await;
+        assert!(
+            drain(&mut rx).is_empty(),
+            "a room broadcast must not cross rooms"
+        );
+    }
+
+    #[tokio::test]
+    async fn from_field_is_server_authoritative_not_client_spoofable() {
+        // A client supplies a forged `from`; the server must stamp the real peer id.
+        let state = test_state();
+        let (tx, _ra) = insert_peer(&state, "r1", "attacker").await;
+        let (_b, mut rb) = insert_peer(&state, "r1", "victim").await;
+        handle(
+            &state,
+            "r1",
+            "attacker",
+            &tx,
+            r#"{"type":"offer","to":"victim","from":"admin","payload":{"sdp":"x"}}"#,
+        )
+        .await;
+        let frames = drain(&mut rb);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(
+            frames[0]["from"],
+            json!("attacker"),
+            "server must ignore a client-supplied `from`"
+        );
+    }
 }

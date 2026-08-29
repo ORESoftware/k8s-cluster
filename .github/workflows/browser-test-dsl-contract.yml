@@ -1,0 +1,70 @@
+name: browser-test DSL source contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/browser-test-dsl-contract.yml'
+      - 'docs/benefactor-node-browser-automation.md'
+      - 'remote/deployments/browser-test-server/src/**'
+      - 'remote/deployments/browser-test-server/package.json'
+      - 'remote/deployments/browser-test-server/Dockerfile'
+      - 'remote/deployments/browser-test-server/README.md'
+      - 'remote/deployments/browser-test-server/readme.md'
+      - 'remote/argocd/dd-next-runtime/dd-browser-test-server.*'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/browser-test-server-config.test.ts'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-dsl-contract.yml'
+      - 'docs/benefactor-node-browser-automation.md'
+      - 'remote/deployments/browser-test-server/src/**'
+      - 'remote/deployments/browser-test-server/package.json'
+      - 'remote/deployments/browser-test-server/Dockerfile'
+      - 'remote/deployments/browser-test-server/README.md'
+      - 'remote/deployments/browser-test-server/readme.md'
+      - 'remote/argocd/dd-next-runtime/dd-browser-test-server.*'
+      - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/browser-test-server-config.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-dsl-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/browser-test-dsl-contract.yml
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install contract-test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Verify browser-test server and canonical scenario DSL
+        run: pnpm exec tsx --test general/browser-test-server-config.test.ts
+        working-directory: remote/tests

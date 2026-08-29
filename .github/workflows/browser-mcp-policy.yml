@@ -1,0 +1,29 @@
+name: Browser MCP policy
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/browser-mcp-rs/k8s/**'
+      - 'remote/argocd/dd-next-runtime/dd-web-scraper*.yaml'
+      - 'tests/browser_mcp_policy_test.py'
+      - '.github/workflows/browser-mcp-policy.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'remote/deployments/browser-mcp-rs/k8s/**'
+      - 'remote/argocd/dd-next-runtime/dd-web-scraper*.yaml'
+      - 'tests/browser_mcp_policy_test.py'
+      - '.github/workflows/browser-mcp-policy.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify policy alignment and workflow isolation
+        run: python3 tests/browser_mcp_policy_test.py

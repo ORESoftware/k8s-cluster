@@ -5,6 +5,10 @@ metadata:
   namespace: default
   labels:
     app: dd-sonus-auris-site
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '9113'
 spec:
   type: ClusterIP
   selector:
@@ -13,3 +17,95 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    - name: metrics
+      port: 9113
+      targetPort: metrics
+      protocol: TCP
+      appProtocol: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-sonus-auris-site
+  namespace: default
+  labels:
+    app: dd-sonus-auris-site
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-sonus-auris-site
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+      ports:
+        - protocol: TCP
+          port: 8080
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-prometheus
+      ports:
+        - protocol: TCP
+          port: 9113
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # The init container installs git, clones the pinned public source, and runs
+    # npm ci. Runtime nginx and the exporter do not initiate external traffic,
+    # but Kubernetes NetworkPolicy cannot distinguish init from app containers.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 64:ff9b:1::/48
+              - 100::/64
+              - 2001:2::/48
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+              - ff00::/8
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

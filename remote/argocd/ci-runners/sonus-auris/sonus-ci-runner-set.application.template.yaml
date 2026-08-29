@@ -1,0 +1,124 @@
+# INERT TEMPLATE: this file is intentionally outside active cloud overlays.
+# Active first-registration Applications live in
+# remote/argocd/clusters/{aws,hetzner}/gha-ci.applications.yaml and use the
+# pinned official runner image. Promote this custom-image example only after
+# replacing every REPLACE_* token, reconciling the ExternalSecret, publishing
+# an immutable image digest, and completing the parity checklist in README.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sonus-ci-runner-set-template
+  namespace: argocd
+  annotations:
+    sonus-auris.dev/promotion-state: template-only
+    sonus-auris.dev/linear-issue: DEN-381
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set
+    # Keep the controller and scale-set chart versions identical.
+    targetRevision: 0.14.2
+    helm:
+      releaseName: sonus-ci-template
+      skipTests: true
+      values: |
+        githubConfigUrl: https://github.com/sonus-auris
+        githubConfigSecret: sonus-auris-arc-github
+        runnerGroup: "REPLACE_RUNNER_GROUP"
+        runnerScaleSetName: sonus-ci
+        minRunners: 0
+        maxRunners: 2
+
+        controllerServiceAccount:
+          namespace: arc-systems
+          name: sonus-ci-arc-gha-rs-controller
+
+        containerMode:
+          type: ""
+
+        listenerTemplate:
+          spec:
+            containers:
+              - name: listener
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                securityContext:
+                  runAsNonRoot: true
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+
+        template:
+          spec:
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            terminationGracePeriodSeconds: 30
+            securityContext:
+              fsGroup: 1001
+              runAsNonRoot: true
+              runAsUser: 1001
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: runner
+                # Build from remote/deployments/sonus-auris-ci-runner and pin an
+                # immutable digest only after scanning and parity evidence.
+                image: ghcr.io/oresoftware/sonus-auris-ci-runner@sha256:REPLACE_IMAGE_DIGEST
+                imagePullPolicy: IfNotPresent
+                command: ["/home/runner/run.sh"]
+                env:
+                  - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+                    value: "false"
+                resources:
+                  requests:
+                    cpu: "1"
+                    memory: 2Gi
+                    ephemeral-storage: 8Gi
+                  limits:
+                    cpu: "4"
+                    memory: 8Gi
+                    ephemeral-storage: 24Gi
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+                volumeMounts:
+                  - name: work
+                    mountPath: /home/runner/_work
+                  - name: tool-cache
+                    mountPath: /opt/hostedtoolcache
+                  - name: tmp
+                    mountPath: /tmp
+            volumes:
+              - name: work
+                emptyDir:
+                  sizeLimit: 20Gi
+              - name: tool-cache
+                emptyDir:
+                  sizeLimit: 10Gi
+              - name: tmp
+                emptyDir:
+                  sizeLimit: 4Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-sonus
+  syncPolicy:
+    # No automated sync: custom-image promotion is digest/parity gated.
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

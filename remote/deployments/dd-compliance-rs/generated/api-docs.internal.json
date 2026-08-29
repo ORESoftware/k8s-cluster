@@ -1,0 +1,1197 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "dd-compliance-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "runtime-config"
+    },
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_86df6d2056ad",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "descriptor"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_api_docs_c3addb69e41d",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_api_docs_json_b3744f0c89f6",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_json"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/audit-sync": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_audit_sync_0aca9fc5c8f8",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "audit_sync"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/audit-sync",
+        "x-dd-source-paths": [
+          "/audit-sync"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/audits": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_audits_aebd462330f4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_audits",
+          "submit_audit"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/audits",
+        "x-dd-source-paths": [
+          "/audits"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "dd_compliance_rs_post_audits_df59e84bbf0b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "list_audits",
+          "submit_audit"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/audits",
+        "x-dd-source-paths": [
+          "/audits"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/audits/{job_id}": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_audits_job_id_15468099640b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "get_audit"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/audits/:job_id",
+        "x-dd-source-paths": [
+          "/audits/:job_id"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/bot-detection": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_bot_detection_d4c22127fda7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "bot_detection_route"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/bot-detection",
+        "x-dd-source-paths": [
+          "/bot-detection"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/bot-detection/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_bot_detection_example_26c301c2da65",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "bot_detection_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/bot-detection/example",
+        "x-dd-source-paths": [
+          "/bot-detection/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/controls": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_controls_98ad9bad2e37",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "controls"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/controls",
+        "x-dd-source-paths": [
+          "/controls"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/dependency-audit": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_dependency_audit_567920c16f11",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dependency_audit_route"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/dependency-audit",
+        "x-dd-source-paths": [
+          "/dependency-audit"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/dependency-audit/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_dependency_audit_example_eeaa27dc02ac",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dependency_audit_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/dependency-audit/example",
+        "x-dd-source-paths": [
+          "/dependency-audit/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/diagrams/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_diagrams_example_d842d10bcb15",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "diagram_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/diagrams/example",
+        "x-dd-source-paths": [
+          "/diagrams/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/diagrams/infrastructure": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_diagrams_infrastructure_0b1daf56bf48",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "diagram_infrastructure"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/diagrams/infrastructure",
+        "x-dd-source-paths": [
+          "/diagrams/infrastructure"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_docs_api_36a01108df8a",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_example_c73b41fa59a0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/example",
+        "x-dd-source-paths": [
+          "/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/fraud-detection": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_fraud_detection_0a7da6c5d3c0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "fraud_detection_route"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/fraud-detection",
+        "x-dd-source-paths": [
+          "/fraud-detection"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/fraud-detection/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_fraud_detection_example_dc62ea99eca4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "fraud_detection_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/fraud-detection/example",
+        "x-dd-source-paths": [
+          "/fraud-detection/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_healthz_b3e6b217da56",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/internal/runtime-config": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_internal_runtime_config_d8077121e52e",
+        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_get"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config",
+        "x-dd-source-paths": [
+          "/internal/runtime-config"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_internal_runtime_config_reset_b241b80c83eb",
+        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_reset"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config/reset",
+        "x-dd-source-paths": [
+          "/internal/runtime-config/reset"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/update-runtime-config": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_internal_update_runtime_config_4df446101858",
+        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_apply"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/update-runtime-config",
+        "x-dd-source-paths": [
+          "/internal/update-runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/login-anomaly": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_login_anomaly_228173b096a5",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "login_anomaly_route"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/login-anomaly",
+        "x-dd-source-paths": [
+          "/login-anomaly"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/login-anomaly/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_login_anomaly_example_876069e0ddc4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "login_anomaly_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/login-anomaly/example",
+        "x-dd-source-paths": [
+          "/login-anomaly/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/malware-scan": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_malware_scan_bc49764a6e1e",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "malware_scan_route"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/malware-scan",
+        "x-dd-source-paths": [
+          "/malware-scan"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/malware-scan/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_malware_scan_example_f6ef42986dfd",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "malware_scan_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/malware-scan/example",
+        "x-dd-source-paths": [
+          "/malware-scan/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_metrics_31b48a4e426d",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_readyz_c39095c184e2",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "readyz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/reports/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_reports_example_cbc16e3fe927",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "system_report_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/reports/example",
+        "x-dd-source-paths": [
+          "/reports/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/reports/system": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_reports_system_b35c29810abf",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "system_report"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/reports/system",
+        "x-dd-source-paths": [
+          "/reports/system"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/schema": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_schema_0cf656b87c8f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "schema"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/schema",
+        "x-dd-source-paths": [
+          "/schema"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/secret-scan": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_secret_scan_1d2aa7280588",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "secret_scan_route"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/secret-scan",
+        "x-dd-source-paths": [
+          "/secret-scan"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/secret-scan/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_secret_scan_example_f9f3d807bf84",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "secret_scan_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/secret-scan/example",
+        "x-dd-source-paths": [
+          "/secret-scan/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/standards": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_standards_74216cefcbaa",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "standards"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/standards",
+        "x-dd-source-paths": [
+          "/standards"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/standards/{standard_id}": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_standards_standard_id_20753669b2e3",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "standard_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "standard"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/standards/:standard_id",
+        "x-dd-source-paths": [
+          "/standards/:standard_id"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/vulnerability-scan": {
+      "post": {
+        "operationId": "dd_compliance_rs_post_vulnerability_scan_dd8c8aaa2c2c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "vulnerability_scan"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/vulnerability-scan",
+        "x-dd-source-paths": [
+          "/vulnerability-scan"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/vulnerability-scan/example": {
+      "get": {
+        "operationId": "dd_compliance_rs_get_vulnerability_scan_example_58076420504b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "vulnerability_scan_example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-compliance-rs/src/routes.rs"
+        ],
+        "x-dd-source-path": "/vulnerability-scan/example",
+        "x-dd-source-paths": [
+          "/vulnerability-scan/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 37,
+  "x-dd-route-count": 37,
+  "x-dd-service": "dd-compliance-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

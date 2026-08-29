@@ -1,0 +1,25 @@
+[package]
+name = "dd-browser-mcp-rs"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+dd-telemetry = { path = "../../libs/telemetry-rs" }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+tracing = "0.1"
+axum = { version = "0.7", features = ["macros"] }
+base64 = "0.22"
+hmac = "0.12"
+redis = { version = "0.27", features = ["tokio-comp"] }
+reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
+# Track latest 0.23.x so webpki resolves past RUSTSEC-2026-0049/0098/0099/0104
+# (mirrors the pin rationale in dd-cluster-mcp-rs). Cargo.lock is committed in
+# lockstep so `cargo build --release --locked` stays reproducible.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+subtle = "2"
+rand = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
+url = { version = "2", features = ["serde"] }

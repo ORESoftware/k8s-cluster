@@ -1,0 +1,409 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "dd-embeddings-rs",
+  "language": "rust",
+  "routeCount": 23,
+  "routeTypeCounts": {
+    "service": 7,
+    "user-generated": 16
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "getPublicApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "getPublicOpenApiDocumentCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/embeddings",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "createEmbeddings"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/providers",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "listProviders"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/rag/collections",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "listRagCollections"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/rag/collections/{collection}",
+      "methods": [
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "deleteRagCollection"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/rag/delete",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "deleteRagPoints"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/rag/index",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "indexRagDocuments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/rag/search",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "searchRagCollection"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/rerank",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "rerankDocuments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/search",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "searchDocuments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/search/collections",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "listSearchCollections"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/search/collections/{collection}",
+      "methods": [
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "deleteSearchCollection"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/search/delete",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "deleteSearchDocuments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/search/edges",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "addSearchEdges"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/search/index",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "indexSearchDocuments"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "getPublicApiReferenceCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [
+        "getHealth"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "getInternalApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "getInternalOpenApiDocument"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "getPrometheusMetrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "getPublicOpenApiDocument"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "purpose": "Readiness check.",
+      "handlers": [
+        "getReadiness"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    }
+  ]
+}

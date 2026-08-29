@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/athleto-app-revision: '7e8ebe9'
+        dd.dev/athleto-app-revision: 'ac10a2c'
       labels:
         app: dd-athleto-app-rs
     spec:
@@ -118,8 +118,32 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8145'
+            # Host allowlist: the app derives auth-redirect bases (incl. the
+            # Supabase magic-link redirect_to) from the inbound Host header and
+            # trusts ANY host when this is unset. Pin it to the two real public
+            # hosts so a spoofed Host can never steer an auth redirect off-site.
+            - name: ALLOWED_HOSTS
+              value: app.athleto.store,biz.athleto.store
             - name: RUST_LOG
-              value: info,athleto_app_rs=info,tower_http=info
+              value: info,athleto_app_rs=info,sea_orm=warn,hyper=warn
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=remote-dev
+            - name: DEPLOYMENT_ENV
+              value: remote-dev
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             # Supabase project for Athlet-O; keys land in the dd-agent-secrets
             # bundle (all optional — the app boots in degraded mode without them).
             - name: SUPABASE_URL

@@ -1,0 +1,324 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "browser-test-server",
+  "language": "node",
+  "routeCount": 17,
+  "routeTypeCounts": {
+    "service": 12,
+    "user-generated": 5
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Describe the browser-test service and supported HTTP endpoints.",
+      "handlers": [
+        "getBrowserTestService"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Return the Scalar reference for the fail-closed public contract.",
+      "handlers": [
+        "getBrowserTestPublicApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Return the fail-closed public OpenAPI 3.1 contract.",
+      "handlers": [
+        "getBrowserTestPublicOpenApiCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/browser-test",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Describe the browser-test service and supported HTTP endpoints.",
+      "handlers": [
+        "getBrowserTestServiceCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/browser-test/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Authenticated compatibility alias for browser-test liveness.",
+      "handlers": [
+        "getBrowserTestHealthCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/browser-test/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Authenticated compatibility alias for Prometheus metrics.",
+      "handlers": [
+        "getBrowserTestPrometheusMetricsCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/browser-test/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return bounded browser-test runtime status.",
+      "handlers": [
+        "getBrowserTestStatusCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/browser-test/tools",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "List supported browser drivers and their runtime versions.",
+      "handlers": [
+        "listBrowserAutomationToolsCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Return the Scalar reference for the fail-closed public contract.",
+      "handlers": [
+        "getBrowserTestPublicApiReferenceCompatibilityAlias"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Return a public liveness response for Kubernetes probes.",
+      "handlers": [
+        "getBrowserTestHealth"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return the Scalar reference for the complete internal contract.",
+      "handlers": [
+        "getBrowserTestInternalApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/internal/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return the complete typed OpenAPI contract to trusted callers.",
+      "handlers": [
+        "getBrowserTestInternalOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Return bounded Prometheus text exposition.",
+      "handlers": [
+        "getBrowserTestPrometheusMetrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Return the fail-closed public OpenAPI 3.1 contract.",
+      "handlers": [
+        "getBrowserTestPublicOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/run",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Run a bounded browser scenario with Playwright, Puppeteer, or Selenium.",
+      "handlers": [
+        "runBrowserScenario"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/status",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return bounded browser-test runtime status.",
+      "handlers": [
+        "getBrowserTestStatus"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/tools",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "List supported browser drivers and their runtime versions.",
+      "handlers": [
+        "listBrowserAutomationTools"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    }
+  ]
+}

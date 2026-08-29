@@ -1,0 +1,55 @@
+name: durable-worker-project-docs
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-project-docs.yml'
+      - 'docs/durable-worker-roadmap.md'
+      - 'docs/durable-worker-project-operating-model.md'
+      - 'remote/tests/general/durable-worker-project-docs.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-project-docs.yml'
+      - 'docs/durable-worker-roadmap.md'
+      - 'docs/durable-worker-project-operating-model.md'
+      - 'remote/tests/general/durable-worker-project-docs.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-project-docs-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Validate roadmap and project operating model
+        run: node --test remote/tests/general/durable-worker-project-docs.test.mjs
+
+      - name: Reject credential-shaped text in reviewed documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -E -n 'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}' \
+            docs/durable-worker-roadmap.md \
+            docs/durable-worker-project-operating-model.md; then
+            echo 'credential-shaped text found in durable-worker project docs' >&2
+            exit 1
+          fi
+
+      - name: Assert validation did not mutate tracked files
+        run: git diff --exit-code

@@ -42,10 +42,10 @@
     <h1>apostille-services-server-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>23 routes</span>
+      <span>7 routes</span>
       <span>rust</span>
       <span>7 service</span>
-      <span>16 user-generated</span>
+      <span>0 user-generated</span>
     </div>
   </header>
   <main>
@@ -53,188 +53,60 @@
       <thead><tr><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th><th>Handlers</th><th>Auth</th></tr></thead>
       <tbody>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/</code></td>
   <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
-  <td data-label="Handlers"><code>home</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs</code></td>
   <td data-label="Purpose">Human-readable generated API documentation.</td>
-  <td data-label="Handlers"><code>api_docs_html</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs.json</code></td>
-  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
-  <td data-label="Handlers"><code>api_docs_json</code></td>
+  <td data-label="Purpose">Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/cases</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>create_case</code> <code>list_cases</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/cases/:case_id</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>get_case</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/cases/:case_id/submit</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>submit_case</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/descriptor</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>descriptor</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/docs/api</code></td>
   <td data-label="Purpose">Human-readable generated API documentation.</td>
-  <td data-label="Handlers"><code>api_docs_html</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/example</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>example</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/healthz</code></td>
   <td data-label="Purpose">Health check.</td>
-  <td data-label="Handlers"><code>healthz</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/home</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>home</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/home/examples</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>home_examples_fragment</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/home/flow</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>home_flow_fragment</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/home/jurisdictions</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>home_jurisdictions_fragment</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/home/webhooks</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>home_webhooks_fragment</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/jurisdictions</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>jurisdictions</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
-  <td data-label="Handlers"><code>metrics</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/readyz</code></td>
   <td data-label="Purpose">Readiness check.</td>
-  <td data-label="Handlers"><code>readyz</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/schema</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>schema</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/services</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>services</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/translate</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>translate</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/webhooks/government</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>government_webhook_default</code></td>
-  <td data-label="Auth">webhook signature</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/webhooks/government/:jurisdiction</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>government_webhook_for_jurisdiction</code></td>
-  <td data-label="Auth">webhook signature</td>
 </tr>
       </tbody>
     </table>

@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "standardRoutes": {
+    "human": [
+      "/docs/api",
+      "/api/docs"
+    ],
+    "openapi": "/api/docs.json"
+  },
+  "generatedArtifacts": {
+    "publicOpenapi": "generated/api-docs.json",
+    "publicHtml": "generated/api-docs.html",
+    "internalOpenapi": "generated/api-docs.internal.json",
+    "metadata": "generated/api-docs.metadata.json"
+  },
+  "visibility": {
+    "default": "internal",
+    "publicRule": "Only routes explicitly classified public may enter the public OpenAPI document or public SDK.",
+    "extension": "x-dd-visibility",
+    "runtimeDocsRule": "The standard HTTP docs routes serve only the fail-closed public contract. The internal contract is an unserved build artifact for private SDKs and CI."
+  },
+  "nativeSourceOfTruth": {
+    "rust": "utoipa + utoipa-axum OpenApiRouter/routes!",
+    "node": "Fastify route schema + @fastify/swagger",
+    "gleam": "typed route registry used by both dispatcher and OpenAPI renderer",
+    "dart": "typed route registry/code generation used by both dispatcher and OpenAPI renderer",
+    "python": "framework-native typed route schema (FastAPI preferred)",
+    "java": "typed Vert.x route descriptor used by router and OpenAPI renderer",
+    "fsharp": "typed endpoint descriptor used by router and OpenAPI renderer",
+    "go": "framework-native typed route registration or a repository-owned typed descriptor consumed by both net/http dispatch and deterministic OpenAPI rendering"
+  },
+  "runtimeClassificationInventories": {
+    "go": "remote/config/go-api-contract-inventory.json"
+  },
+  "legacySourceScannerAllowlist": [
+    "agent-worker-broker-rs",
+    "ai-ml-pipeline",
+    "apostille-services-server-rs",
+    "auth-server-rs",
+    "bastion-rs",
+    "billing-server-rs",
+    "build-server-rs",
+    "cluster-mcp-rs",
+    "container-pool-rs",
+    "contract-service-rs",
+    "dart-server",
+    "dataset-labeling-rs",
+    "dd-benefactor-marketing-rs",
+    "dd-compliance-rs",
+    "dd-document-rs",
+    "dd-escrow-rs",
+    "dd-git-rs",
+    "dd-music-rs",
+    "dd-ocr-rs",
+    "des-simulator-rs",
+    "dev-server",
+    "economics-server-rs",
+    "fiducia-customer.rs",
+    "formal-methods-server-rs",
+    "fsharp-ws-server",
+    "gleam-lambda-runner",
+    "gleam-mcp-server",
+    "gleamlang-server",
+    "gleamlang-server-nats-bridge",
+    "gleamlang-ws-server",
+    "knowledge-graph-builder-rs",
+    "mdp-optimizer-rs",
+    "patent-filing-rs",
+    "public-data-server-rs",
+    "rest-api-rs",
+    "runtime-config-rs",
+    "rust-vapi-phone-rs",
+    "spark-pipeline-server",
+    "trading-server-rs",
+    "usacc-rest-api-backend-rs",
+    "web-home-rs",
+    "web-scraper-service",
+    "webrtc-media-rs",
+    "webrtc-signaling-rs"
+  ],
+  "submoduleSources": {
+    "billing-server-rs": "quaestor-ledger/billing-server.rs",
+    "dart-server": "sagitta-stack/dart-server",
+    "fiducia-customer.rs": "fiducia-cloud/fiducia-customer.rs",
+    "gleam-lambda-runner": "scintilla-run/gleam-lambda-runner",
+    "usacc-rest-api-backend-rs": "usa-acc/rest-api-backend.rs"
+  }
+}

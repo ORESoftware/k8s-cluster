@@ -17,6 +17,9 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-sound-recorder-cloud-projection
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
@@ -41,6 +44,17 @@ spec:
           port: 4317
         - protocol: TCP
           port: 4318
+    # Provider-neutral token introspection stays on the cluster network.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shared-auth
+          podSelector:
+            matchLabels:
+              app: dd-shared-auth
+      ports:
+        - protocol: TCP
+          port: 8120
     - to:
         - namespaceSelector:
             matchLabels:

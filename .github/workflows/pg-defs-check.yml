@@ -3,9 +3,9 @@ name: pg-defs generated bindings drift
 on:
   pull_request:
     paths:
-      # remote/libs is now a submodule; pg-defs source changes land in
-      # ORESoftware/k8s-libs-and-shared-defs. In this repo only the gitlink
-      # at `remote/libs` moves, so trigger the wiring checks on that bump.
+      # remote/libs is a submodule; source changes land in
+      # ORESoftware/k8s-libs-and-shared-defs. In this repository only the
+      # mode-160000 gitlink at remote/libs moves.
       - 'remote/libs'
       - 'remote/databases/pg/**'
       - 'remote/deployments/gleam-lambda-runner/**'
@@ -21,6 +21,7 @@ on:
       - 'remote/tests/general/rest-api-route-parity.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
       - 'remote/tests/general/rust-pg-defs-wiring.test.ts'
+      - 'remote/tests/general/pg-defs-private-libs-checkout.test.mjs'
       - 'remote/tests/check-rest-api-route-parity.mjs'
       - 'remote/tools/generate-api-docs.mjs'
       - 'scripts/pg/diff/**'
@@ -28,15 +29,13 @@ on:
       - 'remote/deployments/generated-api-docs-index.json'
       - 'remote/deployments/generated-api-docs-index.html'
       - 'AGENTS.md'
+      - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/pg-defs-check.yml'
   push:
     branches:
       - dev
       - main
     paths:
-      # remote/libs is now a submodule; pg-defs source changes land in
-      # ORESoftware/k8s-libs-and-shared-defs. In this repo only the gitlink
-      # at `remote/libs` moves, so trigger the wiring checks on that bump.
       - 'remote/libs'
       - 'remote/databases/pg/**'
       - 'remote/deployments/gleam-lambda-runner/**'
@@ -52,6 +51,7 @@ on:
       - 'remote/tests/general/rest-api-route-parity.test.ts'
       - 'remote/tests/general/gleam-pg-defs-wiring.test.ts'
       - 'remote/tests/general/rust-pg-defs-wiring.test.ts'
+      - 'remote/tests/general/pg-defs-private-libs-checkout.test.mjs'
       - 'remote/tests/check-rest-api-route-parity.mjs'
       - 'remote/tools/generate-api-docs.mjs'
       - 'scripts/pg/diff/**'
@@ -59,6 +59,7 @@ on:
       - 'remote/deployments/generated-api-docs-index.json'
       - 'remote/deployments/generated-api-docs-index.html'
       - 'AGENTS.md'
+      - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/pg-defs-check.yml'
 
 permissions:
@@ -70,43 +71,38 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: generate.mjs --check (all remote/libs generators)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
-      # pinned to main) holding pg-defs/nats/interfaces. Without it the
-      # generator + wiring steps below hit file-not-found. Only remote/libs
-      # is needed here; it has a nested async-java submodule pinned to an
-      # SSH URL, so rewrite git@github.com: to HTTPS (actions/checkout's
-      # persisted extraheader token authenticates the HTTPS fetches).
-      - name: Init remote/libs submodule only
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init --recursive --depth 1 remote/libs
+      - name: Verify private-library checkout policy
+        run: node --test remote/tests/general/pg-defs-private-libs-checkout.test.mjs
+
+      - name: Check out pinned remote/libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
-      # The generators are dependency-light (Node stdlib only), so no `npm
-      # install` is needed. Running `--check` re-runs each generator in
-      # memory and compares against the committed `generated/` files; if any
-      # file would change, the job fails and prints the stale path(s) so the
-      # author can run `node remote/libs/<gen>/src/generate.mjs` locally and
-      # commit the diff. Each generator's self-tests lock in its parser
-      # contract before the downstream wiring jobs run per-language checks.
+      # The generators are dependency-light (Node stdlib only). Running
+      # --check re-runs each generator and compares it with committed output.
       - name: Verify generated bindings are in sync (all remote/libs generators)
         run: |
           set -euo pipefail
@@ -121,9 +117,6 @@ jobs:
         if: failure()
         run: node remote/libs/pg-defs/src/generate.mjs --print-sql
 
-      # Enforce the "exactly two homes for .sql" rule: every table DDL must
-      # live in remote/libs/pg-defs/schema/schema.sql and every fixture in
-      # remote/databases/pg/seeds/. See remote/databases/pg/seeds/readme.md.
       - name: Install tsx (remote/tests)
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
@@ -141,39 +134,35 @@ jobs:
         working-directory: remote/tests
 
   gleam-wiring:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: gleam test (dd_pg_defs + every consumer)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
-      # pinned to main) holding pg-defs/nats/interfaces; the wiring steps
-      # below hit file-not-found without it. The nested async-java submodule
-      # uses an SSH URL, so rewrite git@github.com: to HTTPS.
-      - name: Init remote/libs submodule only
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init --recursive --depth 1 remote/libs
+      - name: Check out pinned remote/libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
-      # Pin Erlang/OTP and Gleam to the same major as the runtime images in
-      # remote/gleam-*/Dockerfile (ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine).
-      # If you bump the runtime image, bump these here too.
       - name: Setup Erlang/OTP
-        uses: erlef/setup-beam@v1
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
         with:
           otp-version: '28'
           gleam-version: '1.16.0'
@@ -183,49 +172,48 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
-      # Drives `gleam test` in: the dd_pg_defs package itself,
-      # dd-gleam-lambda-runner, dd-gleam-mcp-server, and dd-gleamlang-server.
-      # Also asserts each consumer's manifest.toml records dd_pg_defs as a
-      # local path-dep and that build/dev/erlang/dd_pg_defs/ is populated
-      # after the build (so silent dep drops never reach production).
       - name: Verify Gleam services compile + test against dd_pg_defs
         run: pnpm run test:cli:gleam-pg-defs-wiring
         working-directory: remote/tests
 
   rust-wiring:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: cargo check + cargo test (dd-remote-rest-api pg_contract)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
-      # pinned to main) holding pg-defs/nats/interfaces; the wiring steps
-      # below hit file-not-found without it. The nested async-java submodule
-      # uses an SSH URL, so rewrite git@github.com: to HTTPS.
-      - name: Init remote/libs submodule only
-        run: |
-          git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git submodule update --init --recursive --depth 1 remote/libs
+      - name: Check out pinned remote/libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        # SHA-pinned like every other action here. This one selects the
+        # toolchain from the ref name, so pinning to a commit means the
+        # `toolchain` input has to say `stable` explicitly.
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
+        with:
+          toolchain: stable
 
       - name: Cache cargo build
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             ~/.cargo/registry
@@ -240,13 +228,6 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
-      # Asserts:
-      #   1. dd-remote-rest-api lists dd-pg-defs as a path-dep
-      #   2. src/pg_contract.rs re-exports + provides assert_canonical_schema_matches_local_reads()
-      #   3. main.rs calls that assertion at startup
-      #   4. dd-remote-web-home stays free of any direct Postgres deps
-      #   5. cargo check passes (proves the path-dep resolves)
-      #   6. cargo test pg_contract passes (subset + table-name + status round-trip)
       - name: Verify Rust services compile + test against dd-pg-defs
         run: pnpm run test:cli:rust-pg-defs-wiring
         working-directory: remote/tests

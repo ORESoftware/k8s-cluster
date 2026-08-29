@@ -107,7 +107,7 @@ values (
       {
         "slug": "dd-document",
         "displayName": "dd-document-rs warm workers (Pandoc + ImageMagick heavy conversions)",
-        "image": "docker.io/library/dd-document-rs:latest",
+        "image": "docker.io/library/dd-document-rs:0.1.0",
         "command": [],
         "env": {
           "DOCUMENT_MAX_INPUT_BYTES": "67108864",

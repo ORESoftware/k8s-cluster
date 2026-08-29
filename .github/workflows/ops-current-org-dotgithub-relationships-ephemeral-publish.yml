@@ -1,0 +1,337 @@
+name: Publish current organization repository relationships
+run-name: Validate or publish the current .github relationship fleet
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/ops/org_repository_relationships_*.py
+      - scripts/ops/publish_org_repository_relationships.py
+      - scripts/ops/publish_current_org_repository_relationships.py
+      - scripts/ops/bootstrap_current_org_dotgithub_repositories.py
+      - tests/ops/test_publish_current_org_repository_relationships.py
+      - .github/workflows/ops-current-org-dotgithub-relationships-ephemeral-publish.yml
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: current-org-dotgithub-relationships-${{ github.event.issue.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate current-fleet relationship publisher
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile bounded publishers
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            scripts/ops/bootstrap_current_org_dotgithub_repositories.py \
+            scripts/ops/org_repository_relationships_*.py \
+            scripts/ops/publish_org_repository_relationships.py \
+            scripts/ops/publish_current_org_repository_relationships.py
+
+      - name: Run relationship, privacy, fleet, and workflow contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tests/ops/test_publish_current_org_repository_relationships.py -v
+
+  publish:
+    name: Publish and verify the current 62-organization relationship fleet
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.issue.number == 615 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-publish-current-org-dotgithub-relationships:615:20260808-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      issues: write
+    env:
+      REPOSITORY: ORESoftware/k8s-cluster
+      ISSUE_NUMBER: '615'
+      EXPECTED_COUNT: '62'
+      EXACT_TRIGGER: ops-publish-current-org-dotgithub-relationships:615:20260808-v2
+
+    steps:
+      - name: Issue one-time challenge, publish, and verify
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+
+          stage=trusted-trigger
+          workflow_token="$GH_TOKEN"
+          owner_token=''
+          challenge_id=''
+          response_id=''
+          work="$(mktemp -d "$RUNNER_TEMP/current-org-relationships.XXXXXX")"
+
+          clear_credentials() {
+            unset owner_token GH_TOKEN GITHUB_TOKEN
+            unset workflow_token COMMENT_BODY
+          }
+
+          report_failure() {
+            local status=$?
+            trap - ERR
+            unset owner_token GH_TOKEN GITHUB_TOKEN COMMENT_BODY
+            GH_TOKEN="$workflow_token" gh api \
+              --method POST \
+              "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              -f body="Current organization relationship publication failed at bounded stage \`${stage}\`. No plaintext owner credential was written to Git, issue comments, workflow inputs, outputs, artifacts, or the Actions environment file." \
+              >/dev/null || true
+            unset workflow_token
+            exit "$status"
+          }
+
+          trap clear_credentials EXIT
+          trap report_failure ERR
+
+          test "$COMMENT_BODY" = "$EXACT_TRIGGER"
+          test "$EXPECTED_COUNT" = '62'
+
+          trusted_sha="$(
+            GH_TOKEN="$workflow_token" gh api \
+              "repos/${REPOSITORY}/git/ref/heads/main" \
+              --jq '.object.sha'
+          )"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          stage=challenge-bootstrap
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey \
+            -quiet \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:3072 \
+            -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- current-org-relationships-credential-challenge:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256 challenge for the current 62-organization public `.github` relationship fleet at trusted `main` `%s`. Reply only with the matching encrypted response marker. Never paste a plaintext token into GitHub.\n\n' "$trusted_sha"
+            printf '```pem\n'
+            cat "$public_key"
+            printf '```\n'
+          } > "$challenge_body"
+
+          challenge_json="$(
+            jq -n --rawfile body "$challenge_body" '{body:$body}' |
+              GH_TOKEN="$workflow_token" gh api \
+                --method POST \
+                "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+                --input -
+          )"
+          challenge_id="$(
+            jq -er '.id | select(type == "number" and . > 0)' \
+              <<<"$challenge_json"
+          )"
+          response_marker="<!-- current-org-relationships-credential-response:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 240); do
+            comments="$(
+              GH_TOKEN="$workflow_token" gh api --paginate \
+                "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments?per_page=100" \
+                --slurp
+            )"
+            response_json="$(
+              jq -c \
+                --arg marker "$response_marker" \
+                --argjson challenge_id "$challenge_id" '
+                  [
+                    .[][]
+                    | select(.id > $challenge_id)
+                    | select(.user.login == "ORESoftware")
+                    | select(.body | startswith($marker + "\n"))
+                  ]
+                  | sort_by(.id)
+                  | last // empty
+                ' <<<"$comments"
+            )"
+            if test -n "$response_json"; then
+              response_id="$(jq -er '.id' <<<"$response_json")"
+              response_body="$(jq -er '.body' <<<"$response_json")"
+              break
+            fi
+            sleep 5
+          done
+          test -n "$response_body"
+          [[ "$response_id" =~ ^[0-9]+$ ]]
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* ]]
+          [[ "$owner_token" != *$'\r'* ]]
+          [[ "$owner_token" != *$'\t'* ]]
+          [[ "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+
+          stage=validate-owner-credential
+          if ! owner_login="$(
+            GH_TOKEN="$owner_token" gh api user --jq '.login' 2>/dev/null
+          )"; then
+            stage=validate-owner-credential-authentication
+            false
+          fi
+          if ! [[ "$owner_login" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,37}[A-Za-z0-9])?$ ]]; then
+            stage=validate-owner-credential-login
+            false
+          fi
+
+          stage=trusted-source
+          source_root="$work/source"
+          mkdir -p "$source_root"
+          git -C "$source_root" init --quiet
+          git -C "$source_root" remote add origin \
+            "https://github.com/${REPOSITORY}.git"
+          git -C "$source_root" -c protocol.version=2 fetch \
+            --quiet --depth=1 origin "$trusted_sha"
+          git -C "$source_root" switch --quiet --detach FETCH_HEAD
+          test "$(git -C "$source_root" rev-parse HEAD)" = "$trusted_sha"
+
+          required_paths=(
+            scripts/ops/bootstrap_org_dotgithub_repositories.py
+            scripts/ops/bootstrap_current_org_dotgithub_repositories.py
+            scripts/ops/org_repository_relationships_graph.py
+            scripts/ops/org_repository_relationships_model.py
+            scripts/ops/org_repository_relationships_render.py
+            scripts/ops/org_repository_relationships_roles.py
+            scripts/ops/publish_org_repository_relationships.py
+            scripts/ops/publish_current_org_repository_relationships.py
+            tests/ops/test_publish_current_org_repository_relationships.py
+          )
+          for path in "${required_paths[@]}"; do
+            test -f "$source_root/$path"
+          done
+
+          stage=trusted-validation
+          (
+            cd "$source_root"
+            python3 -m py_compile \
+              scripts/ops/bootstrap_org_dotgithub_repositories.py \
+              scripts/ops/bootstrap_current_org_dotgithub_repositories.py \
+              scripts/ops/org_repository_relationships_*.py \
+              scripts/ops/publish_org_repository_relationships.py \
+              scripts/ops/publish_current_org_repository_relationships.py
+            python3 tests/ops/test_publish_current_org_repository_relationships.py -v
+          )
+
+          stage=publish-relationships
+          json_report="$work/relationships.json"
+          markdown_report="$work/relationships.md"
+          (
+            cd "$source_root"
+            env -u GITHUB_TOKEN \
+              GH_TOKEN="$owner_token" \
+              EXPECTED_OWNER_LOGIN="$owner_login" \
+              python3 scripts/ops/publish_current_org_repository_relationships.py \
+                --execute \
+                --json-report "$json_report" \
+                --markdown-report "$markdown_report"
+          )
+
+          stage=verify-report
+          SOURCE_ROOT="$source_root" \
+          EXPECTED_COUNT="$EXPECTED_COUNT" \
+          python3 - "$json_report" <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from pathlib import Path
+          import sys
+
+          source_root = Path(os.environ["SOURCE_ROOT"])
+          sys.path.insert(0, str(source_root / "scripts" / "ops"))
+          import publish_current_org_repository_relationships as current
+
+          expected_count = int(os.environ["EXPECTED_COUNT"])
+          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          organizations = payload.get("organizations")
+          if payload.get("mode") != "execute" or not isinstance(organizations, list):
+              raise SystemExit("relationship report is not an execution report")
+          expected = tuple(current.ORGANIZATIONS)
+          observed = tuple(item.get("organization") for item in organizations)
+          if len(expected) != expected_count or len(organizations) != expected_count:
+              raise SystemExit("relationship report organization count mismatch")
+          if observed != expected or len(set(observed)) != expected_count:
+              raise SystemExit("relationship report organization order or identity mismatch")
+          if any(item.get("verified") is not True for item in organizations):
+              raise SystemExit("one or more organization registries were not verified")
+          if any(item.get("private_repository_count", -1) < 0 for item in organizations):
+              raise SystemExit("invalid privacy accounting in relationship report")
+          PY
+
+          stage=publish-sanitized-report
+          completion_body="$work/completion.md"
+          {
+            printf 'Current organization repository-relationship publication completed from trusted `main` `%s`.\n\n' "$trusted_sha"
+            cat "$markdown_report"
+            printf '\nThe report contains public repository counts and aggregate private-name withholding counts only; no private repository names or credentials are included.\n'
+          } > "$completion_body"
+          jq -n --rawfile body "$completion_body" '{body:$body}' |
+            GH_TOKEN="$workflow_token" gh api \
+              --method POST \
+              "repos/${REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+              --input - \
+              >/dev/null
+
+          stage=cleanup-comments
+          GH_TOKEN="$workflow_token" gh api \
+            --method DELETE \
+            "repos/${REPOSITORY}/issues/comments/${challenge_id}" \
+            >/dev/null || true
+          GH_TOKEN="$workflow_token" gh api \
+            --method DELETE \
+            "repos/${REPOSITORY}/issues/comments/${response_id}" \
+            >/dev/null || true
+
+          clear_credentials

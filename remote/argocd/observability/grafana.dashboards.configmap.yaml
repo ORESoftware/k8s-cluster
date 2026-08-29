@@ -742,7 +742,7 @@ data:
           "id": 4,
           "options": { "colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": [ "lastNotNull" ], "fields": "", "values": false }, "textMode": "auto", "wideLayout": true },
           "pluginVersion": "11.3.0",
-          "targets": [ { "expr": "max(dd_k8s_hpa_current_at_max{namespace=\"default\",app=\"dd-fabrication-server\",hpa=\"dd-fabrication-server\"}) or vector(0)", "refId": "A" } ],
+          "targets": [ { "expr": "max(dd_k8s_hpa_current_at_max{namespace=\"daedalus\",app=\"dd-fabrication-server\",hpa=\"dd-fabrication-server\"}) or vector(0)", "refId": "A" } ],
           "title": "HPA At Max",
           "type": "stat"
         },
@@ -758,8 +758,8 @@ data:
             { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_current_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa current {{namespace}}/{{hpa}}", "refId": "C" },
             { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_desired_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa desired {{namespace}}/{{hpa}}", "refId": "D" },
             { "expr": "sum by (namespace, hpa, target) (dd_k8s_hpa_max_replicas{target=\"dd-fabrication-server\"})", "legendFormat": "hpa max {{namespace}}/{{hpa}}", "refId": "E" },
-            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_updated_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "updated {{namespace}}/{{deployment}}", "refId": "F" },
-            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_unavailable_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "unavailable {{namespace}}/{{deployment}}", "refId": "G" }
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_updated_replicas{namespace=\"daedalus\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "updated {{namespace}}/{{deployment}}", "refId": "F" },
+            { "expr": "sum by (namespace, deployment, app) (dd_k8s_deployment_unavailable_replicas{namespace=\"daedalus\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "unavailable {{namespace}}/{{deployment}}", "refId": "G" }
           ],
           "title": "Replica and Autoscaler State",
           "type": "timeseries"
@@ -868,12 +868,12 @@ data:
           "id": 13,
           "options": { "legend": { "calcs": [ "lastNotNull" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
           "targets": [
-            { "expr": "sum by (namespace, init_container, reason) (dd_k8s_pod_init_container_waiting{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "init waiting {{namespace}}/{{init_container}} {{reason}}", "refId": "A" },
-            { "expr": "sum by (namespace, init_container) (increase(dd_k8s_pod_init_container_restarts_total{namespace=\"default\",app=\"dd-fabrication-server\"}[15m]))", "legendFormat": "init restarts {{namespace}}/{{init_container}}", "refId": "B" },
-            { "expr": "sum by (namespace, app, involved_kind, type, reason) (dd_k8s_event_count{namespace=\"default\",app=\"dd-fabrication-server\",type=\"Warning\"})", "legendFormat": "warning {{namespace}}/{{app}} {{reason}}", "refId": "C" },
-            { "expr": "sum by (namespace, app, container, reason, exit_code) (dd_k8s_pod_container_last_terminated{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "last terminated {{namespace}}/{{container}} {{reason}} {{exit_code}}", "refId": "D" },
-            { "expr": "sum by (namespace, app, init_container, reason, exit_code) (dd_k8s_pod_init_container_last_terminated{namespace=\"default\",app=\"dd-fabrication-server\"})", "legendFormat": "init last terminated {{namespace}}/{{init_container}} {{reason}} {{exit_code}}", "refId": "E" },
-            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "serving waiting {{namespace}}/{{container}} {{reason}}", "refId": "F" }
+            { "expr": "sum by (namespace, init_container, reason) (dd_k8s_pod_init_container_waiting{namespace=\"daedalus\",app=\"dd-fabrication-server\"})", "legendFormat": "init waiting {{namespace}}/{{init_container}} {{reason}}", "refId": "A" },
+            { "expr": "sum by (namespace, init_container) (increase(dd_k8s_pod_init_container_restarts_total{namespace=\"daedalus\",app=\"dd-fabrication-server\"}[15m]))", "legendFormat": "init restarts {{namespace}}/{{init_container}}", "refId": "B" },
+            { "expr": "sum by (namespace, app, involved_kind, type, reason) (dd_k8s_event_count{namespace=\"daedalus\",app=\"dd-fabrication-server\",type=\"Warning\"})", "legendFormat": "warning {{namespace}}/{{app}} {{reason}}", "refId": "C" },
+            { "expr": "sum by (namespace, app, container, reason, exit_code) (dd_k8s_pod_container_last_terminated{namespace=\"daedalus\",app=\"dd-fabrication-server\"})", "legendFormat": "last terminated {{namespace}}/{{container}} {{reason}} {{exit_code}}", "refId": "D" },
+            { "expr": "sum by (namespace, app, init_container, reason, exit_code) (dd_k8s_pod_init_container_last_terminated{namespace=\"daedalus\",app=\"dd-fabrication-server\"})", "legendFormat": "init last terminated {{namespace}}/{{init_container}} {{reason}} {{exit_code}}", "refId": "E" },
+            { "expr": "sum by (namespace, app, container, reason) (dd_k8s_pod_container_waiting{namespace=\"daedalus\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "serving waiting {{namespace}}/{{container}} {{reason}}", "refId": "F" }
           ],
           "title": "Kubernetes Startup, Warning, and Termination Evidence",
           "type": "timeseries"
@@ -885,8 +885,8 @@ data:
           "id": 14,
           "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
           "targets": [
-            { "expr": "max(dd_k8s_pod_container_cpu_usage_cores{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "cpu / limit", "refId": "A" },
-            { "expr": "max(dd_k8s_pod_container_memory_usage_bytes{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace=\"default\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "memory / limit", "refId": "B" }
+            { "expr": "max(dd_k8s_pod_container_cpu_usage_cores{namespace=\"daedalus\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace=\"daedalus\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "cpu / limit", "refId": "A" },
+            { "expr": "max(dd_k8s_pod_container_memory_usage_bytes{namespace=\"daedalus\",app=\"dd-fabrication-server\",container=\"fabrication-server\"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace=\"daedalus\",app=\"dd-fabrication-server\",container=\"fabrication-server\"})", "legendFormat": "memory / limit", "refId": "B" }
           ],
           "title": "Runtime CPU and Memory Limit Headroom",
           "type": "timeseries"
@@ -1021,8 +1021,8 @@ data:
           "options": { "legend": { "calcs": [ "lastNotNull", "max" ], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "none" } },
           "targets": [
             { "expr": "sum(up{job=\"dd-fabrication-server-pods\"} == bool 1) or vector(0)", "legendFormat": "ready direct pod scrapes", "refId": "A" },
-            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "desired replicas", "refId": "B" },
-            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"default\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"}) - (sum(up{job=\"dd-fabrication-server-pods\"} == bool 1) or vector(0))", "legendFormat": "scrape coverage gap", "refId": "C" }
+            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"daedalus\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"})", "legendFormat": "desired replicas", "refId": "B" },
+            { "expr": "max(dd_k8s_deployment_desired_replicas{namespace=\"daedalus\",deployment=\"dd-fabrication-server\",app=\"dd-fabrication-server\"}) - (sum(up{job=\"dd-fabrication-server-pods\"} == bool 1) or vector(0))", "legendFormat": "scrape coverage gap", "refId": "C" }
           ],
           "title": "Direct Pod Scrape Coverage",
           "type": "timeseries"

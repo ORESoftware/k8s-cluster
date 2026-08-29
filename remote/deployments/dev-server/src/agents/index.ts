@@ -307,6 +307,17 @@ export function buildAgentEnv(provider: AgentProvider, apiKey?: string): Record<
       base[name] = value;
     }
   }
+  // Thread pods already receive the cluster server credential as either
+  // SERVER_AUTH_SECRET or EVENT_INGEST_SECRET. Pass only an MCP-scoped alias
+  // into provider subprocesses so HTTP MCP clients can authenticate without
+  // embedding credentials in URLs or logs.
+  const agentMcpAuthSecret =
+    process.env.AGENT_MCP_AUTH_SECRET?.trim() ||
+    process.env.SERVER_AUTH_SECRET?.trim() ||
+    process.env.EVENT_INGEST_SECRET?.trim();
+  if (agentMcpAuthSecret) {
+    base.AGENT_MCP_AUTH_SECRET = agentMcpAuthSecret;
+  }
 
   if (provider === 'claude-cli' || provider === 'claude-sdk') {
     const key = apiKey ?? configuredProviderApiKeys(provider)[0];

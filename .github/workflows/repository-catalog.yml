@@ -1,0 +1,74 @@
+name: Repository catalog
+
+on:
+  pull_request:
+    paths:
+      - "catalog/**"
+      - "remote/argocd/**/*.yaml"
+      - "remote/argocd/**/*.yml"
+      - "tools/application_catalog.py"
+      - "tools/repository_catalog.py"
+      - "tools/test_application_catalog.py"
+      - "tools/test_application_catalog_multisource.py"
+      - "tools/test_repository_catalog.py"
+      - ".nix/agent-check.sh"
+      - ".nix/dev-shell.nix"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/repository-catalog.yml"
+  push:
+    branches: [main]
+    paths:
+      - "catalog/**"
+      - "remote/argocd/**/*.yaml"
+      - "remote/argocd/**/*.yml"
+      - "tools/application_catalog.py"
+      - "tools/repository_catalog.py"
+      - "tools/test_application_catalog.py"
+      - "tools/test_application_catalog_multisource.py"
+      - "tools/test_repository_catalog.py"
+      - ".nix/agent-check.sh"
+      - ".nix/dev-shell.nix"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/repository-catalog.yml"
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-catalog-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Nix catalog contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+
+      - name: Run the locked development-shell gate
+        run: nix develop --accept-flake-config -c agent-check all
+
+      - name: Evaluate flake checks
+        run: nix flake check --accept-flake-config --print-build-logs
+
+      - name: Upload drift and dashboard evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repository-catalog-evidence
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14

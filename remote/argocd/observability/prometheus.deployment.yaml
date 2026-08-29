@@ -20,13 +20,14 @@ spec:
       annotations:
         # Bump this after prometheus-config edits so argocd rolls the pod
         # even if the stakater reloader is degraded (see reloader RBAC fix
-        # for `jobs.batch`). This pickup is what materializes the
-        # dd-k8s-resource-exporter scrape_timeout: 25s change into the
-        # running config and clears DDObservabilityTargetDown.
-        dd.dev/config-revision: "2026-07-16-k8s-exporter-scrape-timeout"
+        # for `jobs.batch`). Roll this value whenever the mounted Prometheus
+        # configuration changes so every scrape and alert contract reaches
+        # the running pods.
+        dd.dev/config-revision: "2026-07-31-ai-agent-bridge-metrics"
       labels:
         app: dd-prometheus
     spec:
+      serviceAccountName: dd-prometheus
       automountServiceAccountToken: false
       containers:
         - name: prometheus
@@ -67,9 +68,33 @@ spec:
               mountPath: /etc/prometheus
             - name: data
               mountPath: /prometheus
+            - name: kubernetes-api-access
+              mountPath: /var/run/secrets/prometheus-discovery
+              readOnly: true
       volumes:
         - name: config
           configMap:
             name: dd-prometheus-config
         - name: data
           emptyDir: {}
+        - name: kubernetes-api-access
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  # Omit a custom audience so Kubernetes uses the API server's
+                  # configured identifier. A hard-coded DNS audience can yield
+                  # a structurally valid token that this cluster rejects.
+                  expirationSeconds: 3600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        apiVersion: v1
+                        fieldPath: metadata.namespace

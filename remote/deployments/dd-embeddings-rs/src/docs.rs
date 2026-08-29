@@ -1,91 +1,94 @@
-//! API documentation surface.
+//! Executable OpenAPI contract support.
 //!
-//! Per the repo's API Docs Contract, deployments expose generated docs at
-//! `/docs/api` + `/api/docs` and machine-readable metadata at
-//! `/api/docs.json`. The route inventory below is the single source of truth
-//! for both renderings (and mirrors what `generated/api-docs.json` ships).
+//! Route registration and contract collection happen together in
+//! `OpenApiRouter`. The complete typed contract is retained for private
+//! SDKs and authenticated internal documentation. Standard unauthenticated
+//! documentation routes serve only the generated fail-closed public subset.
 
-use axum::response::{IntoResponse, Json};
-use serde_json::json;
+use std::sync::Arc;
 
-struct RouteDoc {
-    method: &'static str,
-    path: &'static str,
-    auth: bool,
-    summary: &'static str,
+use axum::body::Bytes;
+use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::openapi::{Components, OpenApi};
+use utoipa_scalar::Scalar;
+
+const PUBLIC_OPENAPI_JSON: &str = include_str!("../generated/api-docs.json");
+
+#[derive(Clone)]
+pub struct ApiDocs {
+    pub public_json: Bytes,
+    pub public_scalar_html: Bytes,
+    pub internal_json: Bytes,
+    pub internal_scalar_html: Bytes,
 }
 
-const ROUTES: &[RouteDoc] = &[
-    RouteDoc { method: "GET", path: "/healthz", auth: false, summary: "Liveness probe (no dependencies)." },
-    RouteDoc { method: "GET", path: "/readyz", auth: false, summary: "Readiness probe; checks Qdrant reachability." },
-    RouteDoc { method: "GET", path: "/metrics", auth: false, summary: "Prometheus metrics (text exposition)." },
-    RouteDoc { method: "GET", path: "/api/docs.json", auth: false, summary: "This document, as JSON." },
-    RouteDoc { method: "GET", path: "/api/docs", auth: false, summary: "Human-readable API docs." },
-    RouteDoc { method: "GET", path: "/api/providers", auth: true, summary: "List configured embedding + rerank providers, default models, and aliases." },
-    RouteDoc { method: "POST", path: "/api/embeddings", auth: true, summary: "Generate embeddings. Body: { provider, input[], model?, dimensions?, input_type? }." },
-    RouteDoc { method: "POST", path: "/api/rerank", auth: true, summary: "Rerank documents against a query. Body: { provider, query, documents[], model?, top_n? }." },
-    RouteDoc { method: "POST", path: "/api/rag/index", auth: true, summary: "Embed documents and upsert into a Qdrant collection. Body: { collection, provider, documents[], model?, dimensions?, distance? }." },
-    RouteDoc { method: "POST", path: "/api/rag/search", auth: true, summary: "Embed a query and retrieve nearest neighbors. Body: { collection, provider, query, top_k?, model?, dimensions? }." },
-    RouteDoc { method: "POST", path: "/api/rag/delete", auth: true, summary: "Delete points by id from a collection. Body: { collection, ids[] }." },
-    RouteDoc { method: "GET", path: "/api/rag/collections", auth: true, summary: "List vector-store collections." },
-    RouteDoc { method: "DELETE", path: "/api/rag/collections/{collection}", auth: true, summary: "Delete an entire collection." },
-    RouteDoc { method: "POST", path: "/api/search/index", auth: true, summary: "Index documents into the Postgres search engine (content + attributes + edges). Body: { collection, provider, model?, documents[] }." },
-    RouteDoc { method: "POST", path: "/api/search", auth: true, summary: "Multi-signal search: lexical+trigram+semantic fused (RRF) with structured filters and graph expansion, optional rerank. Body: { collection, query, provider, signals?, filters?, graph?, top_k?, rerank? }." },
-    RouteDoc { method: "POST", path: "/api/search/edges", auth: true, summary: "Add graph edges by external_id. Body: { collection, edges:[{from,to,relation?,weight?}] }." },
-    RouteDoc { method: "POST", path: "/api/search/delete", auth: true, summary: "Delete documents by external_id. Body: { collection, external_ids[] }." },
-    RouteDoc { method: "GET", path: "/api/search/collections", auth: true, summary: "List search collections." },
-    RouteDoc { method: "DELETE", path: "/api/search/collections/{collection}", auth: true, summary: "Delete an entire search collection." },
-];
-
-fn doc_value() -> serde_json::Value {
-    let routes: Vec<_> = ROUTES
-        .iter()
-        .map(|r| json!({ "method": r.method, "path": r.path, "auth": r.auth, "summary": r.summary }))
-        .collect();
-    json!({
-        "service": "dd-embeddings-rs",
-        "version": env!("CARGO_PKG_VERSION"),
-        "description": "Multi-provider embedding gateway and RAG indexing service.",
-        "notes": [
-            "Provider `anthropic` is an alias for `voyage`: Anthropic has no \
-             first-party embeddings API and recommends Voyage AI.",
-            "Providers are opt-in: only those with credentials in the secret are registered."
-        ],
-        "routes": routes,
-    })
-}
-
-pub async fn docs_json() -> impl IntoResponse {
-    Json(doc_value())
-}
-
-pub fn docs_html_string() -> String {
-    let mut rows = String::new();
-    for r in ROUTES {
-        let lock = if r.auth { " 🔒" } else { "" };
-        rows.push_str(&format!(
-            "<tr><td><code>{}</code></td><td><code>{}</code>{}</td><td>{}</td></tr>",
-            r.method, r.path, lock, html_escape(r.summary)
-        ));
+impl ApiDocs {
+    pub fn new(openapi: &OpenApi) -> anyhow::Result<Self> {
+        let public_value: serde_json::Value = serde_json::from_str(PUBLIC_OPENAPI_JSON)?;
+        anyhow::ensure!(
+            public_value["x-dd-contract-scope"] == "public",
+            "embedded runtime OpenAPI must be the fail-closed public contract"
+        );
+        anyhow::ensure!(
+            public_value["info"]["title"] == "dd-embeddings-rs API (public)",
+            "embedded runtime OpenAPI has unexpected service metadata"
+        );
+        let public_openapi: OpenApi = serde_json::from_value(public_value)?;
+        let internal_json = canonical_json(openapi)?;
+        Ok(Self {
+            public_json: Bytes::from_static(PUBLIC_OPENAPI_JSON.as_bytes()),
+            public_scalar_html: Bytes::from(Scalar::new(public_openapi).to_html()),
+            internal_json: Bytes::from(internal_json),
+            internal_scalar_html: Bytes::from(Scalar::new(openapi.clone()).to_html()),
+        })
     }
-    format!(
-        "<!doctype html><html><head><meta charset=\"utf-8\">\
-         <title>dd-embeddings-rs API</title>\
-         <style>body{{font-family:system-ui,sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem}}\
-         table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #ddd;padding:.4rem .6rem;text-align:left}}\
-         code{{background:#f4f1ea;padding:.1rem .3rem;border-radius:.2rem}}</style></head>\
-         <body><h1>dd-embeddings-rs</h1>\
-         <p>Multi-provider embedding gateway + RAG indexing service. \
-         <code>🔒</code> routes require a bearer token when one is configured. \
-         The <code>anthropic</code> provider id is an alias for <code>voyage</code> \
-         (Anthropic ships no embeddings API).</p>\
-         <table><thead><tr><th>Method</th><th>Path</th><th>Summary</th></tr></thead>\
-         <tbody>{rows}</tbody></table>\
-         <p>Machine-readable: <a href=\"/api/docs.json\"><code>/api/docs.json</code></a></p>\
-         </body></html>"
-    )
 }
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+pub fn public_json() -> &'static str {
+    PUBLIC_OPENAPI_JSON
 }
+
+fn register_schema<T: utoipa::ToSchema>(components: &mut Components) {
+    let mut schemas = vec![(
+        <T as utoipa::ToSchema>::name().into_owned(),
+        <T as utoipa::PartialSchema>::schema(),
+    )];
+    <T as utoipa::ToSchema>::schemas(&mut schemas);
+    components.schemas.extend(schemas);
+}
+
+pub fn finalize(mut openapi: OpenApi) -> OpenApi {
+    openapi.info.title = "dd-embeddings-rs API".to_string();
+    openapi.info.version = env!("CARGO_PKG_VERSION").to_string();
+    openapi.info.description = Some(
+        "Typed multi-provider embeddings, reranking, Qdrant RAG, and Postgres multi-signal search API. The document is generated from the same annotated handlers and Serde DTOs registered by the running Axum router."
+            .to_string(),
+    );
+    openapi.info.contact = None;
+    openapi.info.license = None;
+
+    let components = openapi.components.get_or_insert_with(Components::new);
+    register_schema::<crate::error::ErrorResponse>(components);
+    components.add_security_scheme(
+        "bearer_auth",
+        SecurityScheme::Http(
+            HttpBuilder::new()
+                .scheme(HttpAuthScheme::Bearer)
+                .bearer_format("opaque service token")
+                .description(Some(
+                    "Set `Authorization: Bearer <token>`. Protected routes fail closed when EMBEDDINGS_API_AUTH_BEARER is absent."
+                        .to_string(),
+                ))
+                .build(),
+        ),
+    );
+    openapi
+}
+
+pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
+    let mut json = serde_json::to_string_pretty(openapi)?;
+    json.push('\n');
+    Ok(json)
+}
+
+pub type SharedApiDocs = Arc<ApiDocs>;

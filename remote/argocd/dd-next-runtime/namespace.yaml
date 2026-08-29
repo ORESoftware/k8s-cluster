@@ -5,6 +5,9 @@ metadata:
   labels:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
+    # Opt in to ClusterSecretStore/dd-fiducia-kv. Admission policy still limits
+    # creation to Argo CD/cluster admins and validates exact per-workload keys.
+    dd.dev/fiducia-kv-secrets: enabled
 ---
 apiVersion: v1
 kind: Namespace

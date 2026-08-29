@@ -20,6 +20,32 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readWebHomeSource(): Promise<string> {
+  const modules = [
+    'agents',
+    'container_pool',
+    'grafana',
+    'handlers',
+    'home',
+    'jello',
+    'labs',
+    'lambda',
+    'metrics',
+    'shared',
+    'state',
+  ];
+  const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `web-home-rs main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 function csvValuesFromYamlEnv(source: string, name: string): Set<string> {
   const match = source.match(new RegExp(`name:\\s*${name}[\\s\\S]*?value:\\s*([^\\n]+)`));
   assert.ok(match, `expected ${name} env var`);
@@ -201,15 +227,32 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
   assert.match(deployment, /namespace:\s*ai-ml/);
   assert.match(
     deployment,
-    /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*1[\s\S]*maxUnavailable:\s*0/,
+    /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*0[\s\S]*maxUnavailable:\s*1/,
+  );
+  assert.match(
+    deployment,
+    /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
   );
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /serviceAccountName:\s*dd-ai-ml-pipeline/);
-  assert.match(deployment, /image:\s*docker\.io\/library\/dd-ai-ml-pipeline:dev/);
-  assert.doesNotMatch(deployment, /docker\.io\/library\/python:3\.12-slim/);
-  assert.doesNotMatch(deployment, /hostPath:/);
-  assert.doesNotMatch(deployment, /mountPath:\s*\/opt\/dd-next-1/);
-  assert.doesNotMatch(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/ai-ml-pipeline/);
+  assert.match(
+    deployment,
+    /image:\s*docker\.io\/library\/python:3\.12-slim@sha256:[a-f0-9]{64}/,
+  );
+  assert.match(deployment, /imagePullPolicy:\s*IfNotPresent/);
+  assert.match(
+    deployment,
+    /command:[\s\S]*- \/bin\/bash[\s\S]*- -lc[\s\S]*cd \/opt\/dd-next-1\/remote\/deployments\/ai-ml-pipeline[\s\S]*exec python3 -u src\/dd_ai_ml_pipeline\.py/,
+  );
+  assert.match(
+    deployment,
+    /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
+  );
+  assert.match(
+    deployment,
+    /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
+  );
+  assert.doesNotMatch(deployment, /pip install|git clone|git fetch/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8099'/);
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /ML_ALLOW_UNAUTHENTICATED[\s\S]*value:\s*'false'/);
@@ -330,6 +373,9 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   const sparkPipelineApiDocs = JSON.parse(
     await readRepoFile('remote/deployments/spark-pipeline-server/generated/api-docs.json'),
   );
+  const sparkPipelineInternalApiDocs = JSON.parse(
+    await readRepoFile('remote/deployments/spark-pipeline-server/generated/api-docs.internal.json'),
+  );
   const generatedApiDocsIndex = JSON.parse(
     await readRepoFile('remote/deployments/generated-api-docs-index.json'),
   );
@@ -372,14 +418,31 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   assert.match(sparkPipeline, /destination:[\s\S]*namespace:\s*ai-ml/);
   assert.match(sparkPipelineKustomization, /dd-spark-pipeline-server\.pdb\.yaml/);
   assert.match(sparkPipelineDeployment, /namespace:\s*ai-ml/);
-  assert.match(sparkPipelineDeployment, /image:\s*docker\.io\/library\/dd-spark-pipeline-server:dev/);
-  assert.doesNotMatch(sparkPipelineDeployment, /docker\.io\/library\/maven/);
-  assert.doesNotMatch(sparkPipelineDeployment, /hostPath:/);
-  assert.doesNotMatch(sparkPipelineDeployment, /mountPath:\s*\/opt\/dd-next-1/);
-  assert.doesNotMatch(sparkPipelineDeployment, /MAVEN_CONFIG/);
   assert.match(
     sparkPipelineDeployment,
-    /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*1[\s\S]*maxUnavailable:\s*0/,
+    /image:\s*docker\.io\/library\/maven:3\.9\.9-eclipse-temurin-17/,
+  );
+  assert.doesNotMatch(sparkPipelineDeployment, /dd-spark-pipeline-server:dev/);
+  assert.match(
+    sparkPipelineDeployment,
+    /cp -R \/opt\/dd-next-1\/remote\/deployments\/spark-pipeline-server[\s\S]*cp -R \/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/jvm\/jooq[\s\S]*mvn -B -e -DskipTests[\s\S]*exec java \$JAVA_OPTS/,
+  );
+  assert.match(
+    sparkPipelineDeployment,
+    /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
+  );
+  assert.match(
+    sparkPipelineDeployment,
+    /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
+  );
+  assert.match(sparkPipelineDeployment, /MAVEN_CONFIG[\s\S]*value:\s*\/work\/\.m2/);
+  assert.match(
+    sparkPipelineDeployment,
+    /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*0[\s\S]*maxUnavailable:\s*1/,
+  );
+  assert.match(
+    sparkPipelineDeployment,
+    /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
   );
   assert.match(sparkPipelineDeployment, /automountServiceAccountToken:\s*false/);
   assert.match(sparkPipelineDeployment, /securityContext:[\s\S]*runAsNonRoot:\s*true/);
@@ -416,21 +479,34 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   assert.match(sparkPipelinePom, /<directory>\$\{project\.basedir\}\/generated<\/directory>/);
   assert.match(sparkPipelineDockerfile, /docker\.io\/library\/dd-spark-pipeline-server:dev/);
   assert.match(sparkPipelineDockerfile, /COPY remote\/deployments\/spark-pipeline-server\/generated \.\/generated/);
-  assert.equal(sparkPipelineApiDocs.service, 'spark-pipeline-server');
-  assert.equal(sparkPipelineApiDocs.language, 'java');
-  const sparkPipelineRoutes = new Map(
-    sparkPipelineApiDocs.routes.map((route: { path: string }) => [route.path, route]),
-  );
+  assert.equal(sparkPipelineApiDocs.openapi, '3.1.0');
+  assert.equal(sparkPipelineApiDocs['x-dd-service'], 'spark-pipeline-server');
+  assert.equal(sparkPipelineApiDocs['x-dd-language'], 'java');
+  assert.equal(sparkPipelineApiDocs['x-dd-contract-scope'], 'public');
+  const sparkPipelinePublicPaths = sparkPipelineApiDocs.paths as Record<
+    string,
+    Record<string, Record<string, unknown>>
+  >;
   for (const path of ['/docs/api', '/api/docs', '/api/docs.json']) {
-    const route = sparkPipelineRoutes.get(path) as { methods: string[]; auth: string } | undefined;
-    assert.ok(route, `generated Spark API docs missing ${path}`);
-    assert.ok(route.methods.includes('GET'), `${path} must be a GET route`);
-    assert.equal(route.auth, 'public');
+    const operation = sparkPipelinePublicPaths[path]?.get;
+    assert.ok(operation, `generated public Spark OpenAPI missing GET ${path}`);
+    assert.equal(operation['x-dd-visibility'], 'public');
+    assert.deepEqual(operation.security, []);
   }
-  const jobRoute = sparkPipelineRoutes.get('/v1/jobs') as { methods: string[]; auth: string } | undefined;
-  assert.ok(jobRoute?.methods.includes('GET'));
-  assert.ok(jobRoute?.methods.includes('POST'));
-  assert.equal(jobRoute?.auth, 'service-defined');
+  assert.equal(sparkPipelineInternalApiDocs.openapi, '3.1.0');
+  assert.equal(sparkPipelineInternalApiDocs['x-dd-service'], 'spark-pipeline-server');
+  assert.equal(sparkPipelineInternalApiDocs['x-dd-contract-scope'], 'internal');
+  const sparkPipelineInternalPaths = sparkPipelineInternalApiDocs.paths as Record<
+    string,
+    Record<string, Record<string, unknown>>
+  >;
+  const jobRoute = sparkPipelineInternalPaths['/v1/jobs'];
+  assert.ok(jobRoute?.get, 'internal Spark OpenAPI missing GET /v1/jobs');
+  assert.ok(jobRoute?.post, 'internal Spark OpenAPI missing POST /v1/jobs');
+  assert.equal(jobRoute.get['x-dd-auth'], 'service-defined');
+  assert.equal(jobRoute.post['x-dd-auth'], 'service-defined');
+  assert.equal(jobRoute.get['x-dd-visibility'], 'internal');
+  assert.equal(jobRoute.post['x-dd-visibility'], 'internal');
   assert.ok(
     generatedApiDocsIndex.services.some((service: { service: string; language: string }) => {
       return service.service === 'spark-pipeline-server' && service.language === 'java';
@@ -731,7 +807,7 @@ test('gateway, observability, and homepage expose the ai/ml pipeline', async () 
   const exporterDeployment = await readRepoFile(
     'remote/argocd/observability/k8s-resource-exporter.deployment.yaml',
   );
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readWebHomeSource();
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
   const watchedApps = csvValuesFromYamlEnv(exporterDeployment, 'WATCH_APPS');

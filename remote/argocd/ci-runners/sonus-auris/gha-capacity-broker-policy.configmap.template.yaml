@@ -1,0 +1,24 @@
+
+# DIGEST/PARITY-GATED TEMPLATE: excluded from active Kustomizations.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gha-capacity-broker-policy
+  namespace: arc-runners-sonus
+  annotations:
+    dd.dev/activation-state: parity-and-operator-gated
+    dd.dev/linear-issue: DEN-1549
+data:
+  policy.json: |-
+    {
+      "includedMinutes": 2000,
+      "warnPercent": 75,
+      "selfHostedPercent": 90,
+      "hardStopPercent": 100,
+      "preferSelfHosted": false,
+      "selfHostedReady": false,
+      "buildServerEnabled": true,
+      "hostedRunsOn": ["ubuntu-latest"],
+      "selfHostedRunsOn": ["sonus-ci"],
+      "selectedRepositoryIds": [1294558398]
+    }

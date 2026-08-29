@@ -1,0 +1,35 @@
+name: Dispatch protected gh-profile publisher once
+run-name: Activate registered protected gh-profile publisher @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-protected-gh-profile-publisher-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: dispatch-protected-gh-profile-publisher-once
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch reviewed protected-profile publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh workflow run \
+            ops-publish-missing-org-repositories-gh-profile.yml \
+            --repo "$REPOSITORY" \
+            --ref main
+          echo "dispatched protected gh-profile publisher from trusted main ${GITHUB_SHA}"

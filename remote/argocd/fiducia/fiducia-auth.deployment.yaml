@@ -20,9 +20,8 @@ spec:
       labels:
         app: fiducia-auth
       annotations:
-        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-auth.rs)'
-        # Real ES256 JWT minting + JWKS + KV-backed keys; wire signing key + KV.
-        dd.dev/fiducia-build: '2026-06-28-auth-jwt-kv'
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-auth.rs@main'
+        dd.dev/fiducia-build: '2026-07-27-auth-kv-trusted-hop'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -57,21 +56,44 @@ spec:
           env:
             - { name: PORT, value: '8097' }
             - { name: RUST_LOG, value: info }
-            # Shared ES256 signing key (same across all replicas + both clusters,
-            # so a JWT minted anywhere verifies everywhere) + the internal-only
-            # introspect guard. Secret created out-of-band (kubectl), not in git.
-            # optional: a cluster without the secret yet degrades to an ephemeral
-            # signing key (auth logs a warning) instead of crash-looping; apply the
-            # shared secret + restart to get cross-cluster JWT consistency.
+            # Release startup is intentionally fail-closed. Every credential below
+            # is materialized by fiducia-runtime-secrets.externalsecret.yaml from
+            # the independent cloud recovery root before this Deployment starts.
             - name: FIDUCIA_JWT_SIGNING_KEY
               valueFrom:
-                secretKeyRef: { name: fiducia-auth-secrets, key: jwt-signing-key, optional: true }
+                secretKeyRef: { name: fiducia-auth-secrets, key: jwt-signing-key, optional: false }
             - name: FIDUCIA_INTROSPECT_SECRET
               valueFrom:
-                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: true }
-            # Durable API-key storage via fiducia's own KV — through the LB so KV
-            # writes reach the shard leader (the LB follows the NotLeader redirect).
+                secretKeyRef: { name: fiducia-auth-secrets, key: introspect-secret, optional: false }
+            - name: FIDUCIA_KEY_IDEMPOTENCY_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: key-idempotency-secret, optional: false }
+            - name: CUSTOMER_API_KEY_PEPPER
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: api-key-pepper, optional: false }
+            - { name: CUSTOMER_API_KEY_HASH_ALGORITHM, value: hmac-sha256 }
+            - { name: CUSTOMER_API_KEY_ACCEPT_LEGACY_SHA256, value: 'false' }
+            - { name: FIDUCIA_ROTATION_OVERLAP_SECONDS, value: '60' }
+            # Durable API-key storage goes through the LB so leader redirects are
+            # handled in one place. The auth service presents a scoped trusted-hop
+            # identity; the LB then injects the node-only internal header.
             - { name: FIDUCIA_KV_URL, value: 'http://fiducia-load-balance.fiducia.svc.cluster.local:8088' }
+            - { name: FIDUCIA_KV_ORG_ID, value: fiducia-auth }
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: false }
+            # Supabase is the customer identity and organization source. Initial
+            # synchronization is mandatory, so the service-role key is required.
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: supabase-url, optional: false }
+            - name: SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: supabase-publishable-key, optional: false }
+            - name: SUPABASE_SERVICE_ROLE_KEY
+              valueFrom:
+                secretKeyRef: { name: fiducia-auth-secrets, key: supabase-service-role-key, optional: false }
+            - { name: FIDUCIA_CUSTOMER_ORIGIN, value: https://app.fiducia.cloud }
             - { name: HOME, value: /tmp }
             - { name: CARGO_HOME, value: /tmp/cargo }
             - { name: CARGO_TARGET_DIR, value: /tmp/target }

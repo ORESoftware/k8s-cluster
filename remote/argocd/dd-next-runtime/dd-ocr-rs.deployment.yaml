@@ -37,8 +37,8 @@ spec:
         # prebuilt image from deployments/dd-ocr-rs/Dockerfile because it links
         # the Tesseract + Leptonica C++ OCR bridge at build time.
         - name: ocr-rs
-          image: dd-ocr-rs:latest
-          imagePullPolicy: IfNotPresent
+          image: docker.io/library/dd-ocr-rs:0.1.0
+          imagePullPolicy: Never
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

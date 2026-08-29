@@ -66,10 +66,15 @@ test('browser-job-runner is a pool-first Rust axum orchestrator with a nerdctl f
   assert.match(main, /value\.get\("body"\)/);
   assert.match(main, /409/);
 
-  // Fallback path: spawn one detached, self-removing, host-network worker.
+  // Fallback path: spawn one detached host-network worker. nerdctl rejects
+  // detached + --rm, so the tracker owns cleanup and idle-reaper backstops leaks.
   assert.match(main, /fn fallback_spawn/);
-  assert.match(main, /"run", "-d", "--rm"/);
-  assert.match(main, /"--network", &config\.network/);
+  assert.ok(
+    main.includes('for s in ["-n", &config.containerd_namespace, "run", "-d", "--name", &job.container_name]'),
+  );
+  assert.doesNotMatch(main, /"run", "-d", "--rm"/);
+  assert.match(main, /nerdctl[\s\S]*rejects `-d --rm` together/);
+  assert.match(main, /\("--network", config\.network\.clone\(\)\)/);
   assert.match(main, /dd\.browser-job\.managed=true/);
   assert.match(main, /dd\.browser-job\.deadline-ms=/);
   assert.match(main, /JOB_SPEC_B64=/);

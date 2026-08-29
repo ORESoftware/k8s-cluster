@@ -9,6 +9,7 @@ on:
       - "remote/deployments/container-pool-rs/**"
       - "remote/deployments/queue-consumer-rs/**"
       - "remote/deployments/rest-api-rs/**"
+      - "remote/deployments/usacc-rest-api-backend-rs"
       - "remote/deployments/host-cron/**"
       - "remote/deployments/dev-server/src/server.ts"
       - "remote/deployments/gcs/**"
@@ -41,7 +42,6 @@ on:
           - verify-lambda-checks
           - seed-container-pool-config
           - test-container-pool-config
-          - sync-agent-gh-pat
           - sync-agent-model-keys
           - verify-mip-solver-node
           - verify-rust-network-mutex-raft
@@ -131,11 +131,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.target_revision || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && github.sha) || 'dev' }}
 
-      - uses: aws-actions/configure-aws-credentials@v6
+      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
@@ -147,7 +147,6 @@ jobs:
           TARGET_REVISION: ${{ inputs.target_revision || (github.event_name == 'push' && contains(github.event.head_commit.message, '[gcs-loadtest]') && github.sha) || 'dev' }}
           SSM_COMMAND_ID: ${{ inputs.ssm_command_id || github.event.head_commit.message || '' }}
           CANCEL_SSM_COMMAND: ${{ inputs.cancel_ssm_command || (github.event_name == 'push' && contains(github.event.head_commit.message, 'cancel_ssm_command=true') && 'true') || 'false' }}
-          REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
           REMOTE_DEV_DEEPSEEK_API_KEY: ${{ secrets.REMOTE_DEV_DEEPSEEK_API_KEY }}
           REMOTE_DEV_DASHSCOPE_API_KEY: ${{ secrets.REMOTE_DEV_DASHSCOPE_API_KEY }}
           REMOTE_DEV_XAI_API_KEY: ${{ secrets.REMOTE_DEV_XAI_API_KEY }}
@@ -682,8 +681,15 @@ jobs:
             git status --short --untracked-files=no --ignore-submodules=all -- remote .github >&2
             exit 1
           fi
-          git fetch origin {rev}
+          # Fetch only the superproject here. An unrelated stale submodule
+          # revision must not block runtime manifest reconciliation.
+          git -c fetch.recurseSubmodules=false fetch --no-recurse-submodules origin {rev}
           git -c submodule.recurse=false merge --ff-only origin/{rev}
+          # The USACC pod compiles from this hostPath, so advance exactly its
+          # source checkout before Argo rolls the immutable manifest revision.
+          git submodule sync -- remote/deployments/usacc-rest-api-backend-rs
+          git -c fetch.recurseSubmodules=false submodule update --init -- \
+            remote/deployments/usacc-rest-api-backend-rs
           git rev-parse --short HEAD
           '''
           commands = [
@@ -1180,115 +1186,6 @@ jobs:
               "commands": [
                   "set -euo pipefail",
                   f"sudo -u ec2-user -H env {env_args} bash -lc {shlex.quote(script)}",
-              ],
-          }))
-          PY
-              ;;
-            sync-agent-gh-pat)
-              if [[ -z "${REMOTE_DEV_GH_PAT:-}" ]]; then
-                echo "REMOTE_DEV_GH_PAT repository secret is not configured" >&2
-                exit 65
-              fi
-              python3 - <<'PY' > /tmp/remote-k8s-commands.json
-          import json
-          import os
-          import shlex
-
-          token = os.environ["REMOTE_DEV_GH_PAT"]
-          script = r'''set -euo pipefail
-          secret_name="dd/remote-dev/agent-secrets"
-          region="${AWS_REGION:-us-east-1}"
-
-          read_secret_stage() {
-            local stage="$1"
-            aws secretsmanager get-secret-value \
-              --region "$region" \
-              --secret-id "$secret_name" \
-              --version-stage "$stage" \
-              --query SecretString \
-              --output text
-          }
-
-          validate_agent_secret() {
-            SECRET_JSON="$1" python3 - <<'INNER'
-          import json
-          import os
-          import sys
-
-          required = [
-              "SERVER_AUTH_SECRET",
-              "GH_DEPLOY_KEY",
-              "GEMINI_API_KEY",
-          ]
-          try:
-              data = json.loads(os.environ.get("SECRET_JSON") or "{}")
-          except json.JSONDecodeError:
-              data = {}
-          missing = [
-              key
-              for key in required
-              if not isinstance(data, dict) or not str(data.get(key) or "").strip()
-          ]
-          if missing:
-              print("missing required keys: " + ", ".join(missing), file=sys.stderr)
-              raise SystemExit(1)
-          INNER
-          }
-
-          if ! current_secret="$(read_secret_stage AWSCURRENT 2>/tmp/agent-secrets-current.err)"; then
-            cat /tmp/agent-secrets-current.err >&2
-            exit 1
-          fi
-          source_stage="AWSCURRENT"
-          if ! validate_agent_secret "$current_secret"; then
-            echo "current $secret_name is incomplete; trying AWSPREVIOUS" >&2
-            if ! current_secret="$(read_secret_stage AWSPREVIOUS 2>/tmp/agent-secrets-previous.err)"; then
-              cat /tmp/agent-secrets-previous.err >&2
-              exit 1
-            fi
-            validate_agent_secret "$current_secret"
-            source_stage="AWSPREVIOUS"
-          fi
-
-          updated_secret="$(
-            CURRENT_SECRET="$current_secret" REMOTE_DEV_GH_PAT="$REMOTE_DEV_GH_PAT" python3 - <<'INNER'
-          import json
-          import os
-
-          try:
-              data = json.loads(os.environ.get("CURRENT_SECRET") or "{}")
-          except json.JSONDecodeError:
-              data = {}
-          if not isinstance(data, dict):
-              data = {}
-          data["GH_PAT"] = os.environ["REMOTE_DEV_GH_PAT"]
-          print(json.dumps(data, separators=(",", ":")))
-          INNER
-          )"
-
-          aws secretsmanager describe-secret \
-            --region "$region" \
-            --secret-id "$secret_name" >/dev/null
-          aws secretsmanager put-secret-value \
-            --region "$region" \
-            --secret-id "$secret_name" \
-            --secret-string "$updated_secret" >/dev/null
-          echo "updated $secret_name GH_PAT from $source_stage"
-
-          kubectl -n default annotate externalsecret dd-agent-secrets force-sync=$(date +%s) --overwrite
-          sleep 20
-          kubectl -n default get externalsecret dd-agent-secrets
-          kubectl -n default rollout restart deployment/dd-container-pool deployment/dd-remote-rest-api deployment/dd-remote-queue-consumer || true
-          kubectl -n default rollout restart deployment -l app.kubernetes.io/component=thread-pod || true
-          kubectl -n default rollout status deployment/dd-container-pool --timeout=300s || true
-          kubectl -n default rollout status deployment/dd-remote-rest-api --timeout=300s
-          kubectl -n default rollout status deployment/dd-remote-queue-consumer --timeout=300s || true
-          '''
-
-          print(json.dumps({
-              "commands": [
-                  "set -euo pipefail",
-                  f"sudo -u ec2-user -H env REMOTE_DEV_GH_PAT={shlex.quote(token)} bash -lc {shlex.quote(script)}",
               ],
           }))
           PY

@@ -3,7 +3,13 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde_json::json;
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub code: u16,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
@@ -41,10 +47,10 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status();
-        let body = json!({
-            "error": self.to_string(),
-            "code": status.as_u16(),
-        });
+        let body = ErrorResponse {
+            error: self.to_string(),
+            code: status.as_u16(),
+        };
         (status, Json(body)).into_response()
     }
 }

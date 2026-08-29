@@ -1,0 +1,41 @@
+name: Observe missing-repository publication
+
+on:
+  workflow_run:
+    workflows:
+      - Publish missing organization repositories
+    types:
+      - requested
+      - completed
+
+permissions:
+  statuses: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Publish an inspectable commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ACTION: ${{ github.event.action }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUN_ACTION:$RUN_CONCLUSION" in
+            requested:*) state=pending; description='repository publication requested' ;;
+            completed:success) state=success; description='all repository publication steps passed' ;;
+            completed:*) state=failure; description="repository publication ${RUN_CONCLUSION:-failed}" ;;
+            *) state=error; description='unknown repository publication state' ;;
+          esac
+          gh api \
+            --method POST \
+            "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='ops/missing-repository-publication' \
+            -f description="$description" \
+            -f target_url="$RUN_URL" >/dev/null

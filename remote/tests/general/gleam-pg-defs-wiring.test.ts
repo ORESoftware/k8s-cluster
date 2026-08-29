@@ -34,11 +34,6 @@ const GLEAM_PROJECTS: ReadonlyArray<{
     requiresPathDep: false,
   },
   {
-    name: 'gleam_lambda_runner',
-    dir: 'remote/deployments/gleam-lambda-runner',
-    requiresPathDep: true,
-  },
-  {
     name: 'gleam_mcp_server',
     dir: 'remote/deployments/gleam-mcp-server',
     requiresPathDep: true,
@@ -111,7 +106,7 @@ test('every consumer exposes a pg_contract module that re-exports dd_pg_defs', a
     );
     assert.ok(
       existsSync(pgContractPath),
-      `${project.name} is missing ${pgContractPath}. See remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam for the reference pattern.`,
+      `${project.name} is missing ${pgContractPath}. See remote/deployments/gleam-mcp-server/src/gleam_mcp_server/pg_contract.gleam for the reference pattern.`,
     );
     const source = await readFile(pgContractPath, 'utf8');
     assert.match(

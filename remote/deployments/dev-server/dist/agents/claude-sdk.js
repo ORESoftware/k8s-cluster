@@ -12,7 +12,7 @@
 // permissions in config instead of relying on CLI parsing.
 import { accessSync, constants } from 'node:fs';
 import { createRequire } from 'node:module';
-import { CLUSTER_MCP_SERVER_NAME, CLUSTER_MCP_TOOL_NAMES, clusterMcpUrlFromEnv, } from './cluster-mcp.js';
+import { CLUSTER_MCP_SERVER_NAME, CLUSTER_MCP_TOOL_NAMES, clusterMcpAuthHeadersFromEnv, clusterMcpUrlFromEnv, } from './cluster-mcp.js';
 const localRequire = createRequire(import.meta.url);
 function isRunnableExecutable(executable) {
     try {
@@ -81,6 +81,7 @@ function claudeMcpServers(env) {
         [CLUSTER_MCP_SERVER_NAME]: {
             type: 'http',
             url,
+            headers: clusterMcpAuthHeadersFromEnv(env),
             alwaysLoad: true,
             tools: CLUSTER_MCP_TOOL_NAMES.map((name) => ({
                 name,

@@ -7,7 +7,7 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
-import { CLUSTER_MCP_SERVER_NAME, clusterMcpConnectTimeoutMs, clusterMcpInstructions, clusterMcpUrlFromEnv, } from "./cluster-mcp.js";
+import { CLUSTER_MCP_SERVER_NAME, clusterMcpAuthHeadersFromEnv, clusterMcpConnectTimeoutMs, clusterMcpInstructions, clusterMcpUrlFromEnv, } from "./cluster-mcp.js";
 const BLOCKED_SHELL_TOKEN_PATTERN = /(?:^|[\s;&|()'"`])(?:rm|sed|mv)(?=$|[\s;&|()'"`])/;
 const BLOCKED_GIT_PATTERN = /(?:^|[\s;&|()'"`])git\s+(?:stash|reset|checkout)(?=$|[\s;&|()'"`])/;
 function resolveInsideWorkspace(cwd, maybePath) {
@@ -146,10 +146,12 @@ export const openaiSdkRunner = {
         const mcpUrl = clusterMcpUrlFromEnv(opts.env);
         if (mcpUrl) {
             const timeoutMs = clusterMcpConnectTimeoutMs(opts.env);
+            const authHeaders = clusterMcpAuthHeadersFromEnv(opts.env);
             try {
                 const clusterMcp = new agents.MCPServerStreamableHttp({
                     name: CLUSTER_MCP_SERVER_NAME,
                     url: mcpUrl,
+                    requestInit: authHeaders ? { headers: authHeaders } : undefined,
                     cacheToolsList: false,
                     clientSessionTimeoutSeconds: Math.ceil(timeoutMs / 1000),
                     errorFunction: ({ error }) => `${CLUSTER_MCP_SERVER_NAME} MCP tool failed: ${error instanceof Error ? error.message : String(error)}`,

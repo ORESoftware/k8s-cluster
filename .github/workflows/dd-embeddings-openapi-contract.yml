@@ -1,0 +1,277 @@
+name: dd-embeddings executable OpenAPI contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dd-embeddings-openapi-contract.yml'
+      - 'remote/deployments/dd-embeddings-rs/**'
+      - 'remote/api-contracts/**'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dd-embeddings-openapi-contract.yml'
+      - 'remote/deployments/dd-embeddings-rs/**'
+      - 'remote/api-contracts/**'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dd-embeddings-openapi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Reject mutable CI dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/dd-embeddings-openapi-contract.yml')
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Create contract-only telemetry compile shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-rs/src
+          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
+          [package]
+          name = "dd-telemetry"
+          version = "0.1.0"
+          edition = "2021"
+
+          [lib]
+          path = "src/lib.rs"
+
+          [dependencies]
+          tracing = "0.1"
+          tower-http = { version = "0.6", features = ["trace"] }
+          http = "1"
+          TOML
+          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
+          use http::{Request, Response};
+          use std::time::Duration;
+          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
+          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
+          use tracing::Span;
+
+          #[must_use]
+          pub struct OtelGuard;
+
+          pub fn init(_: &str) -> OtelGuard {
+              OtelGuard
+          }
+
+          pub fn http_trace_layer() -> TraceLayer<
+              SharedClassifier<ServerErrorsAsFailures>,
+              OtelMakeSpan,
+              DefaultOnRequest,
+              OtelOnResponse,
+          > {
+              TraceLayer::new_for_http()
+                  .make_span_with(OtelMakeSpan)
+                  .on_response(OtelOnResponse)
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelMakeSpan;
+
+          impl<B> MakeSpan<B> for OtelMakeSpan {
+              fn make_span(&mut self, request: &Request<B>) -> Span {
+                  tracing::info_span!(
+                      "http_request",
+                      http.request.method = %request.method(),
+                      url.path = %request.uri().path(),
+                      http.response.status_code = tracing::field::Empty,
+                  )
+              }
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelOnResponse;
+
+          impl<B> OnResponse<B> for OtelOnResponse {
+              fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
+                  span.record(
+                      "http.response.status_code",
+                      response.status().as_u16() as u64,
+                  );
+              }
+          }
+          RS
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Verify Rust formatting
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+
+      - name: Compile Rust service
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked
+
+      - name: Test Rust service
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked
+
+      - name: Prove deterministic committed OpenAPI
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
+          python3 -m json.tool generated/openapi.json >/dev/null
+
+      - name: Reject dependency-owned OpenAPI provenance
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          document = json.loads(Path('generated/openapi.json').read_text(encoding='utf-8'))
+          info = document.get('info', {})
+          contact = info.get('contact') or {}
+          license_info = info.get('license') or {}
+          forbidden_contact = (
+              contact.get('name') == 'Juha Kukkonen'
+              or contact.get('email') == 'juha7kukkonen@gmail.com'
+          )
+          forbidden_license = (
+              license_info.get('name') == 'MIT OR Apache-2.0'
+              and license_info.get('identifier') == 'MIT OR Apache-2.0'
+          )
+          if forbidden_contact or forbidden_license:
+              raise SystemExit(
+                  'OpenAPI info contains Utoipa dependency metadata instead of explicit service provenance'
+              )
+          if info.get('title') != 'dd-embeddings-rs API' or not info.get('description'):
+              raise SystemExit('OpenAPI info must contain explicit dd-embeddings service metadata')
+          PY
+
+      - name: Verify native contract and fleet compatibility artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/check-openapi-contracts.mjs
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/generate-openapi-sdks.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+          node remote/tools/validate-openapi-contracts.mjs
+
+      - name: Generate Rust, TypeScript, and Dart SDK smoke clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/dd-embeddings-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service dd-embeddings-rs \
+            --output .tmp/dd-embeddings-sdk
+
+      - name: Compile generated Rust SDK
+        working-directory: .tmp/dd-embeddings-sdk/rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo check --locked
+
+      - name: Type-check generated TypeScript SDK
+        working-directory: .tmp/dd-embeddings-sdk/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - name: Install Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Analyze generated Dart SDK
+        working-directory: .tmp/dd-embeddings-sdk/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze
+
+      - name: Verify tracked repository cleanliness
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp remote/libs
+          git diff --check
+          git diff --cached --quiet
+          # `remote/libs` is an intentionally uninitialized private gitlink. The
+          # contract job temporarily overlays it with a compile-only telemetry
+          # shim, then removes that worktree. Verify the index still contains the
+          # exact gitlink mode while rejecting every other tracked modification.
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          git diff --quiet -- . ':(exclude)remote/libs'
+          test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"

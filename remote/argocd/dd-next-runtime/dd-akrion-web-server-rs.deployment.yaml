@@ -20,7 +20,10 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/akrion-web-server-revision: 'hardened-headers-gitops-source'
+        dd.dev/akrion-web-server-revision: 'b56900415ce9664225e1184cf1d2b09165b44f3d'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '8127'
       labels:
         app: dd-akrion-web-server-rs
     spec:
@@ -61,37 +64,19 @@ spec:
               if [ -n "${GH_PAT:-}" ]; then
                 authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
                 git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
-                git config --global url."https://github.com/".insteadOf "git@github.com:"
               fi
 
-              source_root=/opt/dd-next-1
-              mounted_app_dir="$source_root/remote/deployments/akrion-web-server-rs"
-              app_dir="$mounted_app_dir"
-              if [ -n "${AKRION_WEB_GIT_URL:-}" ]; then
-                clone_root="$(mktemp -d /tmp/dd-akrion-web-server-rs-source.XXXXXX)"
-                if git clone --depth 1 \
-                     --branch "${AKRION_WEB_GIT_REF:-dev}" "${AKRION_WEB_GIT_URL}" "$clone_root" &&
-                   git -C "$clone_root" submodule init remote/deployments/akrion-web-server-rs &&
-                   git -C "$clone_root" config "submodule.remote/deployments/akrion-web-server-rs.url" "https://github.com/akrion-sim/akrion-web-server.rs.git" &&
-                   git -C "$clone_root" "${git_auth_args[@]}" submodule update --depth 1 remote/deployments/akrion-web-server-rs; then
-                  source_root="$clone_root"
-                  app_dir="$source_root/remote/deployments/akrion-web-server-rs"
-                  sub_sha="$(git -C "$app_dir" rev-parse --short HEAD 2>/dev/null || echo '?')"
-                  echo "[dd-akrion-web-server-rs] source: cloned ${AKRION_WEB_GIT_URL}@${AKRION_WEB_GIT_REF:-dev}; web submodule ${sub_sha}"
-                else
-                  echo "[dd-akrion-web-server-rs] source clone failed; using mounted source at ${source_root}" >&2
-                fi
-              fi
-              if [ "$app_dir" = "$mounted_app_dir" ] && [ -f "$app_dir/Cargo.toml" ]; then
-                echo "[dd-akrion-web-server-rs] source: using mounted web server at ${app_dir}"
-              fi
-
-              if [ ! -f "$app_dir/Cargo.toml" ]; then
-                echo "[dd-akrion-web-server-rs] FATAL: web server submodule not populated at $app_dir." >&2
-                echo "[dd-akrion-web-server-rs] If using mounted source, run on the host: git -C \"$source_root\" submodule update --init remote/deployments/akrion-web-server-rs" >&2
-                echo "[dd-akrion-web-server-rs] If using the git clone path, ensure GH_PAT has private-repo read access." >&2
+              app_dir="$(mktemp -d /tmp/dd-akrion-web-server-rs-source.XXXXXX)"
+              git init "$app_dir"
+              git -C "$app_dir" remote add origin "$AKRION_WEB_GIT_URL"
+              git -C "$app_dir" "${git_auth_args[@]}" fetch --depth 1 origin "$AKRION_WEB_GIT_REF"
+              git -C "$app_dir" switch --detach FETCH_HEAD
+              actual_ref="$(git -C "$app_dir" rev-parse HEAD)"
+              if [ "$actual_ref" != "$AKRION_WEB_GIT_REF" ]; then
+                echo "[dd-akrion-web-server-rs] FATAL: expected $AKRION_WEB_GIT_REF, fetched $actual_ref" >&2
                 exit 1
               fi
+              echo "[dd-akrion-web-server-rs] source: ${AKRION_WEB_GIT_URL}@${actual_ref}"
 
               cd "$app_dir"
               exec /usr/local/cargo/bin/cargo run --release --locked
@@ -105,9 +90,9 @@ spec:
             - name: CARGO_BUILD_JOBS
               value: '1'
             - name: AKRION_WEB_GIT_URL
-              value: https://github.com/ORESoftware/k8s-cluster.git
+              value: https://github.com/akrion-sim/akrion-web-server.rs.git
             - name: AKRION_WEB_GIT_REF
-              value: dev
+              value: 1bd5dc5a050ce05f9a495e08038cc02e9647e092
             - name: GH_PAT
               valueFrom:
                 secretKeyRef:
@@ -124,6 +109,32 @@ spec:
               value: http://dd-soccer-rs.default.svc.cluster.local:8113
             - name: AKRION_RUST_LOG
               value: info,akrion_web_server=info,tower_http=info
+            # Promtail sends structured stdout logs to Loki; OTLP remains
+            # enabled while Prometheus directly scrapes /metrics on port 8127.
+            - name: AKRION_TELEMETRY_ENABLED
+              value: 'true'
+            - name: AKRION_LOG_JSON
+              value: 'true'
+            - name: AKRION_SERVICE_NAME
+              value: dd-akrion-web-server-rs
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: AKRION_OTEL_TRACES
+              value: 'true'
+            - name: AKRION_OTEL_METRICS
+              value: 'true'
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: SUPABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -154,7 +165,7 @@ spec:
             failureThreshold: 240
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3
@@ -167,18 +178,11 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
             - name: build-cache
               mountPath: /var/cache/dd-akrion-web-server-rs
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: DirectoryOrCreate
         - name: build-cache
           emptyDir:
             sizeLimit: 4Gi

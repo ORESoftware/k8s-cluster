@@ -1,0 +1,254 @@
+name: nix agent profiles
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - nix-agent-profiles/**
+      - scripts/render-nix-agent-profile.sh
+      - scripts/tests/render-nix-agent-profile-test.sh
+      - scripts/NIX_AGENT_PROFILES.md
+      - .github/workflows/nix-agent-profiles.yml
+      - flake.nix
+      - flake.lock
+      - .nix/**
+  pull_request:
+    paths:
+      - nix-agent-profiles/**
+      - scripts/render-nix-agent-profile.sh
+      - scripts/tests/render-nix-agent-profile-test.sh
+      - scripts/NIX_AGENT_PROFILES.md
+      - .github/workflows/nix-agent-profiles.yml
+      - flake.nix
+      - flake.lock
+      - .nix/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-agent-profiles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture-lint-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      diagnostics: ${{ steps.diagnostics.outputs.matrix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Collect fixture ShellCheck diagnostics
+        id: diagnostics
+        run: |
+          set +e
+          nix develop -c shellcheck -f json scripts/tests/render-nix-agent-profile-test.sh >shellcheck.json
+          shellcheck_status=$?
+          set -e
+          python3 - <<'PY' >shellcheck-matrix.json
+          import json
+
+          with open("shellcheck.json", encoding="utf-8") as stream:
+              findings = json.load(stream)
+          diagnostics = []
+          seen = set()
+          for finding in findings:
+              item = {
+                  "code": f"SC{finding['code']}",
+                  "line": finding["line"],
+              }
+              key = (item["code"], item["line"])
+              if key not in seen:
+                  seen.add(key)
+                  diagnostics.append(item)
+          if not diagnostics:
+              diagnostics.append({"code": "clean", "line": 0})
+          print(json.dumps({"include": diagnostics}, separators=(",", ":")))
+          PY
+          printf 'matrix=%s\n' "$(cat shellcheck-matrix.json)" >>"$GITHUB_OUTPUT"
+          if [ "$shellcheck_status" -ne 0 ] && grep -qv '"code":"clean"' shellcheck-matrix.json; then
+            exit 0
+          fi
+          exit "$shellcheck_status"
+
+  fixture-lint-diagnostics:
+    needs: fixture-lint-scan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.fixture-lint-scan.outputs.diagnostics) }}
+    name: Fixture ${{ matrix.code }} at line ${{ matrix.line }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce diagnostic
+        env:
+          SHELLCHECK_CODE: ${{ matrix.code }}
+        run: |
+          if [ "$SHELLCHECK_CODE" != clean ]; then
+            exit 1
+          fi
+
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: ./.github/workflows/nix-agent-profiles.yml
+
+      - name: Lint profile renderer
+        run: nix develop -c shellcheck scripts/render-nix-agent-profile.sh
+
+      - name: Check renderer formatting
+        run: nix develop -c shfmt -i 2 -ci -d scripts/render-nix-agent-profile.sh
+
+      - name: Check fixture formatting
+        run: nix develop -c shfmt -i 2 -ci -d scripts/tests/render-nix-agent-profile-test.sh
+
+  staged-rust-fixture:
+    name: Staged Rust profile fixture
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROFILE_TARGET: /tmp/nix-agent-profile-rust
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Render Rust profile
+        run: |
+          mkdir -p "$PROFILE_TARGET"
+          git -C "$PROFILE_TARGET" init -q
+          nix develop -c bash scripts/render-nix-agent-profile.sh \
+            --profile rust \
+            --output-dir "$PROFILE_TARGET" \
+            --skip-lock
+
+      - name: Check generated structure
+        run: |
+          for expected_path in \
+            flake.nix \
+            .nix/profile-packages.nix \
+            .nix/dev-shell.nix \
+            .nix/agent-check.sh \
+            .nix/README.md \
+            .github/workflows/nix.yml \
+            .gitignore; do
+            test -f "$PROFILE_TARGET/$expected_path"
+          done
+          test -x "$PROFILE_TARGET/.nix/agent-check.sh"
+
+      - name: Check generated shell syntax
+        run: nix develop -c bash -n "$PROFILE_TARGET/.nix/agent-check.sh"
+
+      - name: Lint generated shell
+        run: nix develop -c shellcheck "$PROFILE_TARGET/.nix/agent-check.sh"
+
+      - name: Check generated shell formatting
+        run: nix develop -c shfmt -i 2 -ci -d "$PROFILE_TARGET/.nix/agent-check.sh"
+
+      - name: Check generated flake formatting
+        run: nix develop -c nixfmt --check "$PROFILE_TARGET/flake.nix"
+
+      - name: Check generated package-list formatting
+        run: nix develop -c nixfmt --check "$PROFILE_TARGET/.nix/profile-packages.nix"
+
+      - name: Check generated dev-shell formatting
+        run: nix develop -c nixfmt --check "$PROFILE_TARGET/.nix/dev-shell.nix"
+
+      - name: Check generated workflow
+        run: nix develop -c actionlint "$PROFILE_TARGET/.github/workflows/nix.yml"
+
+      - name: Check generated pins and credential neutrality
+        run: |
+          grep -Fq 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$PROFILE_TARGET/.github/workflows/nix.yml"
+          grep -Fq 'cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342' "$PROFILE_TARGET/.github/workflows/nix.yml"
+          grep -Fq '.cache/nix-agent/' "$PROFILE_TARGET/.gitignore"
+          if grep -RInE 'AWS_PROFILE|GOOGLE_APPLICATION_CREDENTIALS|KUBECONFIG=' \
+            "$PROFILE_TARGET/flake.nix" \
+            "$PROFILE_TARGET/.nix" \
+            "$PROFILE_TARGET/.github/workflows/nix.yml"; then
+            exit 1
+          fi
+
+      - name: Check optional local-hook behavior
+        run: nix develop -c bash "$PROFILE_TARGET/.nix/agent-check.sh" local
+
+      - name: Check overwrite protection and idempotence
+        run: |
+          if nix develop -c bash scripts/render-nix-agent-profile.sh \
+            --profile rust \
+            --output-dir "$PROFILE_TARGET" \
+            --skip-lock; then
+            exit 1
+          fi
+          nix develop -c bash scripts/render-nix-agent-profile.sh \
+            --profile rust \
+            --output-dir "$PROFILE_TARGET" \
+            --skip-lock \
+            --force
+          test "$(grep -Fc '# BEGIN managed nix-agent profile' "$PROFILE_TARGET/.gitignore")" -eq 1
+
+  profile-fixtures:
+    name: Profile fixture ${{ matrix.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - flutter
+          - go
+          - kubernetes
+          - node
+          - polyglot
+          - python
+          - rust
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Render and validate profile
+        run: nix develop -c bash scripts/tests/render-nix-agent-profile-test.sh "${{ matrix.profile }}"

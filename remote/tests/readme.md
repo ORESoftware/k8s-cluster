@@ -79,3 +79,38 @@ temporary containers/images:
 ```bash
 pnpm --dir remote/tests run test:cli:gleam-lambda-runner-ec2
 ```
+
+## Athlet-O
+
+The Athlet-O storefront ships as two vendored submodules under `remote/deployments/`:
+`athleto-backend-rs` (the standalone `/jello` backend) and `athleto-app-rs` (the MASH shop app,
+service alias `jello-ws`, public on `app.athleto.store` / `biz.athleto.store`).
+
+- `ATHLETO_BASE_URL` (optional): base URL for the UI smokes. Falls back to `REMOTE_DEV_BASE_URL`,
+  then the documented default `https://app.athleto.store`. Point it at a local `cargo run`
+  (`http://127.0.0.1:8080`) or `biz.athleto.store` to exercise other chrome.
+
+The config/contract tests read files only (no network) and pass offline. They validate the
+`.gitmodules` pins plus the superproject argocd/gateway wiring, and skip the vendored-manifest
+assertions with a clear message when a submodule is not checked out:
+
+```bash
+pnpm --dir remote/tests run test:cli:athleto-backend-config
+pnpm --dir remote/tests run test:cli:athleto-app-config
+```
+
+The UI smokes drive the deployed storefront/backend (GET `/` + `/healthz` 200, Athlet-O brand copy,
+CSP / X-Frame-Options / nosniff headers, the `/static` htmx asset served as javascript, and the
+backend `/readyz` JSON when present). If `ATHLETO_BASE_URL` is unreachable they print a `SKIP`
+notice and exit 0, so they are CI/cluster-ready without a live target:
+
+```bash
+pnpm --dir remote/tests run test:ui:athleto:playwright
+pnpm --dir remote/tests run test:ui:athleto:puppeteer
+```
+
+Run all four Athlet-O suites together (also included in `test:all`):
+
+```bash
+pnpm --dir remote/tests run test:athleto
+```

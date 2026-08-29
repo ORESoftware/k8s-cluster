@@ -1,0 +1,91 @@
+name: NATS HTTP ingress
+
+on:
+  pull_request:
+    paths:
+      - 'remote/nats-bridge/**'
+      - 'remote/argocd/messaging/nats-bridge*'
+      - 'remote/argocd/messaging/kustomization.yaml'
+      - 'remote/argocd/messaging/readme.md'
+      - 'docs/nats-external-http-ingress.md'
+      - 'remote/tests/general/nats-http-ingress-boundary.test.ts'
+      - 'remote/tests/general/nats-bridge-in-flight.test.ts'
+      - '.github/workflows/nats-http-ingress.yml'
+  push:
+    branches: [dev, main]
+    paths:
+      - 'remote/nats-bridge/**'
+      - 'remote/argocd/messaging/nats-bridge*'
+      - 'remote/argocd/messaging/kustomization.yaml'
+      - 'remote/argocd/messaging/readme.md'
+      - 'docs/nats-external-http-ingress.md'
+      - 'remote/tests/general/nats-http-ingress-boundary.test.ts'
+      - 'remote/tests/general/nats-bridge-in-flight.test.ts'
+      - '.github/workflows/nats-http-ingress.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nats-http-ingress-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+      - name: Check formatting
+        working-directory: remote/nats-bridge
+        run: rustfmt --check --edition 2024 src/bin/nats_http_ingress.rs
+      - name: Run clippy
+        working-directory: remote/nats-bridge
+        run: cargo clippy --locked --bin nats_http_ingress -- -D warnings
+      - name: Run unit tests
+        working-directory: remote/nats-bridge
+        run: cargo test --locked --bin nats_http_ingress
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: Audit dependency advisories
+        working-directory: remote/nats-bridge
+        run: cargo audit
+
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/nats-http-ingress.yml
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run boundary contract
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/nats-http-ingress-boundary.test.ts
+      # Asserts BRIDGE_MAX_IN_FLIGHT in the deployment equals DEFAULT_MAX_IN_FLIGHT
+      # in src/bin/nats_http_ingress.rs. A 2026-07-31 merge silently halved the
+      # ingress ceiling to the OTHER binary's 64 and nothing caught it, because no
+      # test asserted either value.
+      - name: Run in-flight ceiling ratchet
+        working-directory: remote/tests
+        run: pnpm exec tsx --test general/nats-bridge-in-flight.test.ts

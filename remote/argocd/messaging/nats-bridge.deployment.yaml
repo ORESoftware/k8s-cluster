@@ -1,0 +1,156 @@
+# dd-nats-bridge — authenticated external HTTP -> JetStream queue ingress.
+#
+# External callers submit JSON to named routes and never receive NATS subjects,
+# stream names, credentials, or raw upstream errors. The pod fails closed until
+# both the route ConfigMap and client-scoped secret file are present.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-nats-bridge
+  namespace: messaging
+  labels:
+    app: dd-nats-bridge
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-nats-bridge
+  template:
+    metadata:
+      labels:
+        app: dd-nats-bridge
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: nats-bridge
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export CARGO_HOME=/var/cache/dd-nats-bridge/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-nats-bridge/target
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              clone_root="$(mktemp -d /tmp/dd-nats-bridge-source.XXXXXX)"
+              git clone --depth 1 --branch "${BRIDGE_GIT_REF:-dev}" "${BRIDGE_GIT_URL}" "$clone_root"
+              echo "[dd-nats-bridge] source: ${BRIDGE_GIT_URL}@${BRIDGE_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
+              cd "$clone_root/remote/nats-bridge"
+              exec /usr/local/cargo/bin/cargo run --release --locked --bin nats_http_ingress
+          env:
+            - name: HOME
+              value: /tmp
+            - name: BRIDGE_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: BRIDGE_GIT_REF
+              value: dev
+            - name: PORT
+              value: '3004'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: BRIDGE_ROUTES_FILE
+              value: /etc/nats-bridge/routes.json
+            - name: BRIDGE_CLIENTS_FILE
+              value: /var/run/secrets/nats-bridge/clients.json
+            # 128 — matches DEFAULT_MAX_IN_FLIGHT in src/bin/nats_http_ingress.rs,
+            # which is the binary this pod actually execs (see `--bin
+            # nats_http_ingress` above). Excess requests get HTTP 429.
+            #
+            # Do NOT "restore" 64. The crate ships two binaries with different
+            # concurrency profiles: the older src/main.rs bridge documents and
+            # defaults to 64, while DEN-440's nats_http_ingress defaults to 128. A
+            # 2026-07-31 main/dev merge conflict was resolved to 64 on the reasoning
+            # that only that side had a resilience suite — but that applied the old
+            # binary's tuning to the new ingress, silently halving its ceiling.
+            # Asserted by remote/tests/general/nats-bridge-in-flight.test.ts so a
+            # future merge cannot flip it unnoticed.
+            - name: BRIDGE_MAX_IN_FLIGHT
+              value: '128'
+            - name: BRIDGE_PUBLISH_TIMEOUT_MS
+              value: '5000'
+          ports:
+            - name: http
+              containerPort: 3004
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: route-config
+              mountPath: /etc/nats-bridge
+              readOnly: true
+            - name: client-config
+              mountPath: /var/run/secrets/nats-bridge
+              readOnly: true
+            - name: build-cache
+              mountPath: /var/cache/dd-nats-bridge
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: route-config
+          configMap:
+            name: dd-nats-bridge-routes
+            items:
+              - key: routes.json
+                path: routes.json
+        - name: client-config
+          secret:
+            secretName: dd-nats-bridge-secrets
+            optional: false
+            items:
+              - key: BRIDGE_CLIENTS_JSON
+                path: clients.json
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

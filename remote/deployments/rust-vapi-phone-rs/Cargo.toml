@@ -20,6 +20,8 @@ edition = "2021"
 [dependencies]
 dd-telemetry = { path = "../../libs/telemetry-rs" }
 tracing = "0.1"
+async-nats = "=0.38.0"
+futures-util = "0.3"
 axum = { version = "0.7", features = ["macros"] }
 dd-redis-interfaces = { path = "../../libs/interfaces/redis/generated/rust" }
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }

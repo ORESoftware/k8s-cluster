@@ -1,0 +1,206 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-browser-mcp-rs
+  namespace: default
+  labels:
+    app: dd-browser-mcp-rs
+    app.kubernetes.io/name: dd-browser-mcp-rs
+    app.kubernetes.io/component: browser-control-plane
+    app.kubernetes.io/part-of: dd-next-runtime
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+  progressDeadlineSeconds: 300
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-browser-mcp-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-07-26-browser-mcp-oauth'
+      labels:
+        app: dd-browser-mcp-rs
+        app.kubernetes.io/name: dd-browser-mcp-rs
+        app.kubernetes.io/component: browser-control-plane
+        app.kubernetes.io/part-of: dd-next-runtime
+        dd.dev/redis-cache-client: 'true'
+    spec:
+      # No Kubernetes API access is needed (this service only proxies to the
+      # in-cluster browser worker), so the SA token is not mounted.
+      serviceAccountName: dd-browser-mcp-rs
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: dd-browser-mcp-rs
+      containers:
+        - name: browser-mcp-rs
+          image: ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:e07da89e3489442464df4730d78006ec83ae8ddcd38d966826f27031b6de4b14
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8092'
+            - name: HOME
+              value: /tmp
+            - name: RUST_BACKTRACE
+              value: '1'
+            # Private browser worker (dd-web-scraper /agent/*).
+            - name: BROWSER_MCP_WORKER_URL
+              value: http://dd-web-scraper.default.svc.cluster.local:8097
+            - name: BROWSER_MCP_WORKER_TIMEOUT_MS
+              value: '65000'
+            # Shared secret used to authenticate to the worker (X-Server-Auth).
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            # Public write-capable Browser MCP edges require OAuth. The binary
+            # retains an explicit no-auth compatibility mode for isolated local
+            # or disposable environments, but production must fail closed.
+            - name: BROWSER_MCP_REQUIRE_AUTH
+              value: 'true'
+            # Both trusted public edges serve the same GitOps workload. Host
+            # matching selects the exact issuer/resource and binds each access
+            # token to the edge where its flow started.
+            - name: BROWSER_MCP_PUBLIC_BASE_URLS
+              value: 'https://98.90.186.114/browser-mcp,https://hello.95-217-171-250.sslip.io/browser-mcp'
+            - name: BROWSER_MCP_OAUTH_SIGNING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-browser-mcp-rs-secrets
+                  key: BROWSER_MCP_OAUTH_SIGNING_SECRET
+            - name: BROWSER_MCP_OAUTH_OPERATOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-browser-mcp-rs-secrets
+                  key: BROWSER_MCP_OAUTH_OPERATOR_SECRET
+            # Shared, TTL-bound authorization-code and rotating-refresh-token
+            # state. Access tokens remain locally verifiable and audience-bound.
+            - name: BROWSER_MCP_OAUTH_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/4
+            - name: BROWSER_MCP_OAUTH_ACCESS_TTL_SECONDS
+              value: '900'
+            - name: BROWSER_MCP_OAUTH_CODE_TTL_SECONDS
+              value: '300'
+            - name: BROWSER_MCP_OAUTH_REFRESH_TTL_SECONDS
+              value: '2592000'
+            # Server-side domain allowlist injected into every browser_act call so
+            # navigation policy is enforced centrally regardless of what the model
+            # sends. The service fails closed when this is empty; keep it narrow
+            # and widen deliberately. Comma-separated hostnames.
+            # Reviewed Fiducia applications, platform-jobs, and appointments profiles.
+            # Root vendor hostnames also permit that vendor's subdomains. The
+            # two non-root entries are the exact All Things Open Wufoo tenant
+            # and AWS Community Day CFP host. Filing sites, webmail, cloud
+            # metadata, and arbitrary prospect domains remain blocked.
+            - name: BROWSER_MCP_ALLOWED_DOMAINS
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,greenhouse.io,lever.co,ashbyhq.com,myworkdayjobs.com,workday.com,smartrecruiters.com,icims.com,jobvite.com,workable.com,bamboohr.com,recruitee.com,applytojob.com,ats.rippling.com,breezy.hr,jobscore.com,candidateportalin.ceipal.com,candidateportalnew.ceipal.com,cal.com,calendly.com,httpbingo.org'
+            # Callers select one named workflow profile. Profiles are
+            # server-defined subsets of the ceiling above; caller-provided
+            # allowed_domains are always discarded.
+            - name: BROWSER_MCP_DEFAULT_WORKFLOW
+              value: fiducia-applications
+            - name: BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON
+              value: >-
+                {"benefactor-site":["benefactor.cc"],"fiducia-applications":["confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","app.posthog.com","elevenlabs.io","www.together.ai","support.snyk.io","us.ovhcloud.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"],"platform-jobs":["greenhouse.io","lever.co","ashbyhq.com","myworkdayjobs.com","workday.com","smartrecruiters.com","icims.com","jobvite.com","workable.com","bamboohr.com","recruitee.com","applytojob.com","ats.rippling.com","breezy.hr","jobscore.com","candidateportalin.ceipal.com","candidateportalnew.ceipal.com"],"appointments":["cal.com","calendly.com"],"smoke-test":["httpbingo.org"]}
+            - name: OTEL_SERVICE_NAME
+              value: dd-browser-mcp-rs
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_TRACES_ENABLED
+              value: 'true'
+            - name: OTEL_EXPORT_TIMEOUT_MS
+              value: '800'
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-browser-mcp-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-browser-mcp-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-browser-mcp-rs.default.svc.cluster.local:8092/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8092
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi

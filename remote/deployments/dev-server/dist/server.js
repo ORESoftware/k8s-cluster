@@ -36,8 +36,10 @@ import { buildAgentEnvCandidates, getCachedAvailability, getRunner, probeAllProv
 import { publishArtifact } from './storage/index.js';
 import { acquireUserChannel, destroyChannelPool, isRealtimeEnabled, publishUserEvent, releaseUserChannel, } from './realtime.js';
 import { initTelemetry, shutdownTelemetry, withSpan } from './telemetry.js';
+import { installProcessLogBridge } from './stdio-log.js';
 import { verifyDirectStreamToken } from './token.js';
 import { NatsPublisher } from './nats-publisher.js';
+import { RUNTIME_EVENTS_SUBJECT } from './nats-subject-defs.js';
 import { WorkerFanoutWebSocket, workerFanoutWsUrlFromEnv } from './ws-fanout.js';
 import { clusterMcpPromptSection } from './agents/cluster-mcp.js';
 import { registerRuntimeConfigRoutes, registerWithControlPlane } from './runtime-config.js';
@@ -169,7 +171,7 @@ const config = {
     eventIngestUrl: process.env.EVENT_INGEST_URL ?? null,
     eventIngestSecret: process.env.EVENT_INGEST_SECRET ?? null,
     natsUrl: process.env.NATS_URL ?? null,
-    natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? 'dd.remote.events',
+    natsEventSubject: process.env.NATS_EVENT_SUBJECT ?? RUNTIME_EVENTS_SUBJECT,
     workerFanoutWsUrl: workerFanoutWsUrlFromEnv(process.env),
     workerFanoutWsMaxQueueDepth: Number(process.env.WORKER_FANOUT_WS_MAX_QUEUE_DEPTH ?? 500),
     workerFanoutWsReconnectMs: Number(process.env.WORKER_FANOUT_WS_RECONNECT_MS ?? 1000),
@@ -179,6 +181,13 @@ const config = {
     threadContextLimit: Number(process.env.THREAD_CONTEXT_LIMIT ?? 20),
     threadContextMaxChars: Number(process.env.THREAD_CONTEXT_MAX_CHARS ?? 48_000),
     repoContextMaxChars: Number(process.env.REPO_CONTEXT_MAX_CHARS ?? 24_000),
+    // Path to the baked-in system agent rules (PR draft-only policy, no
+    // auto-merge, secret hygiene). Defaults to the location written by
+    // `remote/deployments/dev-server/Dockerfile`. Operators can point this
+    // at a different file in dev/test, but it must be readable by the
+    // container's `node` user.
+    systemAgentsMdPath: process.env.SYSTEM_AGENTS_MD_PATH ?? '/etc/agent/AGENTS.md',
+    systemAgentsMdMaxChars: Number(process.env.SYSTEM_AGENTS_MD_MAX_CHARS ?? 16_000),
     agentOptimisticMode: process.env.AGENT_OPTIMISTIC_MODE !== 'false',
     agentMcpUrl: process.env.AGENT_MCP_ENABLED === 'false' ? null : process.env.AGENT_MCP_URL ?? null,
     agentFallbackProvider: configuredAgentFallbackProvider,
@@ -208,6 +217,11 @@ const config = {
     taskGcAfterMs: 60 * 60 * 1000, // 1 hour
     taskGcIntervalMs: 5 * 60 * 1000, // 5 min sweep
 };
+const uninstallProcessLogBridge = installProcessLogBridge({
+    serviceName: process.env.OTEL_SERVICE_NAME ?? 'dd-dev-server-api',
+    serviceNamespace: 'remote-dev',
+    scopeName: 'dd-dev-server',
+});
 const tasks = new Map();
 const sessions = new Map();
 const serverStartedAt = new Date().toISOString();
@@ -930,6 +944,14 @@ function sanitizeEventText(value) {
         'SERVER_AUTH_SECRET',
         'EVENT_INGEST_SECRET',
         'SUPABASE_SERVICE_ROLE_KEY',
+        // AWS credential env names. dd-build-server is the only deployment
+        // that consumes static AWS keys today, but ECR/SSM/STS workflows on
+        // the operator path may also export them, and a misconfigured agent
+        // could echo `env` or read `~/.aws/credentials`. Keep these here so
+        // the WS fan-out, breadcrumb log, and CLI streams never carry them.
+        'AWS_ACCESS_KEY_ID',
+        'AWS_SECRET_ACCESS_KEY',
+        'AWS_SESSION_TOKEN',
     ]) {
         const secret = process.env[key];
         if (secret && secret.length >= 8) {
@@ -942,7 +964,17 @@ function sanitizeEventText(value) {
         .replace(/\bAIza[A-Za-z0-9_*\-]{12,}\b/g, '[redacted-google-key]')
         .replace(/\bsk-oc-[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-opencode-key]')
         .replace(/\bxai-[A-Za-z0-9_*.-]{24,}\b/g, '[redacted-xai-key]')
-        .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]');
+        .replace(/\b(?:ghp|github_pat)_[A-Za-z0-9_*.-]{8,}\b/g, '[redacted-github-token]')
+        // AWS access-key id shapes: AKIA… (long-lived IAM user) and ASIA…
+        // (STS short-lived). 16-char base32 body matches the documented
+        // format. Catches keys that arrive from places we don't control
+        // (shell stdout, error messages, leaked aws config files).
+        .replace(/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, '[redacted-aws-access-key]')
+        // STS session tokens are long base64-ish blobs that conventionally
+        // start with `IQoJ` (the base64 encoding of the protobuf header
+        // AWS uses for v2 session tokens). Anchoring on that prefix avoids
+        // the false-positive risk of redacting unrelated long base64 data.
+        .replace(/\bIQoJ[A-Za-z0-9+/=_\-]{180,}\b/g, '[redacted-aws-session-token]');
 }
 function compactAgentErrorMessage(provider, err) {
     const raw = sanitizeEventText(err instanceof Error ? err.message : String(err));
@@ -1526,6 +1558,30 @@ async function existingContextFiles(workspacePath, relativePaths) {
     }
     return out;
 }
+// Reads the baked-in system rules at /etc/agent/AGENTS.md. These rules are
+// authored in this repo (remote/deployments/dev-server/system-agents.md) and
+// COPYed into the worker image so they apply unconditionally — the workspace
+// AGENTS.md cannot silently weaken policies like "PRs are drafts only" or
+// "never auto-merge". Returns '' if the file is missing so dev/local runs
+// without the bake-in still work.
+async function readSystemAgentsMd() {
+    const path = config.systemAgentsMdPath;
+    if (!path)
+        return '';
+    try {
+        const fileStat = await stat(path);
+        if (!fileStat.isFile())
+            return '';
+        const text = await readFile(path, 'utf8');
+        const trimmed = text.trim();
+        if (!trimmed)
+            return '';
+        return truncateRepoContextFile(trimmed, config.systemAgentsMdMaxChars);
+    }
+    catch {
+        return '';
+    }
+}
 async function readRepoContextEntrypoint(workspacePath) {
     const rootAgents = await existingContextFiles(workspacePath, ['AGENTS.md']);
     const agentDocs = await listMarkdownChildren(workspacePath, 'agents');
@@ -1734,6 +1790,7 @@ async function buildPromptWithThreadContext(state) {
             });
         }
     }
+    const systemAgentsMd = await readSystemAgentsMd();
     const repoContext = await readRepoContextEntrypoint(state.worktreePath);
     const fetchedContextBlobs = await fetchSelectedContextBlobs(state);
     if (fetchedContextBlobs.length && !state.contextBlobs?.length) {
@@ -1757,6 +1814,17 @@ async function buildPromptWithThreadContext(state) {
             'If a decision is genuinely blocked, record the question and your assumption in the final summary so the user can answer in a later task prompt.',
             'Prefer concrete repo inspection, tests, and small reversible changes over waiting for clarification.',
         ].join('\n'), '</agent_operating_mode>');
+    }
+    if (systemAgentsMd) {
+        // Surfacing this as its own status row makes it easy to confirm in the
+        // diagnostics UI that the baked-in PR / git / secret-hygiene rules
+        // actually reached the agent.
+        emit(state, {
+            kind: 'status',
+            status: 'thread-context:system-agents-md',
+            message: `Baked system agent rules (${config.systemAgentsMdPath}) injected into the task prompt.`,
+        });
+        promptSections.push('', '<system_agent_rules source="' + config.systemAgentsMdPath + '">', systemAgentsMd, '</system_agent_rules>');
     }
     if (repoContext) {
         emit(state, {
@@ -4181,6 +4249,7 @@ async function main() {
 }
 function shutdown(signal) {
     fastify.log.info(`${signal} received — tearing down EventBus + channels`);
+    uninstallProcessLogBridge();
     workerFanout.destroy();
     natsPublisher.destroy();
     eventBus.destroy();
@@ -4212,6 +4281,7 @@ process.on('unhandledRejection', (reason) => {
 });
 main().catch((err) => {
     logCrash('uncaughtException', err);
+    uninstallProcessLogBridge();
     workerFanout.destroy();
     natsPublisher.destroy();
     eventBus.destroy();

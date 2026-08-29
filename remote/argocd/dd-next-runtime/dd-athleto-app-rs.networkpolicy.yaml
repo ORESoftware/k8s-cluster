@@ -45,6 +45,19 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # OTLP/gRPC traces and metrics to the in-cluster collector. Prometheus
+    # scrapes the collector's exporter; the app does not expose a second
+    # metrics endpoint.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
     # Public HTTP(S) for cold in-pod builds, GitHub submodule fetches,
     # crates.io, and Supabase REST/auth; 5432/6543 for Supabase Postgres
     # (direct + pooled).

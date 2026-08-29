@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "profiles": {
+    "rust": {
+      "description": "Rust service or library",
+      "packages": [
+        "cargo",
+        "cargo-audit",
+        "clippy",
+        "openssl",
+        "pkg-config",
+        "rust-analyzer",
+        "rustc",
+        "rustfmt"
+      ],
+      "commands": [
+        "cargo fmt --all --check",
+        "cargo check --locked --all-targets --all-features",
+        "cargo clippy --locked --all-targets --all-features -- -D warnings",
+        "cargo test --locked --all-features",
+        "cargo audit"
+      ],
+      "requiresLocalHook": false,
+      "ociPosture": "Nix may validate or build a candidate service image only after parity with the repository's existing runtime contract is proven. Libraries are not long-running OCI workloads."
+    },
+    "flutter": {
+      "description": "Flutter or Dart client",
+      "packages": [
+        "cmake",
+        "flutter",
+        "jdk17",
+        "ninja",
+        "pkg-config"
+      ],
+      "commands": [
+        "flutter --version",
+        "flutter pub get",
+        "flutter analyze --no-fatal-infos",
+        "flutter test"
+      ],
+      "requiresLocalHook": false,
+      "ociPosture": "Mobile applications are not OCI runtime workloads. A web artifact image belongs in its serving or deployment repository and needs an independent runtime review."
+    },
+    "node": {
+      "description": "Node.js and pnpm application",
+      "packages": [
+        "nodejs_22",
+        "pnpm_10"
+      ],
+      "commands": [
+        "pnpm install --frozen-lockfile",
+        "run_package_script_if_present lint",
+        "run_package_script_if_present typecheck",
+        "run_package_script_if_present test",
+        "run_package_script_if_present build"
+      ],
+      "requiresLocalHook": false,
+      "ociPosture": "Preserve an existing non-root, digest-pinned Node image until startup, signal, health, CA, package-manager, and supply-chain parity is demonstrated."
+    },
+    "go": {
+      "description": "Go service or library",
+      "packages": [
+        "go",
+        "golangci-lint",
+        "gopls"
+      ],
+      "commands": [
+        "test -z \"$(gofmt -l .)\"",
+        "go vet ./...",
+        "go test ./...",
+        "golangci-lint run"
+      ],
+      "requiresLocalHook": false,
+      "ociPosture": "A Nix-built Go image is a candidate until non-root execution, certificates, ports, entrypoint, signals, health checks, size, provenance, and deployment parity are proven."
+    },
+    "python": {
+      "description": "Python application or service",
+      "packages": [
+        "python3",
+        "python3Packages.pytest",
+        "ruff"
+      ],
+      "commands": [
+        "python -m compileall -q .",
+        "ruff check .",
+        "pytest -q"
+      ],
+      "requiresLocalHook": false,
+      "ociPosture": "Do not replace a working Python runtime image until dependency resolution, native wheels, non-root behavior, certificates, entrypoint, signals, health, and supply-chain evidence match."
+    },
+    "kubernetes": {
+      "description": "Kubernetes, GitOps, or infrastructure repository",
+      "packages": [
+        "argocd",
+        "kubectl",
+        "kustomize",
+        "kubernetes-helm",
+        "opentofu",
+        "yq-go"
+      ],
+      "commands": [
+        "kubectl version --client",
+        "kustomize version",
+        "helm version --short",
+        "tofu version"
+      ],
+      "requiresLocalHook": true,
+      "ociPosture": "Infrastructure repositories usually validate and deploy images rather than define one universal OCI output. Repository-specific render, policy, and deployment checks are mandatory."
+    },
+    "polyglot": {
+      "description": "Polyglot monorepo",
+      "packages": [
+        "cargo",
+        "go",
+        "just",
+        "nodejs_22",
+        "pnpm_10",
+        "python3"
+      ],
+      "commands": [
+        "just --list"
+      ],
+      "requiresLocalHook": true,
+      "ociPosture": "A monorepo must keep service-specific OCI contracts. Never promote one generic Nix image across unrelated applications."
+    }
+  }
+}

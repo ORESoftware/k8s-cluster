@@ -26,6 +26,90 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # fsGroup so the cloned-source emptyDir is writable by the non-root runtime
+      # user (uid 1000) that runs `pnpm install`/`build` into it. Belt-and-braces
+      # with the initContainer's explicit chown below — either alone would do, but
+      # fsGroup is what would let the initContainer drop to non-root later.
+      securityContext:
+        fsGroup: 1000
+      # Source comes from a per-pod clone of the superproject into an emptyDir,
+      # NOT a host path. `hostPath: /home/ec2-user/codes/dd/dd-next-1` only exists
+      # on the AWS EC2 node, so every Hetzner pod crash-looped `cd`-ing into a
+      # missing directory. Cloning makes the pod self-contained on any node/cluster
+      # (build-server audit F13 pattern).
+      initContainers:
+        - name: fetch-source
+          # alpine/git bundles git AND openssh (ssh-keyscan/ssh), which the
+          # Playwright runtime image lacks. Runs as root so it can chown the cloned
+          # tree to the non-root (uid 1000) runtime user afterwards.
+          image: alpine/git:2.47.2
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              export HOME=/root
+              git config --global --add safe.directory '*'
+              # The superproject is PUBLIC (plain HTTPS, no creds). remote/libs
+              # (k8s-libs-and-shared-defs) is PRIVATE with a git@github.com: SSH
+              # URL, so authenticate the submodule clone with the GH_DEPLOY_KEY SSH
+              # deploy key. Native SSH URL is kept — no insteadOf. ssh-keyscan +
+              # StrictHostKeyChecking=yes (never weakened to no/dev-null) preserves
+              # MitM protection.
+              #
+              # DO NOT revert to the `url.insteadOf https://x-access-token:${GH_PAT}@`
+              # rewrite that fix/hetzner-browser-selenium used. GH_PAT is NOT a key in
+              # dd-agent-secrets (verified 2026-07-25: GH_DEPLOY_KEY present, GH_PAT
+              # absent), so that expands to an empty token, the submodule clone fails,
+              # remote/libs is left empty, and it surfaces much later as a confusing
+              # pnpm ENOENT on the @dd/telemetry file: dep.
+              mkdir -p /root/.ssh
+              printf '%s\n' "$GH_DEPLOY_KEY" > /root/.ssh/id_ed25519
+              chmod 600 /root/.ssh/id_ed25519
+              ssh-keyscan github.com >> /root/.ssh/known_hosts 2>/dev/null || true
+              export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts"
+              # Idempotent across init restarts (the emptyDir persists): clone only
+              # if absent, always (re-)sync the submodule so a partial attempt heals.
+              if [ ! -e /opt/dd-next-1/.git ]; then
+                git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
+              fi
+              git -C /opt/dd-next-1 submodule update --init --force --depth 1 remote/libs
+              # Fail loudly here rather than as a confusing pnpm ENOENT later.
+              test -e /opt/dd-next-1/remote/libs/telemetry-node/package.json
+              # Hand the tree to the uid-1000 runtime user so pnpm can write into it.
+              chown -R 1000:1000 /opt/dd-next-1
+          env:
+            - name: GH_DEPLOY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GH_DEPLOY_KEY
+          # Partial carry-over of the hardening from fix/hetzner-browser-selenium.
+          # Taken: the two settings that are compatible with running as root.
+          # NOT taken, deliberately:
+          #   runAsNonRoot/runAsUser: 1000 — this container must be root to chown
+          #     the cloned tree for the runtime user.
+          #   capabilities.drop: [ALL] — that removes CAP_CHOWN, so the `chown -R`
+          #     above would fail. Dropping ALL and adding back only CHOWN is the
+          #     obvious next step but is untested here, so it is not done blind.
+          # The clean end state is a non-root initContainer relying on the pod-level
+          # fsGroup instead of chown; that needs HOME moved off /root for the ssh key.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          # Shallow clone + submodule sync + chown. Generous enough not to OOM
+          # the clone, bounded so a wedged init cannot take the node with it.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
       containers:
         - name: browser-test-server
           # Reuse the Playwright Noble image so a single bundled Chromium drives
@@ -144,8 +228,9 @@ spec:
               mountPath: /tmp
       volumes:
         - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+          # Was hostPath (AWS-node-only). Now a per-pod emptyDir populated by the
+          # fetch-source initContainer, so it works on every node/cluster.
+          emptyDir:
+            sizeLimit: 4Gi
         - name: tmp
           emptyDir: {}

@@ -1,0 +1,64 @@
+schema_version: 1
+contract: dd.dev/prometheus-pod-discovery
+owner_issue: DEN-684
+state: prerequisites-only
+
+selection:
+  role: pod
+  required_annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: non-empty absolute HTTP path
+    prometheus.io/port: decimal container port from 1 through 65535
+  readiness:
+    ready_only: true
+    pod_ip_required: true
+    terminating_pods_eligible: false
+
+labels:
+  required:
+    - namespace
+    - pod
+    - container
+    - workload
+    - discovery_mode
+  discovery_mode_value: kubernetes-pod-v1
+
+security:
+  service_account: observability/dd-prometheus
+  automount_service_account_token: false
+  projected_token:
+    mount_path: /var/run/secrets/prometheus-discovery/token
+    audience_source: api-server-default
+    custom_audience_configured: false
+    expiration_seconds: 3600
+  allowed_api_access:
+    core:
+      resources:
+        - namespaces
+        - pods
+        - services
+        - endpoints
+      verbs:
+        - get
+        - list
+        - watch
+    discovery.k8s.io:
+      resources:
+        - endpointslices
+      verbs:
+        - get
+        - list
+        - watch
+
+cutover:
+  enabled: false
+  current_mode: static-service-target
+  activation_requires:
+    - config load validation for kubernetes_sd_configs and relabeling
+    - one active target per ready annotated pod
+    - zero overlap with static application jobs
+    - target labels preserve namespace, pod, container, and workload identity
+    - cross-namespace NetworkPolicy validation from observability/dd-prometheus
+    - scaled-to-zero workloads do not fire target-missing alerts
+  scaled_to_zero_alert_policy: suppress_target_missing
+  rollback: retain static application jobs until live per-pod cardinality evidence passes

@@ -1,0 +1,3227 @@
+export type SdkScope = 'public' | 'internal';
+export type ParameterScalar = string | number | boolean;
+export type QueryValue = ParameterScalar | readonly ParameterScalar[] | null | undefined;
+
+export interface ApiOperation {
+  readonly service: string;
+  readonly operationId: string;
+  readonly method: string;
+  readonly path: string;
+  readonly pathParameters: readonly string[];
+  readonly requiredQueryParameters: readonly string[];
+  readonly optionalQueryParameters: readonly string[];
+  readonly requestBodyRequired: boolean;
+  readonly contractSha256: string;
+}
+
+export interface BuildRequestOptions {
+  readonly baseUrl: string;
+  readonly operationId: string;
+  readonly pathParameters?: Readonly<Record<string, ParameterScalar>>;
+  readonly queryParameters?: Readonly<Record<string, QueryValue>>;
+  readonly headers?: HeadersInit;
+  readonly body?: BodyInit | Readonly<Record<string, unknown>> | readonly unknown[] | null;
+}
+
+export interface CallOptions extends Omit<BuildRequestOptions, 'baseUrl' | 'operationId'> {}
+
+export interface ApiClientOptions {
+  readonly baseUrls: Readonly<Record<string, string>>;
+  readonly headers?: HeadersInit;
+  readonly fetch?: typeof fetch;
+}
+
+export const SDK_SCOPE: SdkScope = "public";
+export const CATALOG_SHA256 = "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689";
+export const OPERATION_COUNT = 279;
+export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
+  {
+    "service": "agent-worker-broker-rs",
+    "operationId": "agent_worker_broker_rs_get_api_docs_2fc0dbab70df",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c0097f0feeeb9794103f31f3cfd19287cb24bd8f0d2ab971ff17d6fb07b6ce26"
+  },
+  {
+    "service": "agent-worker-broker-rs",
+    "operationId": "agent_worker_broker_rs_get_api_docs_json_83c2ce1cd771",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7d38dbde823f6b53c02196edd4b960d1712fe9c53bd925b5307b43c23df9fa53"
+  },
+  {
+    "service": "agent-worker-broker-rs",
+    "operationId": "agent_worker_broker_rs_get_docs_api_483609850eb5",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a9e8c4af7b6e30103f95b0eec478856837ea0514ee87869526c1ad7e37b1636b"
+  },
+  {
+    "service": "agent-worker-broker-rs",
+    "operationId": "agent_worker_broker_rs_get_healthz_cb319180f84f",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "cd9e61ef54a0c89583b5fa16b28bcca59c4db2da04af7f2d60043f6cd56913a3"
+  },
+  {
+    "service": "agent-worker-broker-rs",
+    "operationId": "agent_worker_broker_rs_get_metrics_d50760a1e41f",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f3d94620267384c7d6c4e9b5f85e9fdbb496fc17d628ba721f34937560a1988e"
+  },
+  {
+    "service": "agent-worker-broker-rs",
+    "operationId": "agent_worker_broker_rs_get_readyz_2804ce621682",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "5e0d42009cf7a05516dd07f23c919b7e366e64af5485cb76f4bf3f8e1b1b15b1"
+  },
+  {
+    "service": "ai-ml-pipeline",
+    "operationId": "ai_ml_pipeline_get_4edb7d9f636b",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "70a672f74949fddf1ae504428911068351652b4c5cd9b0993b48632fe7567599"
+  },
+  {
+    "service": "ai-ml-pipeline",
+    "operationId": "ai_ml_pipeline_get_api_docs_12c7ac48cd02",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e890d23342ca0667c5d635cbe41e54f57399d5d94623f7d13b2dc712ead1f448"
+  },
+  {
+    "service": "ai-ml-pipeline",
+    "operationId": "ai_ml_pipeline_get_api_docs_json_70c2984db6b1",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "944dfd4ebe8619b5b1bc1d8fb5c078733f99c3a3ee3fdada6774f134e72675a0"
+  },
+  {
+    "service": "ai-ml-pipeline",
+    "operationId": "ai_ml_pipeline_get_docs_api_435cd90368e8",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c9ddd43fb178d84551c8006cf17dfc5541a9c984746e9ebe59ce72e246061b3c"
+  },
+  {
+    "service": "ai-ml-pipeline",
+    "operationId": "ai_ml_pipeline_get_healthz_d4f0642776b5",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9e838f59095052a436ee9ba484604d004006bf21ce33746e413773560cdd8ddb"
+  },
+  {
+    "service": "ai-ml-pipeline",
+    "operationId": "ai_ml_pipeline_get_metrics_1dc6de9bee57",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "59e15f9bb5ce3b295cd111237f816d971f31cf58a110e82854ae9d8098faeb1b"
+  },
+  {
+    "service": "ai-ml-pipeline",
+    "operationId": "ai_ml_pipeline_get_readyz_583a64cb4339",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c653be85ddbe027d81a32f1fb7e300055a9b49857ec229e8193fb1171e3b694d"
+  },
+  {
+    "service": "apostille-services-server-rs",
+    "operationId": "apostille_services_server_rs_get_0746e37694fa",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "cb7cc1c9bea4cfdcfc40932801cd42c94e79ede4e319225baab3e9c164f740df"
+  },
+  {
+    "service": "apostille-services-server-rs",
+    "operationId": "apostille_services_server_rs_get_api_docs_22c6b5fc71e2",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d050ed7da4daeae5bbb916848a1041c9694f6ea74a47371f5c2d4f4849a56419"
+  },
+  {
+    "service": "apostille-services-server-rs",
+    "operationId": "apostille_services_server_rs_get_api_docs_json_4759ab23ad74",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3292421816c7cef790f4b807c5f95a54d720e1d18a22cca4cedc5e62ff04a793"
+  },
+  {
+    "service": "apostille-services-server-rs",
+    "operationId": "apostille_services_server_rs_get_docs_api_bc08eccd57fc",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "eb0b8dc07802e83854423a92ea73963b2e9862ed804c459dfe151fbd287e6091"
+  },
+  {
+    "service": "apostille-services-server-rs",
+    "operationId": "apostille_services_server_rs_get_healthz_af7fb1b7a7d8",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9c14d061bad33bbbe6f4130f75c3c06bd6b2e3158499258e856b616cae8eb372"
+  },
+  {
+    "service": "apostille-services-server-rs",
+    "operationId": "apostille_services_server_rs_get_metrics_7e19cf3fa8b3",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "fef8de76a5c543b7e344962d737c3c70eb0954e0141e01b482ff9aa9eec06983"
+  },
+  {
+    "service": "apostille-services-server-rs",
+    "operationId": "apostille_services_server_rs_get_readyz_3d2310349229",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "054bfb73dd1ea84d0b912ea9837a01bdf77171ff09bfd92d5e304c4fe703795c"
+  },
+  {
+    "service": "auth-server-rs",
+    "operationId": "auth_server_rs_get_api_docs_a74a6621fcc9",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "fc08630bfd6a8ce3709e9b17f6ac57420cbf38984e39cd8f26b9d5774cc48c0d"
+  },
+  {
+    "service": "auth-server-rs",
+    "operationId": "auth_server_rs_get_api_docs_json_82ff253bf2ac",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8c785b231024f3925d201a7a7b02192b097bb5fb8d071b517318d1210a61d59d"
+  },
+  {
+    "service": "auth-server-rs",
+    "operationId": "auth_server_rs_get_docs_api_7a35c3cb5773",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4518d9003190d40c304ff340dc9e37988b99bc26e2f03d64682816f93f8b2da8"
+  },
+  {
+    "service": "auth-server-rs",
+    "operationId": "auth_server_rs_get_healthz_24f4e0afc640",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9000dd56ba80892794facc92b0b67763b94f6167f15c57221934f7be5cbbfb81"
+  },
+  {
+    "service": "auth-server-rs",
+    "operationId": "auth_server_rs_get_metrics_501d679ddc33",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4c3b8d97d3fa6029b8fb43a88d1337244ca30df90c8404b20a29dbde0509d226"
+  },
+  {
+    "service": "bastion-rs",
+    "operationId": "bastion_rs_get_api_docs_ec88191ed0d0",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "41b91acc0ef830dbd74df27d40712165ba872fe0f784e3b116ec0842fded9dc8"
+  },
+  {
+    "service": "bastion-rs",
+    "operationId": "bastion_rs_get_api_docs_json_8e3ea08ef5e9",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e12fb8fd85d89c1d09c8d02d799bfa7aed1d5b95bd11cd3f3bc80d00de5262d4"
+  },
+  {
+    "service": "bastion-rs",
+    "operationId": "bastion_rs_get_docs_api_fc2e12237899",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f42fd6c2d6dee7cbbe1d4e39b7b2cf6dc3445b8bd62db95f2d10d1ac0821281c"
+  },
+  {
+    "service": "bastion-rs",
+    "operationId": "bastion_rs_get_healthz_91951c20fff4",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1e84e9f63d182de1d432c3c0775cf3b24fc97935b50f2fd9fe8c6f51c38dd7c5"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestHealth",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e46b134416c9a47da9e3da05fbbeb8b4f3642d52e9fba10d80a57106a57780b2"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPrometheusMetrics",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d2c1c4a292ff9fb9db85429af5eba5d65b76ab3a4c1dd29acc1f4483eec87ab6"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPublicApiReference",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4b25d32c1b32129382a13133419e188ce9460b0f77394451c00b0f6128bbcba4"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPublicApiReferenceCompatibilityAlias",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "019594fb3c4df74cfc932438fdb9960af02b8bcd415a7cbd313b02b548f7e8e4"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPublicOpenApi",
+    "method": "GET",
+    "path": "/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e5bbceb5a0518181d55f405fa318c5e9e23adfe1ff7a6680b8497293a30295f1"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPublicOpenApiCompatibilityAlias",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a756191fe3244f48769e2b65c0ec400b14a612f8b549494f24f53be62e6cb875"
+  },
+  {
+    "service": "build-server-rs",
+    "operationId": "build_server_rs_get_97e528d3e996",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4bb6b17ce1120d9f0c6844414291d36d33fd07b50a75911e8ab939bd39264430"
+  },
+  {
+    "service": "build-server-rs",
+    "operationId": "build_server_rs_get_api_docs_a68e5cf98faf",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "902e1fe1bf7d34cefedb8c527974b77777f2d4f7ce2634b53639e76a081fc27e"
+  },
+  {
+    "service": "build-server-rs",
+    "operationId": "build_server_rs_get_api_docs_json_8bbb8ade2e6b",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8c7563868f79a9d3463291136543f06ae1702486ce79621bb4aa3f450cc6179d"
+  },
+  {
+    "service": "build-server-rs",
+    "operationId": "build_server_rs_get_docs_api_7683e2e6a7dd",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f695614cb3e3c0ef309efa90ed3c5fbe9f3a2c060a5e39b823b0f62e0798d395"
+  },
+  {
+    "service": "build-server-rs",
+    "operationId": "build_server_rs_get_healthz_0b6353fde7ce",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8089e0d4c3e8925a81c507275b29bccbfb3c887f42bbd551ec4aa36fb1d30545"
+  },
+  {
+    "service": "build-server-rs",
+    "operationId": "build_server_rs_get_metrics_0edb9240c46a",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "337fb0131859c2664b11bc91ed7a870099205bb316020d46d0522549d5324ad9"
+  },
+  {
+    "service": "build-server-rs",
+    "operationId": "build_server_rs_get_readyz_7acebefd602d",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1754536b76c4c16e17ac8e110711a4fb24367379bac95008648aa6978e7e6dd6"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_get_31ff16940565",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3fdc0e7110746ca0603069b53f89d0b2895ffc603d144f175170f6ffef61a1c8"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_get_api_docs_3ab81fafa0ef",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "17597ef0a96ffc05662bd93ddea07227eab0b5e50e33d7329c080d78f10e0ad3"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_get_api_docs_json_ce0de73d3845",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c65c530b5a3a67da0d4cb6913da0d72ab0dacf93c37662fdf13f050dea75a899"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_get_docs_api_a20bbd4091e8",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e36392be9f46f3d9a3b6c37ebd10beb58925d840ab24fe2bf11cf03471d2ce4a"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_get_healthz_abbcfb964262",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "234b6abf43c685c0e915d71d25a8cbca59bbedd0fe8454a3af36c268e0714afc"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_get_metrics_dd300fd49c4b",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9c8a069d6fb79756f1f977e26c88ff8e0ce8a409265216dc4a9fc4d74d481b61"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_get_readyz_5f2d176c27ed",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3ef62a28d1b548bb9b57a559ebede961a6610bcb7a1cfbbc1c85440dfceb2202"
+  },
+  {
+    "service": "cluster-mcp-rs",
+    "operationId": "cluster_mcp_rs_post_5eaa871163b6",
+    "method": "POST",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8abf2a5126223dca23293464af5b9442d3d52b05280efe4783d27881f9bf4d97"
+  },
+  {
+    "service": "container-pool-rs",
+    "operationId": "container_pool_rs_get_api_docs_1b359a83c11e",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "fdd1dbfdb44ebd61c9f04e420589c08821d20a852966b7b9a685594c6471521d"
+  },
+  {
+    "service": "container-pool-rs",
+    "operationId": "container_pool_rs_get_api_docs_json_604449d9ef37",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "893a063d5649eba5591915b47339d4bd1cad5f4610f9cd1b1e8fe05160ad1441"
+  },
+  {
+    "service": "container-pool-rs",
+    "operationId": "container_pool_rs_get_docs_api_6b5d6b99c078",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f27a8c2da8a243aca7d5dd55e264bbfbfb88fbca3b9594604cb0b42fa1fb516d"
+  },
+  {
+    "service": "container-pool-rs",
+    "operationId": "container_pool_rs_get_healthz_b2fda0520812",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8f971dfbcd32bfa63916d6c9c3ba3e57a31ee773bd66684e4446657a35da6a58"
+  },
+  {
+    "service": "container-pool-rs",
+    "operationId": "container_pool_rs_get_metrics_750509a34cf2",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f152569e3c5f98fafbafbab4225fc10b31377eab9f324b39a9ad34e9c537fb6a"
+  },
+  {
+    "service": "container-pool-rs",
+    "operationId": "container_pool_rs_get_readyz_a708892be6a5",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a1bc8dff01231fa3c967d7f36ad2fa8a5356e7d963709ee7c23f401993389f66"
+  },
+  {
+    "service": "contract-service-rs",
+    "operationId": "contract_service_rs_get_48e8fedb7153",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e93d6c329f67c4ceb44f023b7810fefcd4588d5e5e8e29694a8497ed8b8a57be"
+  },
+  {
+    "service": "contract-service-rs",
+    "operationId": "contract_service_rs_get_api_docs_b90a132e6369",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "32c2461653da3f3d6d8365a038b8a5d9e6641f0554a0ca95819a7ef88312c6f2"
+  },
+  {
+    "service": "contract-service-rs",
+    "operationId": "contract_service_rs_get_api_docs_json_fb76c651a8d1",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "36d07ee096b88b3876f91b164b55b37cdf2c6c11e75b0ebac6f95df619484f5d"
+  },
+  {
+    "service": "contract-service-rs",
+    "operationId": "contract_service_rs_get_docs_api_d4a7c4dc2389",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8d51a16a326dcea0867545b49d4c6793b7f7787b4dfb8602f0b9e84703ff5e3c"
+  },
+  {
+    "service": "contract-service-rs",
+    "operationId": "contract_service_rs_get_healthz_1a56c5f43022",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4bb3fff2cdd077ce3becdb27c756f83e2d72b2cd38b8b64cd2dc3bf11debac31"
+  },
+  {
+    "service": "contract-service-rs",
+    "operationId": "contract_service_rs_get_metrics_d81ec7ed9065",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "986d001aed2fbc94c0191ed365aec8a72417f6f6d7878adea15d9fa30b8ec357"
+  },
+  {
+    "service": "contract-service-rs",
+    "operationId": "contract_service_rs_get_readyz_4e2ae6dbdd4d",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "eac7997e13d20fd1248cb1e5c4211f9a1a132e76938dab5c940e1cf4adc1e3d8"
+  },
+  {
+    "service": "dataset-labeling-rs",
+    "operationId": "dataset_labeling_rs_get_8f450a961712",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1e3d65f1e5e6aae24e1fa24bd51b65a4bdf4e44c6abcc0347a14a3a346c13bc2"
+  },
+  {
+    "service": "dataset-labeling-rs",
+    "operationId": "dataset_labeling_rs_get_api_docs_76e86c0e0974",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c8ad549d21cc60c4ac59c435e18715c8dadf2a66ee4015c4ee77f36092837b3c"
+  },
+  {
+    "service": "dataset-labeling-rs",
+    "operationId": "dataset_labeling_rs_get_api_docs_json_fa46e74a2646",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1c345f13e93f5b05f57e9bd9857e2b72b0bfd5a118d8ec0c9a86923fbb9ba456"
+  },
+  {
+    "service": "dataset-labeling-rs",
+    "operationId": "dataset_labeling_rs_get_docs_api_c67400bc23e0",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "efe8311ed080179b912ab5896762a232880618da6e3240024db7b9921596e3a6"
+  },
+  {
+    "service": "dataset-labeling-rs",
+    "operationId": "dataset_labeling_rs_get_healthz_966ee9008734",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "5de2b0fa2e7bdf56aea70d4fb9fee5af212305eb9c154c194ffccc7acbc23ba2"
+  },
+  {
+    "service": "dataset-labeling-rs",
+    "operationId": "dataset_labeling_rs_get_metrics_20be3e57dd3f",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e23ce53d93d19a194fd0483b23de90e94f48f6da5007cbeb14171658bd3888ba"
+  },
+  {
+    "service": "dataset-labeling-rs",
+    "operationId": "dataset_labeling_rs_get_readyz_2d6cef2183d8",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7654a615ca325c4da20be6be672370479a03788f342897ec377fd6c47fdc4fb6"
+  },
+  {
+    "service": "dd-benefactor-marketing-rs",
+    "operationId": "dd_benefactor_marketing_rs_get_1bae48db2f13",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1f9787955ad00e4d360aa6a2cd2b6e1c49ec3157f114d4dafd0188484b3ef33d"
+  },
+  {
+    "service": "dd-benefactor-marketing-rs",
+    "operationId": "dd_benefactor_marketing_rs_get_api_docs_08582594fa9a",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3153fc9e639157cc81e46894d872f185ffeeb50e502ee88ce86efdb4eabcbbdc"
+  },
+  {
+    "service": "dd-benefactor-marketing-rs",
+    "operationId": "dd_benefactor_marketing_rs_get_api_docs_json_b220dfc40f18",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "714e24a1a03dbc3ff56e0766305be15684f2c3bdccc502eb00c3ffc1ca338540"
+  },
+  {
+    "service": "dd-benefactor-marketing-rs",
+    "operationId": "dd_benefactor_marketing_rs_get_docs_api_37a923e269a6",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0052c2f7ba96c714078b7f57ce6afdf0943b0e509bb403e8411b31c2ee20cde6"
+  },
+  {
+    "service": "dd-benefactor-marketing-rs",
+    "operationId": "dd_benefactor_marketing_rs_get_healthz_0f922ff73afd",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2912d9318b6727e4d6f6491d22b526b96e462b5610524481fcd4c9bc8a2aeab8"
+  },
+  {
+    "service": "dd-benefactor-marketing-rs",
+    "operationId": "dd_benefactor_marketing_rs_get_metrics_a0728e229439",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b91a700bbb9e8396dfed02f3f771ab16abc41198f09ac90af3f29c7804ef9a3f"
+  },
+  {
+    "service": "dd-benefactor-marketing-rs",
+    "operationId": "dd_benefactor_marketing_rs_get_readyz_4a6f149a52e3",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "20e07834e455fd764876155e7c600a947cdd2b31dcc11233e7749ae305c18b05"
+  },
+  {
+    "service": "dd-compliance-rs",
+    "operationId": "dd_compliance_rs_get_86df6d2056ad",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "aa5bde80bb0ec8c9139827f7ab3a03a1a1e76c6974b3a6427d55972255690b51"
+  },
+  {
+    "service": "dd-compliance-rs",
+    "operationId": "dd_compliance_rs_get_api_docs_c3addb69e41d",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1ceb66f2e7cef1e929845480d2016d78028505b446ebdf955c32bda5a0c8ec86"
+  },
+  {
+    "service": "dd-compliance-rs",
+    "operationId": "dd_compliance_rs_get_api_docs_json_b3744f0c89f6",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c10638791bc2dc4e1d81421c39d0cba58d483f1f6367c2a1177af99eb93e1716"
+  },
+  {
+    "service": "dd-compliance-rs",
+    "operationId": "dd_compliance_rs_get_docs_api_36a01108df8a",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0e9d418241b8b46ff9ac349de8f0e0fbf0b21d83f8a7252e9907d2640a48021e"
+  },
+  {
+    "service": "dd-compliance-rs",
+    "operationId": "dd_compliance_rs_get_healthz_b3e6b217da56",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b6dfcb972d8b55c7f8b02d444a6e2579ad5a17579dcf5777253f6fc0719347ce"
+  },
+  {
+    "service": "dd-compliance-rs",
+    "operationId": "dd_compliance_rs_get_metrics_31b48a4e426d",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "695957ad3844572a306383e836f852d3f06d6ee78273de2d463a2b85ffdc8dd5"
+  },
+  {
+    "service": "dd-compliance-rs",
+    "operationId": "dd_compliance_rs_get_readyz_c39095c184e2",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4d1814fc706f1939a3b77c27361c8d16798c8fdf6151f0b212f43f744e0a0c1d"
+  },
+  {
+    "service": "dd-document-rs",
+    "operationId": "dd_document_rs_get_2bc142d5b4da",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "80289bf230bb3a1a4906cda5832ffb4580996329fb7744b2a3d3157aba48ba6f"
+  },
+  {
+    "service": "dd-document-rs",
+    "operationId": "dd_document_rs_get_api_docs_33e0d91e3d81",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "5f3059d399b93fc1e9422e74b30bec61edccd726dc4e00a1d9f1115a457322e2"
+  },
+  {
+    "service": "dd-document-rs",
+    "operationId": "dd_document_rs_get_api_docs_json_4f57fda93437",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "29e7506e7991585f9e645a3449a8dfa544960b02f22ce12a272d55af16087827"
+  },
+  {
+    "service": "dd-document-rs",
+    "operationId": "dd_document_rs_get_docs_api_40b647e65310",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0c33fca3f540208218a148e49b788193d0fa592e3893b7856806d03f7580449e"
+  },
+  {
+    "service": "dd-document-rs",
+    "operationId": "dd_document_rs_get_healthz_3f20c7b66724",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "32c204e811a78db14655b96f8fbcc7cf583b528b1c76c64c8b99c84206f4f72c"
+  },
+  {
+    "service": "dd-document-rs",
+    "operationId": "dd_document_rs_get_metrics_afd9039bdb63",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "607138f4566ebbe6676d9a07e04f5126140430497d789d0769d843d4fb496f2e"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_api_docs_6d9a44ce91c7",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "af0d1b3e99339458fceaea282af32b283d3bad20f3754b5ae117c073ed634a03"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_api_docs_json_5b156aa49080",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3485079bf63ac0f3feb8e8a7a7feaf49a007bc3c76a6af7b7976d4f40334c4c9"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_docs_api_dbf8547bbd66",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b223eb3209d3a98ecd929b4291d8233faec3310a12e98ee5f071aacbde39720f"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_healthz_c98b323dcfc7",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "5402a421fdbc00e0b930752020e9751631a09781f47baf7c9b7974b7800b6ead"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_metrics_b8de5715f91f",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e87865206fb4c88f8ef05ffbb6d28e6891abcefa883fc6023de753c460af2414"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_openapi_json_e309ad71cb55",
+    "method": "GET",
+    "path": "/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "43ae8b20d1eb990e857c13a4d8a5837dcc2f37c3682841079986518dc27d0e59"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_readyz_1034976ffc04",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c45ba21f94895163d818f1a8d3da4e10cddc192f3064cf0fe712c49c72f458b7"
+  },
+  {
+    "service": "dd-escrow-rs",
+    "operationId": "dd_escrow_rs_get_0c8ff7399814",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6a64155c668ab68ee7061b8f5e3e0a5c3dc1515e44d057cee104ccba9dc26a71"
+  },
+  {
+    "service": "dd-escrow-rs",
+    "operationId": "dd_escrow_rs_get_api_docs_1d205e037e02",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "36de001f71b76bce181baf55a09891f80f93445bcc13f36ff48ce9818584db95"
+  },
+  {
+    "service": "dd-escrow-rs",
+    "operationId": "dd_escrow_rs_get_api_docs_json_44f48e7161b6",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0aee453e7a7c14c3b20d67feaf3027f34e2330cfa10f74b7a5eda5539d23187e"
+  },
+  {
+    "service": "dd-escrow-rs",
+    "operationId": "dd_escrow_rs_get_docs_api_6363d7a61065",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "537c75a2d94a117ea108b4423fade91745777663df14a75427145991f8fa3e09"
+  },
+  {
+    "service": "dd-escrow-rs",
+    "operationId": "dd_escrow_rs_get_healthz_f00c66a4119b",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7ac3d7887aac7fa89a5f8ace003f06968479a78f84e37f133b036d189d66f26e"
+  },
+  {
+    "service": "dd-escrow-rs",
+    "operationId": "dd_escrow_rs_get_metrics_8bfd85683515",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "bda6f088c87fd91f31b4c1bf225439ab6f7c1af6b73cfbf4015da154a6512c4f"
+  },
+  {
+    "service": "dd-git-rs",
+    "operationId": "dd_git_rs_get_6c4d375081c0",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8cf38c057a4be2bada48c860ca1896c978180e42a7533a70f955ebf94134aaf2"
+  },
+  {
+    "service": "dd-git-rs",
+    "operationId": "dd_git_rs_get_api_docs_aefb7705a4af",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "46174e7930f580f043c600d9bba1159e629fe44d31cbfa7802c01c578c89a6f9"
+  },
+  {
+    "service": "dd-git-rs",
+    "operationId": "dd_git_rs_get_api_docs_json_cae7319e06a7",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6ccdc55d007db21982d366dc494d3f5213379089c46a1b9553b6567390884263"
+  },
+  {
+    "service": "dd-git-rs",
+    "operationId": "dd_git_rs_get_docs_api_035184cf5e8e",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "23ad584ebf834647324c831a04bef5f6c333b0bea4aa5c300c9d52171d63ad7e"
+  },
+  {
+    "service": "dd-git-rs",
+    "operationId": "dd_git_rs_get_healthz_61cc5ffe8a65",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0706f77fb2eb5ac40d2fa2f235712174583ed1f727dade76530505e563a5a88d"
+  },
+  {
+    "service": "dd-git-rs",
+    "operationId": "dd_git_rs_get_metrics_a0e41979c18c",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7deaa7302b92bd67c5d7cad40b43bb4a688dd1039e77d92390f2738e828766ce"
+  },
+  {
+    "service": "dd-git-rs",
+    "operationId": "dd_git_rs_get_readyz_7f6d6d62638a",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "96d5c7bd220e7729db63fa361013d1fe2fbdad41bf10aed163c6bd2409bc1152"
+  },
+  {
+    "service": "dd-music-rs",
+    "operationId": "dd_music_rs_get_94d116e31efd",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9c3637f097f82fcc4c4d068b6f71df0e30371e3af42f506a858da182acd53a4d"
+  },
+  {
+    "service": "dd-music-rs",
+    "operationId": "dd_music_rs_get_api_docs_84253df393b3",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7dcebcc0d7e89ffa199239540862199c248ac701322c097a56dfa793dc788616"
+  },
+  {
+    "service": "dd-music-rs",
+    "operationId": "dd_music_rs_get_api_docs_json_a0d8b9337eca",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "dad37131c395790897f4eea5afaa64703da0e3e5ad37abc887e3e9b3844344f4"
+  },
+  {
+    "service": "dd-music-rs",
+    "operationId": "dd_music_rs_get_docs_api_a8f5989c5cb4",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "797163087894e30bb727b5d7e91a651cec2335993181b550915eca290a55fec2"
+  },
+  {
+    "service": "dd-music-rs",
+    "operationId": "dd_music_rs_get_healthz_61963fb8dd78",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4827f5e4784c47f756568af77b2ebdf0a6c0c094cafb8531ae4c368a48f8547b"
+  },
+  {
+    "service": "dd-music-rs",
+    "operationId": "dd_music_rs_get_metrics_b0c68a2cbe03",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a31149a73a4a29a619e3e8e43c74c988da04005b7bad1e0cb82c16764af8c54c"
+  },
+  {
+    "service": "dd-music-rs",
+    "operationId": "dd_music_rs_get_readyz_462c1a5cb38e",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "00d1b62ca5b8f247711627d59b6509ea43ab853a7d0c1991ad93952f6285b773"
+  },
+  {
+    "service": "dd-ocr-rs",
+    "operationId": "dd_ocr_rs_get_0ca73bd493ff",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "cf28a3c8c6083ee8560730fcfe2a3c82a34a458159e2f96fb542a82e9798cd23"
+  },
+  {
+    "service": "dd-ocr-rs",
+    "operationId": "dd_ocr_rs_get_api_docs_707ee4729b93",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b4229dc2a711dac6eb8678651ae971b11ad0102acdd2a646292b557be35cf030"
+  },
+  {
+    "service": "dd-ocr-rs",
+    "operationId": "dd_ocr_rs_get_api_docs_json_f59be7ee5f25",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "48bbc48c63c03d53693777a5e308ffa2b147361b6c0fb0643b372456bcce76c5"
+  },
+  {
+    "service": "dd-ocr-rs",
+    "operationId": "dd_ocr_rs_get_docs_api_b66630f1a903",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6354b0b716d1792372f0ccf7b9337da5d111aa305cff308257a0ee777603da50"
+  },
+  {
+    "service": "dd-ocr-rs",
+    "operationId": "dd_ocr_rs_get_healthz_622e4f919945",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3830646b3b790ec86dc243494ed1697624689f93bcb4e42f6064555c6af9700c"
+  },
+  {
+    "service": "dd-ocr-rs",
+    "operationId": "dd_ocr_rs_get_metrics_3f3b225d2987",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8801aca8e37bd68dba93ec288c5b1e293984c53fd78168b34356e2547cd478a7"
+  },
+  {
+    "service": "des-simulator-rs",
+    "operationId": "des_simulator_rs_get_2d2426c6bf32",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ca7e5f389ec7227d4e16eb4c9d5868b32e497b9f7a51109ec6632b65aa18da12"
+  },
+  {
+    "service": "des-simulator-rs",
+    "operationId": "des_simulator_rs_get_api_docs_678a35ed4761",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "fbf55a9936159602724f1cd31c628c2a243ed7d7f121d7b70005780d141615de"
+  },
+  {
+    "service": "des-simulator-rs",
+    "operationId": "des_simulator_rs_get_api_docs_json_07ae19f4dacd",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0f4ef942e1212c5bf2eefe36535c2fe3c8da1667143621609b88ee120173680f"
+  },
+  {
+    "service": "des-simulator-rs",
+    "operationId": "des_simulator_rs_get_docs_api_cb251178a7e3",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "652e0d88568079c3a680c215ab0889b902d1a158d544a379004188f5c5c8bff3"
+  },
+  {
+    "service": "des-simulator-rs",
+    "operationId": "des_simulator_rs_get_healthz_b9c40c64730c",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6ab014d042b938d051bc5a8eb1f0a604b0d3fbb13c0c09cf69e3b43d6465ee0f"
+  },
+  {
+    "service": "des-simulator-rs",
+    "operationId": "des_simulator_rs_get_metrics_7611fea0abcc",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7536d6137a20ba9085c9e842bdcf5c3a1a3b0b2993a6f3a64ab6bada83e31c46"
+  },
+  {
+    "service": "dev-server",
+    "operationId": "dev_server_get_api_docs_379c7a8c8633",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d29a50029dbe654a77984a69ab19b7e7a90d26bfe8061bd325a1849d2555d6ce"
+  },
+  {
+    "service": "dev-server",
+    "operationId": "dev_server_get_api_docs_json_2000a92cd157",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c1fc5972708655b87b2c29c51e46d43e908c536b1acd1827d3ad2ff58083cbd2"
+  },
+  {
+    "service": "dev-server",
+    "operationId": "dev_server_get_docs_api_06a97c15bc72",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "80c7ac94e22cea13eab4a7a355c3b7344cdf7275d9dd22bef32c678fee1c430e"
+  },
+  {
+    "service": "dev-server",
+    "operationId": "dev_server_get_healthz_a23d6f36c7b9",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d3a98448730bc704e61d9fc49d44e1dae185926803da956231f2b23fa53558cc"
+  },
+  {
+    "service": "dev-server",
+    "operationId": "dev_server_get_metrics_3eec900e60fe",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6597bba59e71b82d0ac5136d1cc6a74220095d830bb7444cd9929a3dbf2ff42a"
+  },
+  {
+    "service": "economics-server-rs",
+    "operationId": "economics_server_rs_get_307d2b80d57e",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e70801e0bd3a7cb49d1da55b18578b0efbbd9921e77668222b1074387b96fa28"
+  },
+  {
+    "service": "economics-server-rs",
+    "operationId": "economics_server_rs_get_api_docs_59ad629f0c88",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c47574b726b2d019873c499a92321ca90917ea5b1edead9c24e48bc59e9b8391"
+  },
+  {
+    "service": "economics-server-rs",
+    "operationId": "economics_server_rs_get_api_docs_json_4914d875e7fb",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a925b0766440f410fcd128b649a3519d2ab5c163f93cf9112f0eb52981459665"
+  },
+  {
+    "service": "economics-server-rs",
+    "operationId": "economics_server_rs_get_docs_api_bf29027389fc",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ee4e559015a4630b4220685c73620983b004a9e30b8df38dd39c3a1049eb858a"
+  },
+  {
+    "service": "economics-server-rs",
+    "operationId": "economics_server_rs_get_healthz_9c174475ddbe",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e39644b6aabcca7b85db040930097e9cc00b239fd7a6e145e7fa871a52a3bbd3"
+  },
+  {
+    "service": "economics-server-rs",
+    "operationId": "economics_server_rs_get_metrics_75ac7f5c66b7",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "24518f09d1c82e68de8fc48f1e14a7dfad1cbb2222cef6334d7b1fce8793de8a"
+  },
+  {
+    "service": "economics-server-rs",
+    "operationId": "economics_server_rs_get_readyz_ce8853d39a51",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "29e72127ac4b6a6a63bcc166147eb01f60abb3917fc4e9d4bc32b79568fcab00"
+  },
+  {
+    "service": "formal-methods-server-rs",
+    "operationId": "formal_methods_server_rs_get_api_docs_33c3008e115b",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e278208d703bfcb650f7e1defc76e26fc1b9ccdbad2cadceac1f8dbdf4c9f2ac"
+  },
+  {
+    "service": "formal-methods-server-rs",
+    "operationId": "formal_methods_server_rs_get_api_docs_json_cea8ec4c38a3",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "49b1aebd15a2a5c3f0ca8ee592974bc6d1e7fccc2f84983605f1914c1a97ebc8"
+  },
+  {
+    "service": "formal-methods-server-rs",
+    "operationId": "formal_methods_server_rs_get_d1db813ce536",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0c99b9579086fb1f2b072f5611a30aa555ad0dc9a39e9868df6908e7268e9c7b"
+  },
+  {
+    "service": "formal-methods-server-rs",
+    "operationId": "formal_methods_server_rs_get_docs_api_4c8b575641df",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1cb305be55b391f300d9d16237d3c601ddc2b402165a47660c7b7e5d84bb09a5"
+  },
+  {
+    "service": "formal-methods-server-rs",
+    "operationId": "formal_methods_server_rs_get_healthz_dab2e9edb343",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "776d1880077c18eda7c5e05b6c30e9ea1ad1eccc69e3684d006d1fb195014d9e"
+  },
+  {
+    "service": "formal-methods-server-rs",
+    "operationId": "formal_methods_server_rs_get_metrics_36d7e64fa151",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "63442a7310be9e3b9c3645f863062bf5002fa0a56c27523f75f576ea64ec69ff"
+  },
+  {
+    "service": "formal-methods-service-rs",
+    "operationId": "formal_methods_service_rs_get_api_docs_c5a3074a89a9",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1d6aeec904e3e0afe59354c8ab2dc68a23e9a8672b543aea3f7cd83d01afe19c"
+  },
+  {
+    "service": "formal-methods-service-rs",
+    "operationId": "formal_methods_service_rs_get_api_docs_json_4e712a700e26",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6b772c5ccc7f9db705ac9dde2702ec9a250057beabe8c5076b0a75f72e6cfcd8"
+  },
+  {
+    "service": "formal-methods-service-rs",
+    "operationId": "formal_methods_service_rs_get_docs_api_a4b22bcd9b65",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f9c8e3dd1cababa9f234af042be8193ab44044875a487a72118ecd647cb389c5"
+  },
+  {
+    "service": "formal-methods-service-rs",
+    "operationId": "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
+    "method": "GET",
+    "path": "/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "734d5e7fb3d1fffe97d1b6f60c11794714cdca3919762fc56341764804cca814"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_1c90f41d31fe",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "77f515f14be117ddd445d9f64aeedfad1ea27de455a09f3697d919608d10bc2d"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_api_docs_c918b858495c",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "781fab23ef3c46e253dd99aab263010b13bb96ffc4098fe3c73262fa8f43277a"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_api_docs_json_877d51a9f4d2",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1795921b80b802040b829e044c096b4fb1809a6ff2d85ed54a0e57f22921191e"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_docs_api_d4467a9b1dbd",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "47b8dec45cb00be8e93a43a468e6bfb331151366a17333e6baef6ac224254e06"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_healthz_91d6af81f7d0",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c4faa985871bda729db94e4666ccdc0eeed2ff2b837b5fdca4bb217aac5efcb1"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_livez_235170fa9eff",
+    "method": "GET",
+    "path": "/livez",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "835b0cde2032b0d14062842ec381e7c32cc4417214654cb9f91fcc48064e6091"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_metrics_f49aeef914d4",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d9024d8762c03ff237ea66b99fdb431e5faab6a5f31e749519a3e8b0de843d02"
+  },
+  {
+    "service": "fsharp-ws-server",
+    "operationId": "fsharp_ws_server_get_readyz_a77660ce2098",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "38cfbef9a3bade730502cfc5725bfe865ab212d76a4044539c1421a2846fbcbe"
+  },
+  {
+    "service": "gleam-mcp-server",
+    "operationId": "gleam_mcp_server_get_02804fb5d59c",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "169f14aae01ba5c0ca6ffa5eb1c4bf79780234a30bd87c51605bac8e967639b5"
+  },
+  {
+    "service": "gleam-mcp-server",
+    "operationId": "gleam_mcp_server_get_api_docs_c241e29af649",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b714e5b0928fb5b7ee8d83c03495f98f46e8d6773362d8d8b471273d823cf7ee"
+  },
+  {
+    "service": "gleam-mcp-server",
+    "operationId": "gleam_mcp_server_get_api_docs_json_5a117f6eaf26",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "bac375b42337903083e9e4884e3f137e372f3d80e7830e2444a5f8c1fd6f015e"
+  },
+  {
+    "service": "gleam-mcp-server",
+    "operationId": "gleam_mcp_server_get_docs_api_0d4f9cbdc8ba",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "080f5d05067a322e99ec8ad6168e4cef86557ede17b7754f99828b9b3f9f8e61"
+  },
+  {
+    "service": "gleam-mcp-server",
+    "operationId": "gleam_mcp_server_get_healthz_16ccc9185ca0",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b82a5bd04072f5a45ea107ec762090ca07698caea69d37c39f389618978ff7ac"
+  },
+  {
+    "service": "gleam-mcp-server",
+    "operationId": "gleam_mcp_server_get_metrics_ee284b4ec7e3",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "add536c4df19ba83a92f0ff2b30b4d7501db7d8ddce0516c1822f3328ea25fff"
+  },
+  {
+    "service": "gleam-mcp-server",
+    "operationId": "gleam_mcp_server_post_5f09fc51ad67",
+    "method": "POST",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "31507c47cc9cb3fb82110bae667f326dc4a213e37c198bbb3edcb00116ba3ecb"
+  },
+  {
+    "service": "gleamlang-presence-server",
+    "operationId": "gleamlang_presence_server_get_23af72802f06",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d9b3836f5a84d721eed274a125c872b6ccdc6de0b3e221eb627f9c27449d2893"
+  },
+  {
+    "service": "gleamlang-presence-server",
+    "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1ae39f5d60c5c6bc99a4d8d7877d3893d38e1e56d0db65f87b19e3b6cd935409"
+  },
+  {
+    "service": "gleamlang-presence-server",
+    "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8a2a65cdd231deee655f5a4ea7180f50f5898c220959d8a162256b62bd7a6fa1"
+  },
+  {
+    "service": "gleamlang-presence-server",
+    "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "aa602c6b329841aeaa47cf19d2ef7491ed8af413829e914d7de21d8e77868b0d"
+  },
+  {
+    "service": "gleamlang-presence-server",
+    "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
+    "method": "GET",
+    "path": "/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f373bee10d8737ac31e1e0b61a07eda1333fec5390ae38e5ee10c80fdfc176cd"
+  },
+  {
+    "service": "gleamlang-server",
+    "operationId": "gleamlang_server_get_4c6e3f0f06be",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8a2f6f19b86cf94a6d09353d4f7715866132a4987386c88ff0e640cde06429af"
+  },
+  {
+    "service": "gleamlang-server",
+    "operationId": "gleamlang_server_get_api_docs_8c3ba27f3215",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "fd7826ea1a61b10aa9d5be12dfd9d6ec5c9108b3ebe56d52f27a4cafbfa94ad9"
+  },
+  {
+    "service": "gleamlang-server",
+    "operationId": "gleamlang_server_get_api_docs_json_e1232b0d6a02",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1b014c04239f5bff4dee5b71a43dccfdb139af963afad4c74336202a24e70d51"
+  },
+  {
+    "service": "gleamlang-server",
+    "operationId": "gleamlang_server_get_docs_api_734adf1e5ba5",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "5dce1d50e5c41f089a22ffe05612887db95bb5cf8d9531fa1d82de612edae401"
+  },
+  {
+    "service": "gleamlang-server",
+    "operationId": "gleamlang_server_get_healthz_84ce28e6bd55",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "441c09f8ec271d5fe943318db5ed40235b7cee7ceff6496dc0a7c88a48a8404f"
+  },
+  {
+    "service": "gleamlang-server",
+    "operationId": "gleamlang_server_get_metrics_f2e1dd130ea0",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b1937866c19972aa70a3878ae8a28aaba905b647db8fbe5e54b7c976e83d8cda"
+  },
+  {
+    "service": "gleamlang-server-nats-bridge",
+    "operationId": "gleamlang_server_nats_bridge_get_api_docs_18ac55f3e942",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3e55d7a9d21deb48e917cab1744957a538ea18fcc4ceaae6825de636f1b0926a"
+  },
+  {
+    "service": "gleamlang-server-nats-bridge",
+    "operationId": "gleamlang_server_nats_bridge_get_api_docs_json_ee1f891057dd",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "adca4e3937d3f29a6a9613c682c501bc3e99f1689d59931f078d4df734286085"
+  },
+  {
+    "service": "gleamlang-server-nats-bridge",
+    "operationId": "gleamlang_server_nats_bridge_get_docs_api_1d46c32f2e70",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "66d2f61cf2c5415fcf234269b375a80149f051db53473ce2c597f54781b12bb6"
+  },
+  {
+    "service": "gleamlang-server-nats-bridge",
+    "operationId": "gleamlang_server_nats_bridge_get_healthz_dae5ee4abbd5",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "54e6b85a42dcd3af07d33b4907fdf0f5851632656ffa97c68bb5026066b6af4c"
+  },
+  {
+    "service": "gleamlang-ws-server",
+    "operationId": "gleamlang_ws_server_get_6e29d4fe1502",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ffc7b7c3e7acdee4989d7d8ed91c30b56e12db5e1d8713004e0296ecf7bfa525"
+  },
+  {
+    "service": "gleamlang-ws-server",
+    "operationId": "gleamlang_ws_server_get_api_docs_25d7ae644261",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2a984850ded455f7821afe29fb419be20ce414c9570d072a19f2f010516a75c7"
+  },
+  {
+    "service": "gleamlang-ws-server",
+    "operationId": "gleamlang_ws_server_get_api_docs_json_c9e0c19e0e40",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "bc319a0b6b2090a16573b4a77c7b83c6c6054777621951c511c9ecf076af4dd3"
+  },
+  {
+    "service": "gleamlang-ws-server",
+    "operationId": "gleamlang_ws_server_get_docs_api_b647de4d8fba",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "38d9a85dbac8eb17dab13b4c3979e42faf3d3d266d0709ade663330435bc4e54"
+  },
+  {
+    "service": "gleamlang-ws-server",
+    "operationId": "gleamlang_ws_server_get_healthz_f38fc12133d5",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4275cccb6bc3bd6bcaf3792399261631d1e99d269b21a7d2b2d876ee3f3d9196"
+  },
+  {
+    "service": "gleamlang-ws-server",
+    "operationId": "gleamlang_ws_server_get_metrics_735676dc4ee4",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a7f7335bf3ae06bb757751aa7fd4cdb2512a0458105791867e4bf0cb3bff713f"
+  },
+  {
+    "service": "knowledge-graph-builder-rs",
+    "operationId": "knowledge_graph_builder_rs_get_4ca5ae0bb9c7",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e4de6a8fe14e0a73073d6ee1cd0e0fedda21926461e057c7ae10b0fd7f15682c"
+  },
+  {
+    "service": "knowledge-graph-builder-rs",
+    "operationId": "knowledge_graph_builder_rs_get_api_docs_aa6e5e242858",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3828695bbc892ad193bda1e84f590f2aa7f23ecc107974cb247161e241bdfcae"
+  },
+  {
+    "service": "knowledge-graph-builder-rs",
+    "operationId": "knowledge_graph_builder_rs_get_api_docs_json_9c7107f45e6f",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d35eba4772bceb77ea027694476342548abea151d77d481cf62e05943f8ad1d2"
+  },
+  {
+    "service": "knowledge-graph-builder-rs",
+    "operationId": "knowledge_graph_builder_rs_get_docs_api_6df62c184f64",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "edf9711be58525ff47f9ec05e90ad9196fb324213a469b2f962b31115f2b7f5c"
+  },
+  {
+    "service": "knowledge-graph-builder-rs",
+    "operationId": "knowledge_graph_builder_rs_get_healthz_bde837c941d6",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "89514fdb63c7aa9eeafe812c77ead738ea2805564fe4c294865cf050060f34c8"
+  },
+  {
+    "service": "knowledge-graph-builder-rs",
+    "operationId": "knowledge_graph_builder_rs_get_metrics_bcb16de29ad9",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9b8da4af550c5f871d72a51e2d074f0d7443f095fb100d957aaa93165b115abf"
+  },
+  {
+    "service": "knowledge-graph-builder-rs",
+    "operationId": "knowledge_graph_builder_rs_get_readyz_5c3113c1f27f",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "29d639707ea73cf2c06a17fef2efba3d47401622ca8b122ec91d9122d66a7979"
+  },
+  {
+    "service": "mdp-optimizer-rs",
+    "operationId": "mdp_optimizer_rs_get_0f1a51f2a96a",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "93de6c293423a36f2b811ed5a34efd0183576ecd51f722bb4ea0ee0f57e3b46d"
+  },
+  {
+    "service": "mdp-optimizer-rs",
+    "operationId": "mdp_optimizer_rs_get_api_docs_68f626b64f64",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a0d550fbefd6847006b6bab49790a7018f993e565524f80611722f2674e96193"
+  },
+  {
+    "service": "mdp-optimizer-rs",
+    "operationId": "mdp_optimizer_rs_get_api_docs_json_1b51166c0d8c",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f2cc28568b61937a58c40063aaeb1e80273a5fc9011b6440f4b12f34d3b483f0"
+  },
+  {
+    "service": "mdp-optimizer-rs",
+    "operationId": "mdp_optimizer_rs_get_docs_api_481dcbb25323",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f746e3c061be954ec0d4709f801b8f795abfbeb510641c6fcf27bac5d26845f7"
+  },
+  {
+    "service": "mdp-optimizer-rs",
+    "operationId": "mdp_optimizer_rs_get_healthz_f0995a0209d6",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "51fb95ad2f4387a5ec2104f4c0405c79799fecb31f44a556bf1fae733afb0cb2"
+  },
+  {
+    "service": "mdp-optimizer-rs",
+    "operationId": "mdp_optimizer_rs_get_metrics_fee7b7d588f7",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "cd53ad424164852c020974c11adfbd15cac6a0dd14f899a110c62c200e5c06c0"
+  },
+  {
+    "service": "patent-filing-rs",
+    "operationId": "patent_filing_rs_get_774877dee491",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "88c1c199842ab878f7cf711e25a019f8e0ef0dfa37e489a526143464a346fa86"
+  },
+  {
+    "service": "patent-filing-rs",
+    "operationId": "patent_filing_rs_get_api_docs_d9cb551d0b23",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b21819a1f91c593b81f399889d529f53909a3afa259812c90faa2c00272e37f7"
+  },
+  {
+    "service": "patent-filing-rs",
+    "operationId": "patent_filing_rs_get_api_docs_json_e41c09ccb895",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ee378ca24bcea8db6091274de3d4add00b11ed75fc375103c8ce67afc8389ae8"
+  },
+  {
+    "service": "patent-filing-rs",
+    "operationId": "patent_filing_rs_get_docs_api_fe43043266c7",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "48c0a98213c0a049ba6c6f3959a917e91cec9c70164015b43a7ab769dd3ccefa"
+  },
+  {
+    "service": "patent-filing-rs",
+    "operationId": "patent_filing_rs_get_healthz_f1731ec15b10",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "43475748fb3dd9e1cdf240448ada3df4b3dfd572aa8401bc859475798e86d1ba"
+  },
+  {
+    "service": "patent-filing-rs",
+    "operationId": "patent_filing_rs_get_metrics_beb20749297d",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2684d09a68f651b0c83fbf446d594bc438d4fe987bba4f1db3f06cb6069ba77f"
+  },
+  {
+    "service": "patent-filing-rs",
+    "operationId": "patent_filing_rs_get_readyz_15591ca5281e",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c014541ffc3a65368a80d46b4844b0791ae87a9884fae84fb7ddef3247c45051"
+  },
+  {
+    "service": "public-data-server-rs",
+    "operationId": "public_data_server_rs_get_3c755f6bd62d",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1f6aed3b0a04d9eb57681c910473a5f5c114edb3aa1ba42ff01afe1b2e0a61e9"
+  },
+  {
+    "service": "public-data-server-rs",
+    "operationId": "public_data_server_rs_get_api_docs_f4502d513880",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4e204e598a363cf40a1685a017568b62894a5f1d0838d408f39572616e7a2d83"
+  },
+  {
+    "service": "public-data-server-rs",
+    "operationId": "public_data_server_rs_get_api_docs_json_4df73fa27f3d",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "46c8cedbf6b05441c9aba1a21cd768be39b26fb853db2380543de76a7e373bdb"
+  },
+  {
+    "service": "public-data-server-rs",
+    "operationId": "public_data_server_rs_get_docs_api_172b3eecf96f",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "026c9165ab2a5a76c1c6c503c6fd558034c488f3b2acef966bb9c3b34b157520"
+  },
+  {
+    "service": "public-data-server-rs",
+    "operationId": "public_data_server_rs_get_healthz_3c6e7e8aa921",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "33117e3bf7c322fb735e7202338352f790759ece4d62f04deb331beb8a79287c"
+  },
+  {
+    "service": "public-data-server-rs",
+    "operationId": "public_data_server_rs_get_metrics_ffde0a175281",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "37ad8e076e77434527b5b2e5e36f42aa5d3d1b7e11ce6a17b42879636eb43f7e"
+  },
+  {
+    "service": "public-data-server-rs",
+    "operationId": "public_data_server_rs_get_readyz_53a3c34b8115",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "99de2870bd65e3e60eca8820f5260c85f12117d6b0f87ddafa72fd0d4e414a9d"
+  },
+  {
+    "service": "rest-api-rs",
+    "operationId": "rest_api_rs_get_api_docs_93531455e6bd",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9f6bc3a91c1c42737b5fc760dc1492aa791f445e6b94f0d025e786babbeac149"
+  },
+  {
+    "service": "rest-api-rs",
+    "operationId": "rest_api_rs_get_api_docs_json_707c91ad7fa1",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3ecdecaa7301ffb2470f457cf41a09d3c5fc3029039ba347b39644996231034b"
+  },
+  {
+    "service": "rest-api-rs",
+    "operationId": "rest_api_rs_get_docs_api_1e3b8ddd447f",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8d26922c3bd44203c04005998f7535f2100b8e8e8c1cc9add241f10f1ddbfca9"
+  },
+  {
+    "service": "rest-api-rs",
+    "operationId": "rest_api_rs_get_healthz_9b32acdda188",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0626e207eeefc44adc42cf387b854bf5173b560ed95190e3602b0196c9551ad6"
+  },
+  {
+    "service": "rest-api-rs",
+    "operationId": "rest_api_rs_get_metrics_5bb9cfacf82f",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "87bcdb092652b9a8397ee244a3753a4d00a894dc775c9d4f415978bbf83343ad"
+  },
+  {
+    "service": "rest-api-rs",
+    "operationId": "rest_api_rs_get_readyz_59b8713102fa",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "68cd192588cf0bc86ee42cc0c873d065935597c4af5daa1d1a2232240a3921e4"
+  },
+  {
+    "service": "runtime-config-rs",
+    "operationId": "runtime_config_rs_get_48f085690509",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3d9ab0c179116e295e31555d85cd5cf7ab1ee73d7468c8f8ad5474bc4b178c81"
+  },
+  {
+    "service": "runtime-config-rs",
+    "operationId": "runtime_config_rs_get_api_docs_7ca4bfac8fa9",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e004279dd11d0efffe799e3de41120a2ce3a43ac007535079cfb861ea1f0c810"
+  },
+  {
+    "service": "runtime-config-rs",
+    "operationId": "runtime_config_rs_get_api_docs_json_2e5baa5ee746",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3eada674e34b54c10a02ed0f88b7176de54ff80a341271271c5c19743260c4cd"
+  },
+  {
+    "service": "runtime-config-rs",
+    "operationId": "runtime_config_rs_get_docs_api_dd328a4dd317",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a3086717bf40d75b46d182da69c815b20c00dc27dbe72e01bf377f9fb4cfe508"
+  },
+  {
+    "service": "runtime-config-rs",
+    "operationId": "runtime_config_rs_get_healthz_7d2606a2e6cf",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "0e70036cd478476eea6621033432dc94c3e73d8a6fb3396cca39c376715c586b"
+  },
+  {
+    "service": "runtime-config-rs",
+    "operationId": "runtime_config_rs_get_metrics_cc282b50b608",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a74040d5dd044bb019aec066fd4a37922d2f1ca70e47128387be3132d6dc9f47"
+  },
+  {
+    "service": "runtime-config-rs",
+    "operationId": "runtime_config_rs_get_readyz_fb1000447132",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d0f2bc8ce745c47b89c2c05fc0ffbaf133448bcc1056818a79681e3255155b62"
+  },
+  {
+    "service": "rust-vapi-phone-rs",
+    "operationId": "rust_vapi_phone_rs_get_61c9192780b8",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7ba644b1933c12ad3b0cc1c5a365460cb3aed643d0bb813ec1e02604daa0c590"
+  },
+  {
+    "service": "rust-vapi-phone-rs",
+    "operationId": "rust_vapi_phone_rs_get_api_docs_214d9ee49d39",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "293322d6b788b3aeb202f4f2fa6fe37c8c6a2baef0efbea403bf2eda94ad8bb8"
+  },
+  {
+    "service": "rust-vapi-phone-rs",
+    "operationId": "rust_vapi_phone_rs_get_api_docs_json_ab30cf5fa282",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "db1708eabe910d5ac2a34550647404311ae08df839a67f343b3a777f212b5b11"
+  },
+  {
+    "service": "rust-vapi-phone-rs",
+    "operationId": "rust_vapi_phone_rs_get_docs_api_f4a0f2422469",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "df9b6f532d9a83bb32b7785967244aa7a162307040fc8b0ecb2e2b146f01fdf8"
+  },
+  {
+    "service": "rust-vapi-phone-rs",
+    "operationId": "rust_vapi_phone_rs_get_healthz_1d63932d618a",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "df5d27d1f1efd9c35592933a42474c65203ed42332c6d8c098372ec7f4ca062b"
+  },
+  {
+    "service": "rust-vapi-phone-rs",
+    "operationId": "rust_vapi_phone_rs_get_metrics_d1df251dda84",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "85478e7223eec59dc60abdf562d8d9bf6db1b310db43fff8dbe27a999b429eda"
+  },
+  {
+    "service": "spark-pipeline-server",
+    "operationId": "spark_pipeline_server_get_api_docs_d88b9df7a7c4",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "f40070cf48b4e00094f4bd80cf9ab9ed2df30ac66ef66ce70c74ec8e3469d468"
+  },
+  {
+    "service": "spark-pipeline-server",
+    "operationId": "spark_pipeline_server_get_api_docs_json_62f5c598dafd",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b9b5e35d08e16c1235668ca2e4ab5d07119855f80b783b368000fdc7bec0fec6"
+  },
+  {
+    "service": "spark-pipeline-server",
+    "operationId": "spark_pipeline_server_get_docs_api_57911097972a",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "64743f25ce92b192c13ec7738974a59e09c452bb013e5f815155954d3175e608"
+  },
+  {
+    "service": "spark-pipeline-server",
+    "operationId": "spark_pipeline_server_get_healthz_6e29a1c9544f",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "09572b731da10895ae64de62139c2216d0721ded3264d17cfd317bc1d34fcfb1"
+  },
+  {
+    "service": "spark-pipeline-server",
+    "operationId": "spark_pipeline_server_get_metrics_780377de5231",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "bcb94c9d54eaf2b2e6e712bdb420e04e90c5ef7174176825f20a7a2b023deca2"
+  },
+  {
+    "service": "spark-pipeline-server",
+    "operationId": "spark_pipeline_server_get_readyz_db6d393b893c",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "df298c58ab8f8a86f93f80f6fb8e710fcc3c95915de5e64db13bc0cf53ad496d"
+  },
+  {
+    "service": "trading-server-rs",
+    "operationId": "trading_server_rs_get_api_docs_a43399c90488",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ab8c5620e241d5f71ac47a5a95a572dba38f1dbafa698fd32cd182f0c949f1ff"
+  },
+  {
+    "service": "trading-server-rs",
+    "operationId": "trading_server_rs_get_api_docs_json_4fe043ad1f1f",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "05bcf79fd2e628a45b07d3134b275482b576f50adebb5462f24e783623aa2543"
+  },
+  {
+    "service": "trading-server-rs",
+    "operationId": "trading_server_rs_get_d7572ccbdfbe",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "287b8e5bee98a95ec7b691c53e3aa2613e43503e40bb77ee184aaf0819b73c4e"
+  },
+  {
+    "service": "trading-server-rs",
+    "operationId": "trading_server_rs_get_docs_api_8b7c8dbeea0a",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "5768db57814d459963f71afb69828138f5e6a5e447b68f21d347f9fb08da7556"
+  },
+  {
+    "service": "trading-server-rs",
+    "operationId": "trading_server_rs_get_healthz_281793b14bb1",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "bdd52ff70f7a03646a8c4364042361befa782e767a3505f4ca0c9b2131086ee4"
+  },
+  {
+    "service": "trading-server-rs",
+    "operationId": "trading_server_rs_get_metrics_5b22ba88a8ad",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "bc37e9c6ff30bc22b5f97bd1f97e801df9362d0459e71774b6b05ab752762f71"
+  },
+  {
+    "service": "trading-server-rs",
+    "operationId": "trading_server_rs_get_readyz_c0087f50560b",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "b8afd102832647031b29823d98539d4388a0e76cc5c015b685c2693d4971fa04"
+  },
+  {
+    "service": "wal-gateway-rs",
+    "operationId": "wal_gateway_rs_get_81138a5d044f",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ff85d37cb367a695d91a2858fa121ef9805e614bc0a807dad5153244d3349383"
+  },
+  {
+    "service": "wal-gateway-rs",
+    "operationId": "wal_gateway_rs_get_api_docs_04ae0a7546bc",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "346de33f671dc2bb4ed8a7a91bccb6bf8d6de6e355b42353fda8fb69669dbb70"
+  },
+  {
+    "service": "wal-gateway-rs",
+    "operationId": "wal_gateway_rs_get_api_docs_json_6c9a38cfa455",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "999dba7ee36cba85a1dc835276c4423b49d32c744eeec643841c944bacff647e"
+  },
+  {
+    "service": "wal-gateway-rs",
+    "operationId": "wal_gateway_rs_get_docs_api_430cec7c04e7",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "14c6902f6ac1ad64939b6325e93b5b08df70217e7493dcb322c0c69baba196d6"
+  },
+  {
+    "service": "wal-gateway-rs",
+    "operationId": "wal_gateway_rs_get_openapi_json_4460f2bd801d",
+    "method": "GET",
+    "path": "/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "692ec6195434d80dd896e39819684a3a9d265c0e625a2f60592273ea86349dda"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_10aaf71f37cb",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e924bb7c527202e7960d90e43e46cfa0c06ee1514bc7d1a95f010c033be40310"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_api_docs_7c596ded54a0",
+    "method": "GET",
+    "path": "/api-docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "23120dbd516edc9cf0730af0fe5a3d479160d238fac7b9176a6ca2ace458163e"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_api_docs_a46271ddff8a",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "94089bfacd26ef59602c109d6db9a75a69c5cb490014ca4a04f74575d6a6ca9a"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_api_docs_c808f0defb85",
+    "method": "GET",
+    "path": "/api-docs/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9ca1870da743c7d359b101b2694130bdc9c6edc5bc88fa6119541b1e2a5eddcf"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_api_docs_json_b4b76d89c490",
+    "method": "GET",
+    "path": "/api-docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "060cc43374308a1670f4c18e76d5b0d08042f94222fc7b69609dbb9eaa38e91b"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_api_docs_json_ee16e34b2f47",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e51178906fec774f7b71c20f6cf68d79383035f52eda990cb41af97c72d35f73"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_docs_api_0c91116f7e7d",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "aed2daa68fcf0f3986bb5766a84d77a5081294eab8c61898d7856707f0248dc2"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_healthz_b583c50c8cb2",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8eebe5651b22a84b17efc71d7ef4e3dec2740ec2279a168a5d55346420903206"
+  },
+  {
+    "service": "web-home-rs",
+    "operationId": "web_home_rs_get_metrics_2ec4daef831b",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2bcdd04f7e1aeda717d22d0576c6380e1948f3b2fdc996c47b517219dff85345"
+  },
+  {
+    "service": "web-scraper-service",
+    "operationId": "web_scraper_service_get_api_docs_3d27f67cf9c4",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6d5f05c29dddcb7322eaa474e111b4e64ea60f8e897436b51ce698230bdc89b6"
+  },
+  {
+    "service": "web-scraper-service",
+    "operationId": "web_scraper_service_get_api_docs_json_9a7f22089c74",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9598b71686a821553e690381a5e427669c94ad3addf3339be4c36439824b248a"
+  },
+  {
+    "service": "web-scraper-service",
+    "operationId": "web_scraper_service_get_docs_api_b306c86d9e90",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e187655fb04cec9c7395f868634c91f9f32579d81cde6b1144ac15fd5b340a38"
+  },
+  {
+    "service": "web-scraper-service",
+    "operationId": "web_scraper_service_get_e9c5d58c2cbb",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d6b39aee1cb18bd00ff1af1cdd28422a86a160d9d69494a2065fed22ee04da61"
+  },
+  {
+    "service": "web-scraper-service",
+    "operationId": "web_scraper_service_get_healthz_5ee24827c557",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9a1b6308d3169daf6738258c1bcf6011a0dbd80b5bcae2a1ef0a62545d4b19d6"
+  },
+  {
+    "service": "web-scraper-service",
+    "operationId": "web_scraper_service_get_metrics_68ade9a283db",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "30cfdea135e7ea28f780e4fbc302cf3cd2043836e89b16782276abb0d7a0b325"
+  },
+  {
+    "service": "webrtc-media-rs",
+    "operationId": "webrtc_media_rs_get_76570e4f84ea",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2609d5c9b7d1ea5da5ca85d4980a0c43c3b77edcfc41ac8c0fcff20c9528434d"
+  },
+  {
+    "service": "webrtc-media-rs",
+    "operationId": "webrtc_media_rs_get_api_docs_5fe65f81ac46",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2a57a6a2813b59fbfcbc5cd2d75a7834d68df85fbcae3015139455c369f5f4f0"
+  },
+  {
+    "service": "webrtc-media-rs",
+    "operationId": "webrtc_media_rs_get_api_docs_json_82c943e950c1",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ff220899d2900ae967350db0cccd4b5cd4f49de6c528bc220b4aca684aad5a30"
+  },
+  {
+    "service": "webrtc-media-rs",
+    "operationId": "webrtc_media_rs_get_docs_api_6535b96eb8d0",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "44c701f0fdbc0753aaa82f18e5df2946e855d6391724f15bbb01134f59cd8bee"
+  },
+  {
+    "service": "webrtc-media-rs",
+    "operationId": "webrtc_media_rs_get_healthz_24a68388c109",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2c84be9fa28fa50ab9ca4d339701de22aca5a4d52f6825b76c8ae488c0dc6c33"
+  },
+  {
+    "service": "webrtc-media-rs",
+    "operationId": "webrtc_media_rs_get_metrics_b29005323763",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "3857a251eaf2f6bd35a5b46b120b87f650406b1430e878e469faedd92c569b65"
+  },
+  {
+    "service": "webrtc-media-rs",
+    "operationId": "webrtc_media_rs_get_readyz_e8fbc89cb5f0",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "98de10b16a304079e618f385b63cfd2fd10f3ce1813e5300a1dd5a8124369f8d"
+  },
+  {
+    "service": "webrtc-signaling-rs",
+    "operationId": "webrtc_signaling_rs_get_606d8b6b58db",
+    "method": "GET",
+    "path": "/",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4752b547ffb5cec6d5b57ca2a81d6c07ca4cb31bfdcee02c285b1a1a6d9ca151"
+  },
+  {
+    "service": "webrtc-signaling-rs",
+    "operationId": "webrtc_signaling_rs_get_api_docs_95e8d12d874c",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1657875e2758b237042c7804df5d2a38594f669bf9e33ac88388559a5c70dc53"
+  },
+  {
+    "service": "webrtc-signaling-rs",
+    "operationId": "webrtc_signaling_rs_get_api_docs_json_4566fb3cde56",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e600ad423038c20c2f0a9491765d28784fb5cf0fc42758ccea344db4caad3f9e"
+  },
+  {
+    "service": "webrtc-signaling-rs",
+    "operationId": "webrtc_signaling_rs_get_docs_api_f1fc3dffb00d",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "38b751958dc9377507723ec7c7365e1c027c812f4aea1bc0adb829624a99dc5b"
+  },
+  {
+    "service": "webrtc-signaling-rs",
+    "operationId": "webrtc_signaling_rs_get_healthz_85e2438a828a",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "8cf658288cf265f352a1cc0a92eb4ffd494581af8f542857afe7be5289852d4b"
+  },
+  {
+    "service": "webrtc-signaling-rs",
+    "operationId": "webrtc_signaling_rs_get_metrics_7857f51f263a",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "53ddd4f71f3fcd949a4e0b62d4a0105db4b5e4c6a028c7c5429c15205e811673"
+  }
+]);
+
+const operationsById = new Map(OPERATIONS.map((operation) => [operation.operationId, operation]));
+
+export class ApiSdkError extends Error {
+  override readonly name = 'ApiSdkError';
+}
+
+export function operationById(operationId: string): ApiOperation {
+  const operation = operationsById.get(operationId);
+  if (!operation) {
+    throw new ApiSdkError(`Unknown operationId: ${operationId}`);
+  }
+  return operation;
+}
+
+function assertKnownParameters(
+  kind: 'path' | 'query',
+  values: Readonly<Record<string, unknown>>,
+  allowed: readonly string[],
+): void {
+  const allowedSet = new Set(allowed);
+  for (const name of Object.keys(values)) {
+    if (!allowedSet.has(name)) {
+      throw new ApiSdkError(`Unknown ${kind} parameter ${name}`);
+    }
+  }
+}
+
+function nativeBody(value: unknown): value is BodyInit {
+  return (
+    typeof value === 'string' ||
+    value instanceof ArrayBuffer ||
+    ArrayBuffer.isView(value) ||
+    (typeof Blob !== 'undefined' && value instanceof Blob) ||
+    (typeof FormData !== 'undefined' && value instanceof FormData) ||
+    (typeof URLSearchParams !== 'undefined' && value instanceof URLSearchParams) ||
+    (typeof ReadableStream !== 'undefined' && value instanceof ReadableStream)
+  );
+}
+
+export function buildRequest(options: BuildRequestOptions): Request {
+  const operation = operationById(options.operationId);
+  const pathParameters = options.pathParameters ?? {};
+  const queryParameters = options.queryParameters ?? {};
+  assertKnownParameters('path', pathParameters, operation.pathParameters);
+  assertKnownParameters(
+    'query',
+    queryParameters,
+    [...operation.requiredQueryParameters, ...operation.optionalQueryParameters],
+  );
+
+  let path = operation.path;
+  for (const name of operation.pathParameters) {
+    const value = pathParameters[name];
+    if (value === undefined) {
+      throw new ApiSdkError(`Missing path parameter ${name}`);
+    }
+    path = path.replaceAll(`{${name}}`, encodeURIComponent(String(value)));
+  }
+  for (const name of operation.requiredQueryParameters) {
+    if (queryParameters[name] === undefined || queryParameters[name] === null) {
+      throw new ApiSdkError(`Missing query parameter ${name}`);
+    }
+  }
+
+  const url = new URL(options.baseUrl.replace(/\/+$/, '') + path);
+  for (const [name, raw] of Object.entries(queryParameters)) {
+    if (raw === undefined || raw === null) continue;
+    const values = Array.isArray(raw) ? raw : [raw];
+    for (const value of values) {
+      url.searchParams.append(name, String(value));
+    }
+  }
+
+  if (operation.requestBodyRequired && (options.body === undefined || options.body === null)) {
+    throw new ApiSdkError(`Operation ${operation.operationId} requires a request body`);
+  }
+  if ((operation.method === 'GET' || operation.method === 'HEAD') && options.body != null) {
+    throw new ApiSdkError(`Operation ${operation.operationId} does not permit a request body`);
+  }
+
+  const headers = new Headers(options.headers);
+  let body: BodyInit | null | undefined;
+  if (options.body === undefined || options.body === null || nativeBody(options.body)) {
+    body = options.body;
+  } else {
+    body = JSON.stringify(options.body);
+    if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+  }
+  const init: RequestInit = { method: operation.method, headers };
+  if (body !== undefined && body !== null) init.body = body;
+  return new Request(url, init);
+}
+
+export class ApiClient {
+  readonly #baseUrls: Readonly<Record<string, string>>;
+  readonly #headers: Headers;
+  readonly #fetch: typeof fetch;
+
+  constructor(options: ApiClientOptions) {
+    this.#baseUrls = options.baseUrls;
+    this.#headers = new Headers(options.headers);
+    this.#fetch = options.fetch ?? globalThis.fetch;
+    if (typeof this.#fetch !== 'function') {
+      throw new ApiSdkError('No fetch implementation is available');
+    }
+  }
+
+  async call(operationId: string, options: CallOptions = {}): Promise<Response> {
+    const operation = operationById(operationId);
+    const baseUrl = this.#baseUrls[operation.service];
+    if (!baseUrl) {
+      throw new ApiSdkError(`Missing base URL for service ${operation.service}`);
+    }
+    const headers = new Headers(this.#headers);
+    new Headers(options.headers).forEach((value, name) => headers.set(name, value));
+    const request = buildRequest({ ...options, operationId, baseUrl, headers });
+    return this.#fetch(request);
+  }
+}

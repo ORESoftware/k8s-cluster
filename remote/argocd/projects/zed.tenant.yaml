@@ -1,0 +1,59 @@
+# Layer-1 tenancy for the zed-pkg org — namespace `zed`. Platform-owned. The app
+# repos (zed-api-server.rs, zed-web-server.rs) declare NO Namespace/quota/limit,
+# so the AppProject enforces clusterResourceWhitelist: [] strictly.
+#
+# Houses: dd-zed-api-server (8080, registry REST API + R2 artifacts),
+#         dd-zed-web-server (8081, read-only registry web UI).
+#
+#   kubectl apply -f remote/argocd/projects/zed.tenant.yaml
+#   kubectl apply -f remote/argocd/projects/zed.appproject.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zed
+  labels:
+    app.kubernetes.io/part-of: zed
+    # Enables the app NetworkPolicies' namespaceSelector matching.
+    kubernetes.io/metadata.name: zed
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: zed-quota
+  namespace: zed
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 1Gi
+    # Leaves room for max-surge rollouts while Postgres and both servers are
+    # present; a quota equal to steady state deadlocks recovery from a failed
+    # image because old replicas cannot be replaced.
+    limits.cpu: "6"
+    limits.memory: 4Gi
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: zed-limits
+  namespace: zed
+spec:
+  limits:
+    - type: Container
+      default: { cpu: 500m, memory: 512Mi }
+      defaultRequest: { cpu: 100m, memory: 128Mi }
+---
+# Default-deny ingress. Each app re-opens exactly what it needs via its own
+# NetworkPolicy in its app repo (k8s/networkpolicy.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zed-default-deny-ingress
+  namespace: zed
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]

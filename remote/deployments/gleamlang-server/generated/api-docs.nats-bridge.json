@@ -1,93 +1,104 @@
 {
-  "ok": true,
-  "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "gleamlang-server-nats-bridge",
-  "language": "node",
-  "routeCount": 5,
-  "routeTypeCounts": {
-    "service": 4,
-    "user-generated": 1
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "gleamlang-server-nats-bridge API (public)",
+    "version": "0.1.0",
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
-  "standardDocsRoutes": [
+  "tags": [
+    {
+      "name": "service"
+    }
+  ],
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "operationId": "gleamlang_server_nats_bridge_get_api_docs_18ac55f3e942",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "gleamlang_server_nats_bridge_get_api_docs_json_ee1f891057dd",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "gleamlang_server_nats_bridge_get_docs_api_1d46c32f2e70",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "gleamlang_server_nats_bridge_get_healthz_dae5ee4abbd5",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {},
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "node",
+  "x-dd-operation-count": 4,
+  "x-dd-route-count": 4,
+  "x-dd-service": "gleamlang-server-nats-bridge",
+  "x-dd-standard-docs-routes": [
     "/docs/api",
     "/api/docs",
     "/api/docs.json"
-  ],
-  "routes": [
-    {
-      "path": "/api/docs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-server/nats-bridge.mjs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs.json",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-server/nats-bridge.mjs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/docs/api",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-server/nats-bridge.mjs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-server/nats-bridge.mjs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/publish",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-server/nats-bridge.mjs"
-      ],
-      "notes": ""
-    }
   ]
 }

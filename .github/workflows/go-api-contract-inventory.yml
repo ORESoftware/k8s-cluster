@@ -1,0 +1,67 @@
+name: Go API contract inventory
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/go-api-contract-inventory.yml'
+      - 'docs/go-api-contract-inventory.md'
+      - 'remote/config/api-contracts.json'
+      - 'remote/config/go-api-contract-inventory.json'
+      - 'remote/deployments/**/*.go'
+      - 'remote/deployments/**/go.mod'
+      - 'remote/tests/general/go-api-contract-inventory.test.ts'
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - '.github/workflows/go-api-contract-inventory.yml'
+      - 'docs/go-api-contract-inventory.md'
+      - 'remote/config/api-contracts.json'
+      - 'remote/config/go-api-contract-inventory.json'
+      - 'remote/deployments/**/*.go'
+      - 'remote/deployments/**/go.mod'
+      - 'remote/tests/general/go-api-contract-inventory.test.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-api-contract-inventory-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  classify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Parse machine-readable inventories
+        run: |
+          node -e "JSON.parse(require('node:fs').readFileSync('remote/config/api-contracts.json', 'utf8'))"
+          node -e "JSON.parse(require('node:fs').readFileSync('remote/config/go-api-contract-inventory.json', 'utf8'))"
+
+      - name: Install test harness
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Verify Go module and protocol classification
+        run: pnpm exec tsx --test general/go-api-contract-inventory.test.ts
+        working-directory: remote/tests

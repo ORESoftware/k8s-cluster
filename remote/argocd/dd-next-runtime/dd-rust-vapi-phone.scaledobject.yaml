@@ -1,0 +1,37 @@
+# Scale the vapi phone workers off NATS work-queue lag, same pattern as
+# dd-remote-queue-consumer. The DD_VAPI_TASKS stream + durable consumer
+# dd-vapi-phone-worker are provisioned by rust-vapi-phone-rs itself at startup
+# when VAPI_NATS_URL is set (min 1 replica keeps the provisioner alive).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: dd-rust-vapi-phone-nats-jetstream
+  namespace: default
+  labels:
+    app: dd-rust-vapi-phone
+spec:
+  pollingInterval: 10
+  cooldownPeriod: 120
+  minReplicaCount: 1
+  maxReplicaCount: 6
+  scaleTargetRef:
+    name: dd-rust-vapi-phone
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 120
+          policies:
+            - type: Percent
+              value: 50
+              periodSeconds: 60
+  triggers:
+    - type: nats-jetstream
+      metadata:
+        natsServerMonitoringEndpoint: dd-nats.messaging.svc.cluster.local:8222
+        account: $G
+        stream: DD_VAPI_TASKS
+        consumer: dd-vapi-phone-worker
+        lagThreshold: '10'
+        activationLagThreshold: '2'
+        useHttps: 'false'

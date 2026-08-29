@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-des-web
+  namespace: default
+  labels:
+    app: dd-des-web
+    app.kubernetes.io/name: des-web
+    app.kubernetes.io/part-of: discrete-event-systems
+spec:
+  selector:
+    app: dd-des-web
+  ports:
+    - name: http
+      port: 8130
+      targetPort: http

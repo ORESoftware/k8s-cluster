@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 /// Action on a `pull_request` event. We treat anything outside of the
 /// "code changed" subset as a no-op.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PullRequestAction {
     Opened,
@@ -49,7 +49,7 @@ impl PullRequestAction {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct PullRequestEvent {
     pub action: PullRequestAction,
     pub number: u64,
@@ -57,7 +57,7 @@ pub struct PullRequestEvent {
     pub repository: Repository,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct PullRequest {
     pub id: u64,
     pub number: u64,
@@ -70,7 +70,7 @@ pub struct PullRequest {
     pub html_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct GitRef {
     /// Branch name.
     #[serde(rename = "ref")]
@@ -79,7 +79,7 @@ pub struct GitRef {
     pub repo: Option<Repository>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct Repository {
     pub id: u64,
     pub name: String,
@@ -93,7 +93,7 @@ pub struct Repository {
     pub owner: RepoOwner,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct RepoOwner {
     pub login: String,
 }

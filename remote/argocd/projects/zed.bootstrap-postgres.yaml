@@ -1,0 +1,115 @@
+# TEMPORARY bootstrap metadata store for the Zed registry.
+#
+# This exists only to make the no-auth, RAM-backed registry profile testable
+# without Supabase or AWS Secrets Manager. The database uses trust auth, has no
+# persistent volume, and is erased whenever its pod is replaced. NetworkPolicy
+# admits connections only from the two Zed server workloads.
+#
+# The Rust registry migration creates the `vector` extension, so even this
+# disposable profile must run a pgvector-capable Postgres image.
+# Remove this file and restore each app's ExternalSecret before production.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zed-postgres
+  namespace: zed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+  labels:
+    app: zed-postgres
+    app.kubernetes.io/name: zed-postgres
+    app.kubernetes.io/part-of: zed
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: zed-postgres
+  template:
+    metadata:
+      labels:
+        app: zed-postgres
+        app.kubernetes.io/name: zed-postgres
+        app.kubernetes.io/part-of: zed
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:0.8.2-pg17-bookworm
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          env:
+            - { name: POSTGRES_USER, value: zed }
+            - { name: POSTGRES_DB, value: zed }
+            - { name: POSTGRES_HOST_AUTH_METHOD, value: trust }
+            - { name: PGDATA, value: /var/lib/postgresql/data/pgdata }
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, zed, -d, zed]
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: [pg_isready, -U, zed, -d, zed]
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 1, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/postgresql/data }
+      volumes:
+        - name: data
+          emptyDir:
+            medium: Memory
+            sizeLimit: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zed-postgres
+  namespace: zed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+  labels:
+    app: zed-postgres
+    app.kubernetes.io/part-of: zed
+spec:
+  selector:
+    app: zed-postgres
+  ports:
+    - { name: postgres, port: 5432, targetPort: postgres }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: zed-postgres
+  namespace: zed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  podSelector:
+    matchLabels:
+      app: zed-postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [dd-zed-api-server, dd-zed-web-server]
+      ports:
+        - { protocol: TCP, port: 5432 }

@@ -1,0 +1,12 @@
+[package]
+name = "oresoftware-k8s-api-sdk-internal"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "internal fleet HTTP SDK generated from k8s-cluster OpenAPI contracts"
+license = "MIT"
+repository = "https://github.com/ORESoftware/k8s-cluster"
+publish = false
+
+[lib]
+path = "src/lib.rs"

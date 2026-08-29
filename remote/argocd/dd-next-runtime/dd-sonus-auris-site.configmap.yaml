@@ -20,6 +20,14 @@ data:
         return 200 "ok\n";
       }
 
+      # Only the exporter sidecar in this pod may read nginx connection state.
+      location = /stub_status {
+        access_log off;
+        allow 127.0.0.1;
+        deny all;
+        stub_status;
+      }
+
       location / {
         try_files $uri $uri/ /index.html;
       }

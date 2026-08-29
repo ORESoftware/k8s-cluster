@@ -1,0 +1,399 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "wal-gateway-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "runtime-config"
+    },
+    {
+      "name": "service"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_81138a5d044f",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getWalGatewayDescriptor"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_api_docs_04ae0a7546bc",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getWalGatewayPublicApiReference"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_api_docs_json_6c9a38cfa455",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getWalGatewayPublicOpenApiDocumentCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_docs_api_430cec7c04e7",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getWalGatewayPublicApiReferenceCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_healthz_13ad4ec5056b",
+        "summary": "Health check.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "getWalGatewayHealth"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_internal_runtime_config_ca78bae643ba",
+        "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "getRuntimeConfigSnapshot"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/runtime-config",
+        "x-dd-source-paths": [
+          "/internal/runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "operationId": "wal_gateway_rs_post_internal_runtime_config_reset_3e5d0dfb3573",
+        "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "resetRuntimeConfigSnapshot"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/runtime-config/reset",
+        "x-dd-source-paths": [
+          "/internal/runtime-config/reset"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/update-runtime-config": {
+      "post": {
+        "operationId": "wal_gateway_rs_post_internal_update_runtime_config_6a8eb6b7f41d",
+        "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "applyRuntimeConfigSnapshot"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/update-runtime-config",
+        "x-dd-source-paths": [
+          "/internal/update-runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_metrics_b8a63d88661c",
+        "summary": "Prometheus metrics.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "getWalGatewayPrometheusMetrics"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_openapi_json_4460f2bd801d",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getWalGatewayPublicOpenApiDocument"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/openapi.json",
+        "x-dd-source-paths": [
+          "/openapi.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_readyz_12a0d2292af6",
+        "summary": "Readiness check.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "getWalGatewayReadiness"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 11,
+  "x-dd-route-count": 11,
+  "x-dd-service": "wal-gateway-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

@@ -39,7 +39,9 @@ pub async fn connect(database_url: &str) -> Result<DatabaseConnection, sea_orm::
 }
 
 fn ms_to_datetime(ms: u128) -> DateTime<Utc> {
-    Utc.timestamp_millis_opt(ms as i64).single().unwrap_or_else(Utc::now)
+    Utc.timestamp_millis_opt(ms as i64)
+        .single()
+        .unwrap_or_else(Utc::now)
 }
 
 fn status_str(status: &BuildStatus) -> &'static str {

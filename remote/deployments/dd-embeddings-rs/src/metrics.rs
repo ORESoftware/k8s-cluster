@@ -50,17 +50,41 @@ impl Metrics {
         let mut out = String::with_capacity(1024);
 
         let counter = |out: &mut String, name: &str, help: &str, val: u64| {
-            out.push_str(&format!("# HELP {name} {help}\n# TYPE {name} counter\n{name} {val}\n"));
+            out.push_str(&format!(
+                "# HELP {name} {help}\n# TYPE {name} counter\n{name} {val}\n"
+            ));
         };
 
-        counter(&mut out, "embeddings_requests_total", "Total API requests handled.", self.requests_total.load(Ordering::Relaxed));
-        counter(&mut out, "embeddings_errors_total", "Total requests that returned an error.", self.errors_total.load(Ordering::Relaxed));
-        counter(&mut out, "embeddings_cache_hits_total", "Embedding cache hits.", self.cache_hits_total.load(Ordering::Relaxed));
-        counter(&mut out, "embeddings_cache_misses_total", "Embedding cache misses.", self.cache_misses_total.load(Ordering::Relaxed));
+        counter(
+            &mut out,
+            "embeddings_requests_total",
+            "Total API requests handled.",
+            self.requests_total.load(Ordering::Relaxed),
+        );
+        counter(
+            &mut out,
+            "embeddings_errors_total",
+            "Total requests that returned an error.",
+            self.errors_total.load(Ordering::Relaxed),
+        );
+        counter(
+            &mut out,
+            "embeddings_cache_hits_total",
+            "Embedding cache hits.",
+            self.cache_hits_total.load(Ordering::Relaxed),
+        );
+        counter(
+            &mut out,
+            "embeddings_cache_misses_total",
+            "Embedding cache misses.",
+            self.cache_misses_total.load(Ordering::Relaxed),
+        );
 
         out.push_str("# HELP embeddings_route_requests_total Requests by route.\n# TYPE embeddings_route_requests_total counter\n");
         for (route, n) in self.by_route.lock().unwrap().iter() {
-            out.push_str(&format!("embeddings_route_requests_total{{route=\"{route}\"}} {n}\n"));
+            out.push_str(&format!(
+                "embeddings_route_requests_total{{route=\"{route}\"}} {n}\n"
+            ));
         }
 
         out.push_str("# HELP embeddings_provider_requests_total Embedding requests by provider.\n# TYPE embeddings_provider_requests_total counter\n");
@@ -78,6 +102,12 @@ impl Metrics {
 /// Keep provider ids label-safe (they're already `[a-z0-9-]`, but be defensive).
 fn sanitize_label(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }

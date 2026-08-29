@@ -1,0 +1,223 @@
+{
+  "schemaVersion": 1,
+  "services": {
+    "browser-test-server": {
+      "contract": "remote/deployments/browser-test-server/generated/openapi.json",
+      "directory": "remote/deployments/browser-test-server",
+      "docsRoutes": [
+        "/openapi.json",
+        "/api/docs.json",
+        "/api/docs",
+        "/docs/api"
+      ],
+      "export": [
+        "pnpm",
+        "--dir",
+        "remote/deployments/browser-test-server",
+        "run",
+        "--silent",
+        "export:openapi"
+      ],
+      "implementation": "fastify-zod-executable-contract",
+      "language": "node",
+      "sdk": {
+        "dart": {
+          "generator": "dart",
+          "packageName": "dd_browser_test_client"
+        },
+        "rust": {
+          "generator": "rust",
+          "packageName": "dd_browser_test_client"
+        },
+        "sourceOfTruthRepository": "ORESoftware/k8s-libs-and-shared-defs",
+        "typescript": {
+          "generator": "typescript-fetch",
+          "packageName": "@oresoftware/dd-browser-test-client"
+        }
+      },
+      "visibility": "private",
+      "publicContract": "remote/deployments/browser-test-server/generated/api-docs.json",
+      "internalDocsRoutes": [
+        "/internal/openapi.json",
+        "/internal/docs/api"
+      ],
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes, liveness, and metrics serve only the fail-closed public surface. Scenario execution, aliases, status, tool inventory, and complete internal documentation require constant-time service-secret authentication."
+    },
+    "dd-embeddings-rs": {
+      "contract": "remote/deployments/dd-embeddings-rs/generated/openapi.json",
+      "directory": "remote/deployments/dd-embeddings-rs",
+      "docsRoutes": [
+        "/openapi.json",
+        "/api/docs.json",
+        "/api/docs",
+        "/docs/api"
+      ],
+      "export": [
+        "cargo",
+        "run",
+        "--locked",
+        "--quiet",
+        "--manifest-path",
+        "remote/deployments/dd-embeddings-rs/Cargo.toml",
+        "--",
+        "--export-openapi"
+      ],
+      "implementation": "utoipa-axum",
+      "language": "rust",
+      "sdk": {
+        "dart": {
+          "generator": "dart",
+          "packageName": "dd_embeddings_client"
+        },
+        "rust": {
+          "generator": "rust",
+          "packageName": "dd_embeddings_client"
+        },
+        "sourceOfTruthRepository": "ORESoftware/k8s-libs-and-shared-defs",
+        "typescript": {
+          "generator": "typescript-fetch",
+          "packageName": "@oresoftware/dd-embeddings-client"
+        }
+      },
+      "visibility": "private",
+      "publicContract": "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
+      "internalDocsRoutes": [
+        "/internal/openapi.json",
+        "/internal/docs/api"
+      ],
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes serve only the fail-closed public contract; the complete typed contract and Scalar reference require bearer authentication."
+    },
+    "formal-methods-service-rs": {
+      "contract": "remote/deployments/formal-methods-service-rs/generated/openapi.json",
+      "directory": "remote/deployments/formal-methods-service-rs",
+      "docsRoutes": [
+        "/openapi.json",
+        "/api/docs.json",
+        "/api/docs",
+        "/docs/api"
+      ],
+      "export": [
+        "cargo",
+        "run",
+        "--locked",
+        "--quiet",
+        "--manifest-path",
+        "remote/deployments/formal-methods-service-rs/Cargo.toml",
+        "--",
+        "--export-openapi"
+      ],
+      "implementation": "utoipa-axum",
+      "language": "rust",
+      "sdk": {
+        "dart": {
+          "generator": "dart",
+          "packageName": "dd_formal_methods_client"
+        },
+        "rust": {
+          "generator": "rust",
+          "packageName": "dd_formal_methods_client"
+        },
+        "sourceOfTruthRepository": "ORESoftware/k8s-libs-and-shared-defs",
+        "typescript": {
+          "generator": "typescript-fetch",
+          "packageName": "@oresoftware/dd-formal-methods-client"
+        }
+      },
+      "visibility": "private",
+      "publicContract": "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes serve only the fail-closed public contract. Health, readiness, Prometheus metrics, GitHub webhook details, analyzer state, and runtime configuration remain in the unserved private contract.",
+      "sharedContracts": [
+        {
+          "repository": "ORESoftware/k8s-libs-and-shared-defs",
+          "source": "runtime-config-client-rs/generated/openapi.json",
+          "commit": "06b3a4ff87bb6e579686e5ced72b6772c4f742ac",
+          "sha256": "5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46",
+          "vendored": "remote/api-contracts/fragments/runtime-config-client-rs.openapi.json"
+        }
+      ]
+    },
+    "wal-gateway-rs": {
+      "contract": "remote/deployments/wal-gateway-rs/generated/openapi.json",
+      "directory": "remote/deployments/wal-gateway-rs",
+      "docsRoutes": [
+        "/openapi.json",
+        "/api/docs.json",
+        "/api/docs",
+        "/docs/api"
+      ],
+      "export": [
+        "cargo",
+        "run",
+        "--locked",
+        "--quiet",
+        "--manifest-path",
+        "remote/deployments/wal-gateway-rs/Cargo.toml",
+        "--",
+        "--export-openapi"
+      ],
+      "implementation": "utoipa-axum",
+      "language": "rust",
+      "sdk": {
+        "dart": {
+          "generator": "dart",
+          "packageName": "dd_wal_gateway_client"
+        },
+        "rust": {
+          "generator": "rust",
+          "packageName": "dd_wal_gateway_client"
+        },
+        "sourceOfTruthRepository": "ORESoftware/k8s-libs-and-shared-defs",
+        "typescript": {
+          "generator": "typescript-fetch",
+          "packageName": "@oresoftware/dd-wal-gateway-client"
+        }
+      },
+      "visibility": "private",
+      "publicContract": "remote/deployments/wal-gateway-rs/generated/api-docs.json",
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes serve only the fail-closed public contract. Health, readiness, metrics, runtime configuration, and transport internals remain in the unserved private contract.",
+      "sharedContracts": [
+        {
+          "repository": "ORESoftware/k8s-libs-and-shared-defs",
+          "source": "runtime-config-client-rs/generated/openapi.json",
+          "commit": "06b3a4ff87bb6e579686e5ced72b6772c4f742ac",
+          "sha256": "5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46",
+          "vendored": "remote/api-contracts/fragments/runtime-config-client-rs.openapi.json"
+        }
+      ]
+    },
+    "gleamlang-presence-server": {
+      "contract": "remote/deployments/gleamlang-presence-server/generated/openapi.json",
+      "directory": "remote/deployments/gleamlang-presence-server",
+      "docsRoutes": [
+        "/openapi.json",
+        "/api/docs.json",
+        "/api/docs",
+        "/docs/api"
+      ],
+      "export": [
+        "bash",
+        "remote/deployments/gleamlang-presence-server/scripts/export-openapi.sh"
+      ],
+      "implementation": "gleam-typed-route-registry",
+      "language": "gleam",
+      "sdk": {
+        "dart": {
+          "generator": "dart",
+          "packageName": "dd_presence_client"
+        },
+        "rust": {
+          "generator": "rust",
+          "packageName": "dd_presence_client"
+        },
+        "sourceOfTruthRepository": "ORESoftware/k8s-libs-and-shared-defs",
+        "typescript": {
+          "generator": "typescript-fetch",
+          "packageName": "@oresoftware/dd-presence-client"
+        }
+      },
+      "visibility": "private",
+      "publicContract": "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes and the service help route serve only the fail-closed public contract. Health, topology, WebSocket, conversation, user, and runtime-configuration operations remain in the unserved internal contract."
+    }
+  }
+}

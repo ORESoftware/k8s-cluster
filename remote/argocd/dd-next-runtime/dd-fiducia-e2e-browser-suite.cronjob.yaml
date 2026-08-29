@@ -1,0 +1,157 @@
+# fiducia.cloud real-browser E2E lane (customer portal + MFA journeys).
+#
+# Runs the fiducia-e2e `npm run test:browser` suite inside the SAME Playwright
+# Noble runtime the cluster already standardizes on for browser work
+# (dd-browser-test-server.deployment.yaml): one bundled Chromium at
+# /ms-playwright backs BOTH Playwright and Puppeteer, so the suite's two drivers
+# share the image without a separate google-chrome-stable install.
+#
+# The suite boots the REAL fiducia-auth + fiducia-admin + fiducia-customer from
+# sibling checkouts against a stub Supabase and a scratch Postgres, then drives
+# the login / OTP / TOTP-step-up journeys through Chromium. It is therefore
+# HEAVY (three cold Rust builds) and OPT-IN:
+#
+#   suspend: true  ->  Argo applies the object but the scheduler never fires it.
+#   Kick a one-off run with:
+#     kubectl -n default create job fiducia-e2e-browser-suite-manual \
+#       --from=cronjob/dd-fiducia-e2e-browser-suite
+#   or flip `suspend: false` to enable the nightly cadence.
+#
+# Runtime prerequisites (self-documenting fail-open): the job installs the
+# repo-pinned Rust toolchain in-container via rustup (works as non-root). The
+# stub-Postgres harness additionally needs `initdb`/`pg_ctl`/`psql` on PATH; the
+# stock Playwright Noble image does NOT ship them, and this pod runs as non-root
+# so it cannot apt-install at runtime. When those binaries are absent the suite
+# SELF-SKIPS cleanly (its webAppsSkipReason gate) and the job still exits 0 — it
+# proves the wiring and image. To execute the browser journeys for real, run
+# this against a derived image that bakes in `postgresql`/`postgresql-client`
+# (set via the `image:` field below), or mount a Postgres client toolchain.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-fiducia-e2e-browser-suite
+  namespace: default
+  labels:
+    app: dd-fiducia-e2e-browser-suite
+    app.kubernetes.io/name: dd-fiducia-e2e-browser-suite
+    app.kubernetes.io/component: browser-e2e
+    app.kubernetes.io/part-of: dd-next-runtime
+  annotations:
+    dd.dev/note: Opt-in fiducia.cloud real-browser E2E (customer portal + MFA) on the Playwright Noble runtime; suspended by default, heavy (three Rust builds).
+spec:
+  # Nightly cadence when unsuspended; suspend keeps it dormant until an operator
+  # opts in (or runs a one-off Job from this template).
+  schedule: "40 5 * * *"
+  timeZone: America/Chicago
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    metadata:
+      labels:
+        app: dd-fiducia-e2e-browser-suite
+        app.kubernetes.io/name: dd-fiducia-e2e-browser-suite
+        app.kubernetes.io/component: browser-e2e
+        app.kubernetes.io/part-of: dd-next-runtime
+    spec:
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: dd-fiducia-e2e-browser-suite
+            app.kubernetes.io/name: dd-fiducia-e2e-browser-suite
+            app.kubernetes.io/component: browser-e2e
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: browser-e2e
+              # Same Playwright Noble image as dd-browser-test-server so the one
+              # bundled Chromium drives Playwright + Puppeteer. Swap for a derived
+              # image that also bakes postgresql to run the stack for real.
+              image: mcr.microsoft.com/playwright:v1.56.0-noble
+              imagePullPolicy: IfNotPresent
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                capabilities:
+                  drop:
+                    - ALL
+                seccompProfile:
+                  type: RuntimeDefault
+              command:
+                - /bin/bash
+                - -lc
+              args:
+                - |
+                  set -euo pipefail
+                  base="/tmp/fiducia-e2e"
+                  org="${FIDUCIA_GIT_ORG:-https://github.com/fiducia-cloud}"
+                  ref="${FIDUCIA_GIT_REF:-main}"
+                  mkdir -p "$base"
+                  cd "$base"
+
+                  # Sibling checkouts, exactly the layout src/webapps.mjs expects.
+                  for repo in fiducia-e2e fiducia-test-config fiducia-auth.rs \
+                              fiducia-admin.rs fiducia-customer.rs fiducia-interfaces; do
+                    if [ ! -d "$base/$repo/.git" ]; then
+                      git clone --depth 1 --branch "$ref" "$org/$repo.git" "$base/$repo"
+                    fi
+                  done
+
+                  # Repo-pinned Rust toolchain (rustup honors rust-toolchain.toml).
+                  export RUSTUP_HOME=/tmp/rustup CARGO_HOME=/tmp/cargo
+                  export PATH="$CARGO_HOME/bin:$PATH"
+                  if ! command -v cargo >/dev/null 2>&1; then
+                    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+                      | sh -s -- -y --default-toolchain none --profile minimal
+                  fi
+
+                  export FIDUCIA_REPOS_ROOT="$base"
+                  export PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+                  export npm_config_cache=/tmp/.npm
+
+                  cd "$base/fiducia-e2e"
+                  npm ci
+                  # Self-skips cleanly if Postgres client tools are unavailable.
+                  npm run test:browser
+              env:
+                - name: HOME
+                  value: /tmp
+                - name: NODE_ENV
+                  value: test
+                - name: PLAYWRIGHT_BROWSERS_PATH
+                  value: /ms-playwright
+                - name: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+                  value: "1"
+                - name: PUPPETEER_SKIP_DOWNLOAD
+                  value: "true"
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 2Gi
+                limits:
+                  cpu: "4"
+                  memory: 8Gi
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

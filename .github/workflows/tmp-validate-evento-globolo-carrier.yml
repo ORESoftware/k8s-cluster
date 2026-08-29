@@ -1,0 +1,63 @@
+name: Validate Evento Globolo publication carrier
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/tmp-publish-evento-globolo.yml
+      - .github/workflows/tmp-validate-evento-globolo-carrier.yml
+      - scripts/ops/publish_evento_globolo_repositories.sh
+      - scripts/ops/assets/evento-globolo-source-2026-08-04.tar.gz.b64.part-*
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-evento-globolo-carrier-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out reviewed pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Reconstruct and validate immutable source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          base='scripts/ops/assets/evento-globolo-source-2026-08-04.tar.gz.b64'
+          cat "${base}.part-"* > "$RUNNER_TEMP/evento-globolo-source.tar.gz.b64"
+          base64 --decode "$RUNNER_TEMP/evento-globolo-source.tar.gz.b64" \
+            > "$RUNNER_TEMP/evento-globolo-source.tar.gz"
+          printf '%s  %s\n' \
+            '79b1847feb60b4c804df3a0877f16c21bbef7b2d7fe30639e382cec18b14b352' \
+            "$RUNNER_TEMP/evento-globolo-source.tar.gz" \
+            | sha256sum -c -
+          tar -tzf "$RUNNER_TEMP/evento-globolo-source.tar.gz" >/dev/null
+
+      - name: Validate publisher contracts and source-tree digests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          publisher='scripts/ops/publish_evento_globolo_repositories.sh'
+          bash -n "$publisher"
+          SOURCE_BASE_URL="file://${GITHUB_WORKSPACE}/scripts/ops/assets/evento-globolo-source-2026-08-04.tar.gz.b64" \
+          SOURCE_SHA256='79b1847feb60b4c804df3a0877f16c21bbef7b2d7fe30639e382cec18b14b352' \
+          PUBLISH_DRY_RUN=1 \
+            bash "$publisher" \
+            | tee "$RUNNER_TEMP/evento-globolo-validation.json"
+          jq -e \
+            '.status == "validated" and .organization == "evento-globolo" and .repository_count == 8' \
+            "$RUNNER_TEMP/evento-globolo-validation.json" >/dev/null
+
+      - name: Parse workflow YAML
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path) }' \
+            .github/workflows/tmp-publish-evento-globolo.yml \
+            .github/workflows/tmp-validate-evento-globolo-carrier.yml

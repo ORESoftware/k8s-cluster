@@ -16,6 +16,8 @@ GitOps manifests for the baseline runtime that should always be visible in Argo:
 - `dd-browser-test-server` (Node.js/Fastify on-demand Playwright + Puppeteer + Selenium runner)
 - `dd-selenium-server` (Java/Vert.x + selenium-java API driving an in-pod Selenium Grid over RemoteWebDriver)
 - `dd-browser-job-runner` (Rust/axum orchestrator that runs one Playwright/Puppeteer job on a dd-container-pool warm worker, falling back to a direct nerdctl worker, and publishes results to NATS)
+- `dd-sound-recorder-rs` (Sonus Auris Rust backend for authenticated mobile APIs, uploads, health, metrics, and API docs)
+- `dd-sonus-auris-console` (Argo-pinned Flutter web console served by an unprivileged nginx runtime)
 - `dd-live-mutex` (single-broker Live-Mutex TCP service for cluster-local locking)
 - `dd-ai-ml-pipeline` (Python3 online telemetry feature pipeline in the `ai-ml` namespace)
 - `dd-des-simulator` (Rust asynchronous discrete event simulation service with `des.v1` model validation)
@@ -41,6 +43,16 @@ The ArgoCD application for this bundle is
 `remote/argocd/apps/dd-next-runtime.application.yaml`. Keep Kubernetes object changes in Git and
 let Argo sync them; the manual GitHub Actions workflow only refreshes the current node-local
 `dd-remote-web-home:dev` image while that image still lives in EC2 containerd instead of a registry.
+Argo repo-server intentionally has recursive Git submodules disabled, so every resource referenced
+by this kustomization must live in the Argo-owned tree. Source gitlinks may remain the code pin, but
+runtime manifests (including the standalone Athlet-O backend) are vendored here and validated by CI.
+
+The Sonus Auris console init container reads the exact console revision pinned by the node's
+read-only `sonus-auris-monorepo` checkout, verifies that revision before building, and never receives
+a GitHub personal token. The current single-node deployment mounts the host checkout for that
+intermediate build path. Moving the application resources themselves into the monorepo, and
+replacing the host checkout with an immutable published artifact, are tracked in
+[`docs/sonus-auris-deployment-todos.md`](../../../docs/sonus-auris-deployment-todos.md).
 
 ## Live-Mutex broker
 
@@ -74,6 +86,10 @@ Gateway path map:
 
 - `/`, `/home` -> `dd-remote-web-home:8080`
 - `/sonus-auris`, `/sonus-auris/` -> `dd-sonus-auris-site:8080`
+- `/sonus-console`, `/sonus-console/` -> Argo-managed Flutter web console at `dd-sonus-auris-console:8080`
+- `/sound-recorder/api/mobile/*` -> Sonus Auris backend at `dd-sound-recorder-rs:8126` (client JWT auth)
+- `/sound-recorder/healthz`, `/sound-recorder/readyz`, `/sound-recorder/metrics`,
+  `/sound-recorder/docs/api` -> Sonus Auris backend operational endpoints (gateway auth required)
 - `/auth` -> `dd-remote-auth:8083`
 - `/agents/tasks` -> `dd-remote-web-home:8080`
 - `/api/agents/*` -> `dd-remote-rest-api:8082` (gateway auth required)
@@ -375,7 +391,12 @@ one-pod-at-a-time after a five-minute stabilization window. The Kubernetes resou
 publishes HPA current/desired/min/max replica state and an at-max signal so Prometheus can alert
 when fabrication planning demand holds the autoscaler at its ceiling. The dedicated NetworkPolicy permits
 only gateway, runtime-config, and observability ingress plus DNS, NATS, runtime-config, in-cluster
-MDP optimizer HTTP, and public IPv4/IPv6 HTTP/S egress that excludes private and reserved ranges. The gateway keeps
+MDP optimizer HTTP, Fiducia KV through the `fiducia-load-balance` pod selector, and public IPv4/IPv6
+HTTP/S egress that excludes private and reserved ranges. The pod's optional `FIDUCIA_API_KEY` comes
+from `dd-fabrication-server-secrets`; provision that Secret through the cluster's external secret
+injector with a `kv:read`-only key. Daedalus reads only
+`secrets/daedalus/{NATS_URL,NATS_TOKEN,NATS_NKEY}`, direct environment values win, and a missing key
+leaves the existing environment configuration active. The gateway keeps
 `/fabrication/` uploads bounded at `512k` to match the Rust HTTP/NATS payload caps, disables
 request buffering so submitted instruction payloads stream to the Rust service, and uses explicit
 upload/connect plus 900-second upstream read/send timeouts for longer planning and analysis responses. It forwards the NGINX `X-Request-ID`, `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Port`, `X-Forwarded-Prefix: /fabrication`, `X-Forwarded-Proto`, `X-Original-URI`, and `X-Real-IP` values to the Rust service so edge failures and downstream job evidence can be correlated even before a payload-level `requestId` is parsed and after the public route prefix is stripped. It also disables upstream retries for `/fabrication/` so non-idempotent planning or instruction-submission requests are not replayed after an upstream failure. Public `/fabrication/internal` and `/fabrication/internal/*` paths return 404 at the gateway so service-local runtime-control routes stay off the Internet-facing surface. The canonical `/fabrication` redirect is read-only (`GET`/`HEAD`); the public `/fabrication/` gateway surface allows only `GET`, `HEAD`, and `POST`, returning 405 for other methods before they reach the Rust service. Fabrication `POST` traffic also has a gateway burst guard of `12r/m` per remote address with a burst of `6`, returning 429 before expensive planning, instruction analysis, NATS fan-out, or MDP publishing can pile up.
@@ -721,6 +742,31 @@ NetworkPolicies. It can still create Deployments, so treat repo deploy manifests
 untrusted repos need a separate empty namespace plus admission controls that block secret mounts,
 hostPath, privileged pods, and service-account token automounting.
 
+The server also exposes fixed `run-profile` pipelines for Android, Flutter web,
+Flutter Linux, Puppeteer, and Playwright, with authenticated artifact download.
+Apple/Xcode and Windows builds are delegated to native GitHub-hosted runners.
+For Sonus workloads the builder creates evidence only: backend and console
+promotion is performed by changing the exact pins/manifests in this Argo bundle,
+then letting Argo reconcile. Do not add a direct Sonus `kubectl apply` build step.
+
+## Sonus Auris backend and console
+
+The Rust backend is hosted here as `dd-sound-recorder-rs`; this cluster is its
+production deployment source of truth. The Flutter web console is
+`dd-sonus-auris-console`. The console Deployment clones an exact commit through
+the existing secret reference, builds it with the cluster-owned, revision-pinned
+Flutter 3.44.2 image in ECR, and copies
+only `build/web` into a two-replica, unprivileged nginx runtime. Supabase client
+configuration comes from `dd-agent-secrets`; the service-role key is never
+embedded in the frontend.
+
+Current public routing uses `/sound-recorder/` and `/sonus-console/`. Before
+store production, declare `api.sonusauris.app` and `console.sonusauris.app`
+through Cloudflare DNS plus the cluster's TLS/gateway manifests, then set the
+mobile production environment to the Sonus-owned API origin. Keep source pins,
+secret references, routing, and replicas in Git so Argo drift correction remains
+authoritative.
+
 ## Lambda function runner
 
 `/lambdas/functions` is served by the Rust web UI and uses the Rust REST API for CRUD against the
@@ -903,6 +949,41 @@ containers: the official `selenium/standalone-chromium` image (the actual Seleni
 `remote/deployments/selenium-server` with Maven and drives the Grid through `selenium-java`
 `RemoteWebDriver` at `localhost:4444`. The Grid port is never published on the Service, so the only
 reachable entrypoint is the authenticated API on `:8105`.
+
+### Where the API container's source comes from
+
+A `fetch-source` initContainer shallow-clones the public superproject into a per-pod `emptyDir` at
+`/opt/dd-next-1` (idempotent — it skips the clone if `.git` already exists, since the volume survives
+init restarts), then asserts `remote/deployments/selenium-server/pom.xml` landed before the build
+container runs. Only the public superproject is needed; the Maven build is self-contained and does
+not require the private `remote/libs` submodule.
+
+**This replaced a `hostPath` mount, and the reason is worth remembering.** The volume used to be
+`hostPath: /home/ec2-user/codes/dd/dd-next-1` with `type: Directory` — which only asserts that the
+*mounted* path itself exists. A node where the `remote/deployments/selenium-server` subtree had never
+been provisioned therefore mounted cleanly and *then* failed at start-up with a bare
+`cd: No such file or directory`. On Hetzner that ran for **23 days and 6,600+ restarts** without being
+noticed, because the Grid container stayed healthy the whole time: the pod sat at `1/2` and only the
+`/run` API and the `:8105` Service endpoints were down. The `emptyDir` + initContainer design removes
+the node dependency entirely, so the pod is now portable across nodes and clusters.
+
+Two consequences worth knowing when debugging:
+
+- `kubectl port-forward` to the **pod**'s `:4444` reaches the Grid directly, bypassing both the
+  Service and the pod's `Ready` gate — which is why external Selenium suites kept working throughout
+  the outage above, and why "my tests pass" is not evidence that the API is healthy. Check
+  `kubectl get endpoints dd-selenium-server` for that.
+- The clone tracks `--branch dev`, matching the `targetRevision: dev` that Argo syncs for
+  `dd-next-runtime`. Changing one without the other makes the running code and the manifest disagree.
+
+The API container carries a second line of defence: the initContainer preflight can only speak for
+the moment it ran, so the start-up command re-checks for `pom.xml` and exits `78` (`EX_CONFIG`) if
+the mount is present but unpopulated — a distinct, alertable state, rather than failing deep inside
+Maven where it reads as an application crash-loop.
+
+`remote/tests/general/selenium-server-config.test.ts` pins this: it asserts the initContainer, the
+preflight, the start-up `pom.xml` / exit-78 guard, and that the `repo` volume is an `emptyDir` with
+no `hostPath` anywhere in the manifest.
 
 The API exposes `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /status`, `GET /tools`, and
 `POST /run`; the gateway mirrors those under `/selenium/...`. `POST /run` accepts the same bounded

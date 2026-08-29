@@ -53,12 +53,60 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # NATS MQ (lifecycle events + optional JetStream request intake).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+          podSelector:
+            matchLabels:
+              app: dd-nats
+      ports:
+        - protocol: TCP
+          port: 4222
+    # fiducia.cloud load balancer (build locks + idempotency leases).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+          podSelector:
+            matchLabels:
+              app: fiducia-load-balance
+      ports:
+        - protocol: TCP
+          port: 8088
+    # gleam-lambda-runner build executor (opt-in per job).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-gleam-lambda-runner
+      ports:
+        - protocol: TCP
+          port: 8083
+    # Exact DES Playwright/Puppeteer profile delegation. The target service
+    # authenticates every request and independently revalidates repo + SHA.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-ci-profile-runner
+      ports:
+        - protocol: TCP
+          port: 8147
+    # Amazon RDS Postgres (own database dd_build_server) inside the VPC.
+    - to:
+        - ipBlock:
+            cidr: 172.31.0.0/16
+      ports:
+        - protocol: TCP
+          port: 5432
     - to:
         - ipBlock:
             cidr: 10.0.0.0/8
       ports:
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 5432
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - dd-browser-mcp-rs.externalsecret.yaml
+  - dd-browser-mcp-rs.deployment.yaml
+  - dd-browser-mcp-rs.networkpolicy.yaml
+  - dd-browser-mcp-rs.pdb.yaml
+  - dd-browser-mcp-rs.serviceaccount.yaml
+  - dd-browser-mcp-rs.service.yaml
+
+patches:
+  - path: dd-browser-mcp-rs.platform-jobs.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-browser-mcp-rs

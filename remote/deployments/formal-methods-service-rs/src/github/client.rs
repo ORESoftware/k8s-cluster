@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -91,15 +91,33 @@ impl GithubClient {
     ///
     /// IMPORTANT: the returned string contains the bearer token. Do not log
     /// it; use [`redact_url`] before any tracing call that might include it.
-    pub fn authenticated_clone_url(&self, public_url: &str) -> String {
-        let Some(tok) = &self.token else {
-            return public_url.to_string();
-        };
-        if let Some(rest) = public_url.strip_prefix("https://") {
-            format!("https://x-access-token:{tok}@{rest}")
-        } else {
-            public_url.to_string()
+    pub fn authenticated_clone_url(&self, public_url: &str, expected_repo: &str) -> Result<String> {
+        let mut parsed = Url::parse(public_url).context("clone URL is not a valid URL")?;
+        if parsed.scheme() != "https"
+            || parsed.host_str() != Some("github.com")
+            || parsed.port().is_some()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+        {
+            anyhow::bail!("clone URL must be an unauthenticated https://github.com URL");
         }
+        let path = parsed.path().trim_matches('/');
+        let actual_repo = path.strip_suffix(".git").unwrap_or(path);
+        if actual_repo.split('/').count() != 2 || !actual_repo.eq_ignore_ascii_case(expected_repo) {
+            anyhow::bail!("clone URL repository does not match webhook repository");
+        }
+
+        if let Some(tok) = &self.token {
+            parsed
+                .set_username("x-access-token")
+                .map_err(|_| anyhow::anyhow!("failed to add clone URL username"))?;
+            parsed
+                .set_password(Some(tok))
+                .map_err(|_| anyhow::anyhow!("failed to add clone URL credentials"))?;
+        }
+        Ok(parsed.to_string())
     }
 
     /// Lists the file paths changed in the given PR. Up to `max_pages` pages
@@ -326,7 +344,9 @@ mod tests {
     fn authenticated_url_embeds_token() {
         let client =
             GithubClient::new("https://api.github.com".into(), Some("ghp_abc".into())).unwrap();
-        let url = client.authenticated_clone_url("https://github.com/owner/repo.git");
+        let url = client
+            .authenticated_clone_url("https://github.com/owner/repo.git", "owner/repo")
+            .unwrap();
         assert_eq!(
             url,
             "https://x-access-token:ghp_abc@github.com/owner/repo.git"
@@ -336,8 +356,25 @@ mod tests {
     #[test]
     fn authenticated_url_passes_through_without_token() {
         let client = GithubClient::new("https://api.github.com".into(), None).unwrap();
-        let url = client.authenticated_clone_url("https://github.com/owner/repo.git");
+        let url = client
+            .authenticated_clone_url("https://github.com/owner/repo.git", "owner/repo")
+            .unwrap();
         assert_eq!(url, "https://github.com/owner/repo.git");
+    }
+
+    #[test]
+    fn authenticated_url_rejects_host_and_repository_mismatches() {
+        let client =
+            GithubClient::new("https://api.github.com".into(), Some("ghp_abc".into())).unwrap();
+        assert!(client
+            .authenticated_clone_url("https://github.example/owner/repo.git", "owner/repo")
+            .is_err());
+        assert!(client
+            .authenticated_clone_url("https://github.com/attacker/repo.git", "owner/repo")
+            .is_err());
+        assert!(client
+            .authenticated_clone_url("https://token@github.com/owner/repo.git", "owner/repo")
+            .is_err());
     }
 
     #[test]

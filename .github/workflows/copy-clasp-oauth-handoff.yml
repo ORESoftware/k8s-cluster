@@ -1,0 +1,31 @@
+name: Copy active clasp OAuth handoff
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/copy-clasp-oauth-handoff.yml
+      - .github/chat-oauth-copy-trigger/**
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  copy:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Copy exact public handoff to clean issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          body="$(gh api \
+            repos/${GITHUB_REPOSITORY}/issues/comments/5098189826 \
+            --jq .body)"
+          test -n "$body"
+          gh api --method POST \
+            repos/${GITHUB_REPOSITORY}/issues/99/comments \
+            -f body="$body" >/dev/null

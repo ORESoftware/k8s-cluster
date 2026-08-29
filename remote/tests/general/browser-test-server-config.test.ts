@@ -32,7 +32,11 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
     dependencies: Record<string, string>;
     devDependencies: Record<string, string>;
   };
-  const source = await readRepoFile('remote/deployments/browser-test-server/src/server.ts');
+  const serverSource = await readRepoFile('remote/deployments/browser-test-server/src/server.ts');
+  const schemaSource = await readRepoFile(
+    'remote/deployments/browser-test-server/src/api-schemas.ts',
+  );
+  const source = `${serverSource}\n${schemaSource}`;
   const readme = await readRepoFile('remote/deployments/browser-test-server/readme.md');
   const dockerfile = await readRepoFile('remote/deployments/browser-test-server/Dockerfile');
 
@@ -62,7 +66,11 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
   assert.match(source, /\/browser-test\/tools/);
 
   // The scenario DSL and its hard limits are part of the security model -
-  // arbitrary script execution must remain opt-in via env var.
+  // arbitrary script execution must remain opt-in via env var. The DSL itself
+  // lives in api-schemas.ts; server.ts imports that canonical source rather than
+  // duplicating the validation contract.
+  assert.match(serverSource, /from '\.\/api-schemas\.js'/);
+  assert.match(schemaSource, /export const StepSchema = z\.discriminatedUnion\('action'/);
   assert.match(source, /BROWSER_TEST_ALLOW_EVALUATE/);
   assert.match(source, /allowEvaluate: readBooleanEnv\('BROWSER_TEST_ALLOW_EVALUATE', false\)/);
   assert.match(source, /BROWSER_TEST_MAX_CONCURRENT/);
@@ -72,7 +80,8 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
   assert.match(source, /SERVER_AUTH_SECRET/);
   assert.match(source, /x-server-auth/);
 
-  // Scenario DSL — every action used in the readme must exist in the source.
+  // Scenario DSL — every action used in the readme must exist in the canonical
+  // schema module consumed by the server.
   for (const action of [
     'goto',
     'click',
@@ -87,7 +96,11 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
     'screenshot',
     'evaluate',
   ]) {
-    assert.match(source, new RegExp(`action: z\\.literal\\('${action}'\\)`), `missing step: ${action}`);
+    assert.match(
+      schemaSource,
+      new RegExp(`action: z\\.literal\\('${action}'\\)`),
+      `missing step: ${action}`,
+    );
   }
 
   assert.match(readme, /dd-browser-test-server/);
@@ -157,4 +170,38 @@ test('browser-test-server is deployed through Argo runtime manifests and the gat
     gateway,
     /location \/browser-test\/[\s\S]*X-Server-Auth "\$\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\}"[\s\S]*dd-browser-test-server\.default\.svc\.cluster\.local:8104/,
   );
+});
+
+test('Benefactor documentation uses the shared runtime without weakening collection or delivery boundaries', async () => {
+  const document = await readRepoFile('docs/benefactor-node-browser-automation.md');
+  const readme = await readRepoFile('remote/deployments/browser-test-server/readme.md');
+  const readmeUpper = await readRepoFile('remote/deployments/browser-test-server/README.md');
+
+  assert.match(document, /dd-browser-test-server\.default\.svc\.cluster\.local:8104\/run/);
+  assert.match(document, /dd-selenium-server\.default\.svc\.cluster\.local:8105\/run/);
+  assert.match(document, /Playwright — default/);
+  assert.match(document, /Puppeteer — Chromium\/CDP-specific/);
+  assert.match(document, /Selenium — compatibility and Grid lane/);
+  assert.match(document, /Do not execute every source through all three engines/);
+  assert.match(document, /Do not bypass CAPTCHAs/);
+  assert.match(document, /Browser output never goes directly to a sender/);
+  assert.match(document, /Browser jobs never call either provider/);
+  assert.match(document, /screenshots off by default/);
+  assert.match(document, /BROWSER_TEST_ALLOW_EVALUATE=false/);
+  assert.match(document, /SERVER_AUTH_SECRET/);
+  assert.match(document, /ChatGPT task is an orchestration signal/);
+  assert.match(document, /connected Benefactor control-plane or queue/);
+  assert.match(document, /source and exact source URL/);
+  assert.match(document, /engine and adapter version/);
+  assert.match(document, /Gmail and SendGrid consume the same deterministic/);
+  assert.match(document, /never receive database credentials/);
+
+  for (const contents of [readme, readmeUpper]) {
+    assert.match(contents, /benefactor-node-browser-automation\.md/);
+    assert.match(contents, /Playwright/);
+    assert.match(contents, /Puppeteer/);
+    assert.match(contents, /Selenium/);
+    assert.match(contents, /CAPTCHAs/);
+    assert.match(contents, /source-policy/);
+  }
 });

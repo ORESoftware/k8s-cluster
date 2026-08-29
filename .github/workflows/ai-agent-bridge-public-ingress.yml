@@ -1,0 +1,63 @@
+name: AI agent bridge public ingress contract
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ai-agent-bridge-public-ingress.yml'
+      - 'scripts/ci/test-ai-agent-bridge-public-ingress.sh'
+      - 'remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ai-agent-bridge-public-ingress.yml'
+      - 'scripts/ci/test-ai-agent-bridge-public-ingress.sh'
+      - 'remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml'
+  schedule:
+    - cron: '17 13 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-agent-bridge-public-ingress-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: DNS TLS and unsigned Slack route rejection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BRIDGE_SOURCE_REVISION: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
+    steps:
+      - name: Checkout the measured dev revision without credentials or private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || 'dev' }}
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify credential-free public probe contract
+        run: node --test remote/tests/general/ai-agent-bridge-public-ingress-contract.test.mjs
+
+      - name: Probe public DNS TLS and fail-closed Slack routes
+        env:
+          AI_BRIDGE_PUBLIC_EVIDENCE_PATH: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
+        run: bash scripts/ci/test-ai-agent-bridge-public-ingress.sh
+
+      - name: Upload metadata-only public ingress evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ai-agent-bridge-public-ingress-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai-agent-bridge-public-ingress.json
+          retention-days: 14
+          if-no-files-found: warn

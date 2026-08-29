@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-happy-wakey-gateway
+  namespace: default
+  labels:
+    app: dd-happy-wakey-gateway
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-happy-wakey-gateway
+  template:
+    metadata:
+      annotations:
+        dd.dev/source-revision: '2026-07-29-den-718-719'
+      labels:
+        app: dd-happy-wakey-gateway
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 40
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: happy-wakey-gateway
+          image: docker.io/library/rust:1.91.1-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              source_root="$(mktemp -d /tmp/dd-happy-wakey-gateway-source.XXXXXX)"
+              git clone --depth 1 --branch "${HAPPY_WAKEY_GATEWAY_GIT_REF}" \
+                "${HAPPY_WAKEY_GATEWAY_GIT_URL}" "${source_root}"
+              cd "${source_root}/remote/deployments/happy-wakey-gateway-rs"
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8128'
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /var/cache/dd-happy-wakey-gateway/cargo
+            - name: CARGO_TARGET_DIR
+              value: /var/cache/dd-happy-wakey-gateway/target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: HAPPY_WAKEY_GATEWAY_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: HAPPY_WAKEY_GATEWAY_GIT_REF
+              value: dev
+            - name: HAPPY_WAKEY_STATE_PATH
+              value: /var/lib/happy-wakey/reminders.json
+            - name: HAPPY_WAKEY_REMINDER_HORIZON_SECONDS
+              value: '1209600'
+            - name: HAPPY_WAKEY_SCHEDULER_INTERVAL_SECONDS
+              value: '15'
+            - name: SHARED_AUTH_BASE_URL
+              value: http://dd-shared-auth.shared-auth.svc.cluster.local:8120
+            - name: SHARED_AUTH_INTROSPECT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-happy-wakey-gateway-secrets
+                  key: SHARED_AUTH_INTROSPECT_SECRET
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            - name: NATS_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: NATS_SHARED_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8128
+          resources:
+            requests:
+              cpu: 25m
+              memory: 512Mi
+            limits:
+              cpu: '2'
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 600
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/happy-wakey
+            - name: build-cache
+              mountPath: /var/cache/dd-happy-wakey-gateway
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: dd-happy-wakey-gateway-state
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

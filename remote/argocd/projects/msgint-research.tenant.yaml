@@ -1,0 +1,88 @@
+# Platform-owned namespace and guardrails for consented Messaging Intel research.
+# Application repositories must not define or mutate these resources.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: msgint-research
+  labels:
+    app.kubernetes.io/part-of: messaging-intel
+    security.oresoftware.dev/data-classification: restricted-research
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: msgint-research-quota
+  namespace: msgint-research
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    requests.storage: 100Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    persistentvolumeclaims: "10"
+    pods: "30"
+    services: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: msgint-research-limits
+  namespace: msgint-research
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: 500m
+        memory: 512Mi
+      defaultRequest:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "4"
+        memory: 8Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: msgint-runtime
+  namespace: msgint-research
+automountServiceAccountToken: false
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: msgint-research
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-only
+  namespace: msgint-research
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

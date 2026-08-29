@@ -11,6 +11,7 @@ import { dirname, relative, resolve } from "node:path";
 
 import {
   CLUSTER_MCP_SERVER_NAME,
+  clusterMcpAuthHeadersFromEnv,
   clusterMcpConnectTimeoutMs,
   clusterMcpInstructions,
   clusterMcpUrlFromEnv,
@@ -237,10 +238,12 @@ export const openaiSdkRunner: AgentRunner = {
     const mcpUrl = clusterMcpUrlFromEnv(opts.env);
     if (mcpUrl) {
       const timeoutMs = clusterMcpConnectTimeoutMs(opts.env);
+      const authHeaders = clusterMcpAuthHeadersFromEnv(opts.env);
       try {
         const clusterMcp = new agents.MCPServerStreamableHttp({
           name: CLUSTER_MCP_SERVER_NAME,
           url: mcpUrl,
+          requestInit: authHeaders ? { headers: authHeaders } : undefined,
           cacheToolsList: false,
           clientSessionTimeoutSeconds: Math.ceil(timeoutMs / 1000),
           errorFunction: ({ error }: { error: unknown }) =>

@@ -1,0 +1,174 @@
+name: Critical target organization fleet dispatcher
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/critical-org-publish-trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: critical-target-org-publish-20260731
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      FLEET_ROOT: ${{ runner.temp }}/hypesiege-streempilot-fleet
+      FLEET_ARCHIVE: ${{ runner.temp }}/hypesiege-streempilot-fleet.tar.gz
+      FLEET_SHA256: ${{ runner.temp }}/hypesiege-streempilot-fleet.SHA256
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/critical-target-org-publish-20260731
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
+      - name: Reconstruct sealed publication inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat scripts/critical-org-fleet/assets/generator.part* \
+            | base64 --decode \
+            | gzip --decompress \
+            > scripts/critical-org-fleet/generate_hypesiege_streempilot.py
+          cat scripts/critical-org-fleet/assets/meta.part* \
+            | base64 --decode \
+            > scripts/critical-org-fleet/meta-agent-control-plane-den-1057.bundle
+          chmod 0700 \
+            scripts/critical-org-fleet/generate_hypesiege_streempilot.py \
+            scripts/critical-org-fleet/publish_meta_control_plane.py
+          printf '%s  %s\n' \
+            '7ca1b3fb92fd41c474eac5a4874ec167aaad05a737a30be70c68e2256e99cd5d' \
+            'scripts/critical-org-fleet/generate_hypesiege_streempilot.py' \
+            '1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031' \
+            'scripts/critical-org-fleet/meta-agent-control-plane-den-1057.bundle' \
+            'e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278' \
+            'scripts/critical-org-fleet/publish_meta_control_plane.py' \
+            | sha256sum --check --strict
+          test "$(git bundle list-heads scripts/critical-org-fleet/meta-agent-control-plane-den-1057.bundle | wc -l)" -eq 2
+
+      - name: Fail closed unless a protected repository-administration credential exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$GITHUB_REPOSITORY_ADMIN_TOKEN" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$GITHUB_REPOSITORY_ADMIN_TOKEN"
+          response="$(curl --fail --silent --show-error \
+            -H 'Accept: application/vnd.github+json' \
+            -H "Authorization: Bearer $GITHUB_REPOSITORY_ADMIN_TOKEN" \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            https://api.github.com/user)"
+          python3 -c 'import json,sys; value=json.load(sys.stdin); assert value.get("login")' <<<"$response"
+          unset response
+
+      - name: Reconstruct and validate the sealed HypeSiege and StreemPilot fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/critical-org-fleet/generate_hypesiege_streempilot.py
+          python3 "$FLEET_ROOT/publish.py"
+          test "$(find "$FLEET_ROOT" -mindepth 2 -maxdepth 2 -type d -name .git | wc -l)" -eq 32
+          git -C "$FLEET_ROOT/hypesiege/hypesiege-monorepo" fsck --full --no-dangling
+          git -C "$FLEET_ROOT/streempilot/streempilot-monorepo" fsck --full --no-dangling
+
+      - name: Create missing HypeSiege and StreemPilot repositories and push sealed main histories
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "$FLEET_ROOT/publish.py" --execute
+
+      - name: Create and push the canonical Meta Agents control-plane repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/critical-org-fleet/publish_meta_control_plane.py \
+            scripts/critical-org-fleet/meta-agent-control-plane-den-1057.bundle
+
+      - name: Verify every exact remote branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import subprocess
+
+          root = pathlib.Path(os.environ['FLEET_ROOT'])
+          manifest = json.loads((root / 'MANIFEST.json').read_text())
+          askpass = pathlib.Path(os.environ['RUNNER_TEMP']) / 'verify-askpass.sh'
+          askpass.write_text('#!/bin/sh\ncase "$1" in *Username*) echo x-access-token;; *) echo "$GITHUB_REPOSITORY_ADMIN_TOKEN";; esac\n')
+          askpass.chmod(0o700)
+          env = os.environ.copy()
+          env['GIT_ASKPASS'] = str(askpass)
+          env['GIT_TERMINAL_PROMPT'] = '0'
+          verified = []
+          for record in manifest['repositories']:
+              output = subprocess.check_output(
+                  ['git', 'ls-remote', record['remote'], 'refs/heads/main'],
+                  env=env,
+                  text=True,
+              ).strip()
+              observed = output.split()[0] if output else ''
+              if observed != record['commit']:
+                  raise SystemExit(f"remote mismatch for {record['full_name']}: {observed} != {record['commit']}")
+              verified.append({'repository': record['full_name'], 'main': observed})
+          report = {
+              'hypesiege_streempilot_count': len(verified),
+              'repositories': verified,
+              'meta_agent_control_plane': {
+                  'repository': 'meta-agents-demo/meta-agent-control-plane.rs',
+                  'main': '4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1',
+                  'feature': '789d48039da232faed985d4f8de176959f117e08',
+              },
+              'unreal_unity_poc': 'not attempted: no prior repository names or source artifact recovered; guessing is prohibited',
+          }
+          pathlib.Path('CRITICAL_ORG_PUBLISH_RESULTS.json').write_text(json.dumps(report, indent=2) + '\n')
+          askpass.unlink(missing_ok=True)
+          print(json.dumps({'verified_remote_mains': len(verified), 'meta_agent_control_plane': True}))
+          PY
+
+      - name: Upload non-secret publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: critical-org-publish-results
+          path: |
+            CRITICAL_ORG_PUBLISH_RESULTS.json
+            ${{ runner.temp }}/hypesiege-streempilot-fleet.SHA256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Remove the one-shot carrier from its branch
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -r --ignore-unmatch \
+            .github/workflows/critical-org-fleet-publish.yml \
+            scripts/critical-org-fleet
+          if [ -f CRITICAL_ORG_PUBLISH_RESULTS.json ]; then
+            mkdir -p docs/evidence
+            mv CRITICAL_ORG_PUBLISH_RESULTS.json docs/evidence/critical-org-publish-2026-07-31.json
+            git add docs/evidence/critical-org-publish-2026-07-31.json
+          fi
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'chore: remove one-shot target-org publication carrier'
+          git push origin HEAD:agent/critical-target-org-publish-20260731

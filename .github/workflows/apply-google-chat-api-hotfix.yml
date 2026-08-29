@@ -1,0 +1,69 @@
+name: Apply Google Chat API hotfix
+
+on:
+  pull_request:
+    paths:
+      - .github/chat-fix-trigger/**
+      - .github/workflows/apply-google-chat-api-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Apply or verify asserted source correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tools/google-chat-space-export/App.gs')
+          text = path.read_text()
+          old_version = text.count("version: '1.0.0'")
+          new_version = text.count("version: '1.0.1'")
+          old_ordering = text.count("    orderBy: 'ASC',\n")
+
+          if (old_version, new_version, old_ordering) == (1, 0, 2):
+              text = text.replace("version: '1.0.0'", "version: '1.0.1'", 1)
+              text = text.replace("    orderBy: 'ASC',\n", '')
+              path.write_text(text)
+              print('applied Google Chat API hotfix')
+          elif (old_version, new_version, old_ordering) == (0, 1, 0):
+              print('Google Chat API hotfix is already present')
+          else:
+              raise SystemExit(
+                  'unexpected bridge source state: '
+                  f'old_version={old_version}, new_version={new_version}, '
+                  f'orderBy={old_ordering}'
+              )
+          PY
+
+          grep -Fq "version: '1.0.1'" tools/google-chat-space-export/App.gs
+          ! grep -Fq "orderBy: 'ASC'" tools/google-chat-space-export/App.gs
+          cp tools/google-chat-space-export/App.gs "${RUNNER_TEMP}/App.js"
+          node --check "${RUNNER_TEMP}/App.js"
+
+      - name: Commit correction to PR branch when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add tools/google-chat-space-export/App.gs
+          if git diff --cached --quiet; then
+            echo 'Google Chat API hotfix is already committed'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Fix Apps Script Chat message ordering'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"

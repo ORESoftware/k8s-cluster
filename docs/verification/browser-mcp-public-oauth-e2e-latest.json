@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "status": "workflow_precondition_failed",
+  "aws_outcome": "failure",
+  "smoke_outcome": "skipped"
+}

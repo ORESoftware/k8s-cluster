@@ -138,6 +138,35 @@ test('selenium-server deploys as a Grid + Java API pod through Argo and the gate
   assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/selenium-server/);
   assert.match(deployment, /mvn -B -e -DskipTests package/);
 
+  // The API container's source arrives from a `fetch-source` initContainer that
+  // clones the superproject into a per-pod volume, and the preflight asserts the
+  // module actually landed before the build container starts.
+  assert.match(deployment, /initContainers:[\s\S]*name:\s*fetch-source/);
+  assert.match(deployment, /git clone --depth 1 --branch dev/);
+  assert.match(
+    deployment,
+    /test -e \/opt\/dd-next-1\/remote\/deployments\/selenium-server\/pom\.xml/,
+  );
+
+  // The `repo` volume must stay an emptyDir. It was previously a hostPath, which
+  // made the pod depend on source being provisioned on each node: `type: Directory`
+  // only asserts the *mounted* path exists, so a node missing the subtree mounted
+  // cleanly and then crash-looped on `cd: No such file or directory` — on Hetzner
+  // for 23 days and 6,600+ restarts, invisibly, because the Grid container stayed
+  // healthy (pod 1/2). Reverting to hostPath reintroduces that, so pin it here.
+  assert.match(deployment, /name:\s*repo\s*\n(?:\s*#[^\n]*\n)*\s*emptyDir:/);
+  // Line-anchored so it matches a real YAML key only — the manifest deliberately
+  // mentions the old `hostPath:` in comments explaining why it went away.
+  assert.doesNotMatch(deployment, /^\s*hostPath:/m);
+
+  // Second line of defence, inside the API container itself: the initContainer
+  // preflight above can only speak for the moment it ran, so the start-up command
+  // re-checks that the mount is actually populated and exits 78 (EX_CONFIG) — a
+  // distinct, alertable state — instead of failing deep inside Maven where it
+  // reads as an application crash-loop.
+  assert.match(deployment, /if \[ ! -f pom\.xml \]/);
+  assert.match(deployment, /exit 78/);
+
   // Grid is pod-internal; API is the public port.
   assert.match(deployment, /containerPort:\s*4444/);
   assert.match(deployment, /containerPort:\s*8105/);

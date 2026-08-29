@@ -36,20 +36,39 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/soccer-rs` | [akrion-sim/akrion-backend.rs](https://github.com/akrion-sim/akrion-backend.rs) | `main` | `~/codes/akrion-sim/akrion-backend.rs` |
 | `remote/deployments/akrion-web-server-rs` | [akrion-sim/akrion-web-server.rs](https://github.com/akrion-sim/akrion-web-server.rs) | `main` | `~/codes/akrion-sim/akrion-web-server.rs` |
 | `remote/deployments/athleto-app-rs` | [athlet-o/athleto-app-rs](https://github.com/athlet-o/athleto-app-rs) | `main` | `~/codes/athlet-o/athleto-app-rs` |
-| `remote/deployments/canonical-cloud` | [canonical-cloud/canonical.cloud](https://github.com/canonical-cloud/canonical.cloud) | `main` | `~/codes/canonical.cloud` |
+| `remote/deployments/canonical-cloud` | [canonical-cloud/canonical.cloud](https://github.com/canonical-cloud/canonical.cloud) | `main` | `~/codes/canonical-cloud/canonical.cloud` |
 | `remote/deployments/fiducia-customer.rs` | [fiducia-cloud/fiducia-customer.rs](https://github.com/fiducia-cloud/fiducia-customer.rs) | `main` | `~/codes/fiducia.cloud/fiducia-customer.rs` |
 | `remote/deployments/fiducia-marketing.web` | [fiducia-cloud/fiducia-marketing.web](https://github.com/fiducia-cloud/fiducia-marketing.web) | `main` | `~/codes/fiducia.cloud/fiducia-marketing.web` |
 | `remote/deployments/fiducia-monorepo` | [fiducia-cloud/fiducia-monorepo](https://github.com/fiducia-cloud/fiducia-monorepo) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/tor-server.rs` | [ORESoftware/tor-server.rs](https://github.com/ORESoftware/tor-server.rs) | `main` | `~/codes/ores/tor-server.rs` |
 | `remote/deployments/ai-agent-bridge` | [ORESoftware/ai-agent-bridge.rs](https://github.com/ORESoftware/ai-agent-bridge.rs) | `main` | `~/codes/ores/ai-agent-bridge` |
+| `remote/deployments/push-notification-server.rs` | [ORESoftware/push-notification-server.rs](https://github.com/ORESoftware/push-notification-server.rs) | `main` | `~/codes/ores/push-notification-server.rs` |
 | `remote/deployments/fabrication-server-rs` | [daedalus-fab/fabrication-server.rs](https://github.com/daedalus-fab/fabrication-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/gleam-lambda-runner` | [scintilla-run/gleam-lambda-runner](https://github.com/scintilla-run/gleam-lambda-runner) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/billing-server-rs` | [quaestor-ledger/billing-server.rs](https://github.com/quaestor-ledger/billing-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/dart-server` | [sagitta-stack/dart-server](https://github.com/sagitta-stack/dart-server) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/dd-data-viz-rs` | [claritas-viz/data-viz-server.rs](https://github.com/claritas-viz/data-viz-server.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | `~/codes/athlet-o/athleto-backend.rs` |
 | `remote/deployments/usacc-rest-api-backend-rs` | [usa-acc/rest-api-backend.rs](https://github.com/usa-acc/rest-api-backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/3fa-web-server-rs` | [3FA-app/3fa-web-server.rs](https://github.com/3FA-app/3fa-web-server.rs) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/sonus-auris-monorepo` | [sonus-auris/sonus-auris-monorepo](https://github.com/sonus-auris/sonus-auris-monorepo) | `main` | `~/codes/sonus-auris/sonus-auris-monorepo` |
+| `remote/deployments/shared-auth-monorepo` | [shared-auth/shared-auth-monorepo](https://github.com/shared-auth/shared-auth-monorepo) | `main` | `~/codes/shared-auth/shared-auth-monorepo` |
+| `remote/submodules/shared-auth-server.rs` | [shared-auth/shared-auth-server.rs](https://github.com/shared-auth/shared-auth-server.rs) | `main` | `~/codes/shared-auth/shared-auth-server.rs` |
+| `remote/submodules/shared-auth-nats-bridge.rs` | [shared-auth/shared-auth-nats-bridge.rs](https://github.com/shared-auth/shared-auth-nats-bridge.rs) | `main` | `~/codes/shared-auth/shared-auth-nats-bridge.rs` |
+| `remote/deployments/drone-mngr-monorepo` | [drone-mngr/drone-mngr-monorepo](https://github.com/drone-mngr/drone-mngr-monorepo) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/scintilla-run-monorepo` | [scintilla-run/scintilla-run-monorepo](https://github.com/scintilla-run/scintilla-run-monorepo) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/zed-monorepo` | [zed-pkg/zed-monorepo](https://github.com/zed-pkg/zed-monorepo) | `main` | `~/codes/zed-pkg/zed-monorepo` |
+| `remote/deployments/daedalus-monorepo` | [daedalus-fab/daedalus-monorepo](https://github.com/daedalus-fab/daedalus-monorepo) | `main` | — _(submodule checkout only)_ |
+
+Product monorepos (sonus-auris, daedalus) are nested-submodule aggregators: their
+`apps/*` entries pin the per-app repos. Per-app repos already covered by a
+monorepo are **not** pinned again at the top level (the old
+`remote/deployments/sonus-auris-interfaces`, `daedalus-api-server-rs`, and
+`daedalus-web-server-rs` submodules were removed in favor of the monorepo pins;
+`remote/deployments/sonus-auris-interfaces` is now a symlink into the
+sonus-auris-monorepo checkout so the backend's relative-path Cargo dependency
+still resolves). `*.infra` repos stay pinned separately under
+`remote/submodules/` so infra can advance independently of app pins.
 
 ---
 

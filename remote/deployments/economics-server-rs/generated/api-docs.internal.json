@@ -1,0 +1,1029 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "economics-server-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "runtime-config"
+    },
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "economics_server_rs_get_307d2b80d57e",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "root"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "economics_server_rs_get_api_docs_59ad629f0c88",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "economics_server_rs_get_api_docs_json_4914d875e7fb",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_json"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/audit/hardening": {
+      "get": {
+        "operationId": "economics_server_rs_get_audit_hardening_ee05311b9cd2",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "hardening_audit"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/audit/hardening",
+        "x-dd-source-paths": [
+          "/audit/hardening"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/dashboard.json": {
+      "get": {
+        "operationId": "economics_server_rs_get_dashboard_json_02e7208e5955",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dashboard_json"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/dashboard.json",
+        "x-dd-source-paths": [
+          "/dashboard.json"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/descriptor": {
+      "get": {
+        "operationId": "economics_server_rs_get_descriptor_eba9118b9d94",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "descriptor"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/descriptor",
+        "x-dd-source-paths": [
+          "/descriptor"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "economics_server_rs_get_docs_api_bf29027389fc",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs_html"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/engine/des": {
+      "get": {
+        "operationId": "economics_server_rs_get_engine_des_51932c99a05f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "des_engine_descriptor"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/engine/des",
+        "x-dd-source-paths": [
+          "/engine/des"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/example": {
+      "get": {
+        "operationId": "economics_server_rs_get_example_185dad393624",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "example"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/example",
+        "x-dd-source-paths": [
+          "/example"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/forecast": {
+      "post": {
+        "operationId": "economics_server_rs_post_forecast_078940337b4c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "forecast_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/forecast",
+        "x-dd-source-paths": [
+          "/forecast"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "economics_server_rs_get_healthz_9c174475ddbe",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/ingest": {
+      "post": {
+        "operationId": "economics_server_rs_post_ingest_79354b6abb1c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ingest_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/ingest",
+        "x-dd-source-paths": [
+          "/ingest"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/integrations/health": {
+      "get": {
+        "operationId": "economics_server_rs_get_integrations_health_a21366f6dd67",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "integrations_health"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/integrations/health",
+        "x-dd-source-paths": [
+          "/integrations/health"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config": {
+      "get": {
+        "operationId": "economics_server_rs_get_internal_runtime_config_3f995b9dfae7",
+        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_get"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config",
+        "x-dd-source-paths": [
+          "/internal/runtime-config"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "operationId": "economics_server_rs_post_internal_runtime_config_reset_1aaf10869fc6",
+        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_reset"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config/reset",
+        "x-dd-source-paths": [
+          "/internal/runtime-config/reset"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/update-runtime-config": {
+      "post": {
+        "operationId": "economics_server_rs_post_internal_update_runtime_config_e614382a51ca",
+        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_apply"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/update-runtime-config",
+        "x-dd-source-paths": [
+          "/internal/update-runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/macro/indicators": {
+      "get": {
+        "operationId": "economics_server_rs_get_macro_indicators_667c2353279a",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "macro_indicators"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/macro/indicators",
+        "x-dd-source-paths": [
+          "/macro/indicators"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "economics_server_rs_get_metrics_75ac7f5c66b7",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/model/equations": {
+      "get": {
+        "operationId": "economics_server_rs_get_model_equations_345766024df1",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "equations"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/model/equations",
+        "x-dd-source-paths": [
+          "/model/equations"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/observability": {
+      "get": {
+        "operationId": "economics_server_rs_get_observability_c8959bcb281c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "observability"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/observability",
+        "x-dd-source-paths": [
+          "/observability"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/pipelines/catalog": {
+      "get": {
+        "operationId": "economics_server_rs_get_pipelines_catalog_683c9d6b31c8",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "pipeline_catalog"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/pipelines/catalog",
+        "x-dd-source-paths": [
+          "/pipelines/catalog"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/pipelines/plan": {
+      "post": {
+        "operationId": "economics_server_rs_post_pipelines_plan_473785010f64",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "pipeline_plan_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/pipelines/plan",
+        "x-dd-source-paths": [
+          "/pipelines/plan"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/pipelines/submit": {
+      "post": {
+        "operationId": "economics_server_rs_post_pipelines_submit_567a213cf03d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "pipeline_submit_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/pipelines/submit",
+        "x-dd-source-paths": [
+          "/pipelines/submit"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "economics_server_rs_get_readyz_ce8853d39a51",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "readyz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/recommendations": {
+      "post": {
+        "operationId": "economics_server_rs_post_recommendations_c2fc2cd34999",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "recommendations_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/recommendations",
+        "x-dd-source-paths": [
+          "/recommendations"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/schema": {
+      "get": {
+        "operationId": "economics_server_rs_get_schema_5d7458e8a3da",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "schema"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/schema",
+        "x-dd-source-paths": [
+          "/schema"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/sentiment/analyze": {
+      "post": {
+        "operationId": "economics_server_rs_post_sentiment_analyze_1fcbb1ec34ac",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "sentiment_analyze_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/sentiment/analyze",
+        "x-dd-source-paths": [
+          "/sentiment/analyze"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/sentiment/sources": {
+      "get": {
+        "operationId": "economics_server_rs_get_sentiment_sources_fdf617345c9f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "sentiment_sources"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/sentiment/sources",
+        "x-dd-source-paths": [
+          "/sentiment/sources"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/sources": {
+      "get": {
+        "operationId": "economics_server_rs_get_sources_08594dbb0a10",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "sources"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/sources",
+        "x-dd-source-paths": [
+          "/sources"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/sources/public": {
+      "get": {
+        "operationId": "economics_server_rs_get_sources_public_d17708ae6fa9",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "public_sources"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/sources/public",
+        "x-dd-source-paths": [
+          "/sources/public"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/sources/pull": {
+      "post": {
+        "operationId": "economics_server_rs_post_sources_pull_e23a81e0b38d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "pull_source_http"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/sources/pull",
+        "x-dd-source-paths": [
+          "/sources/pull"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/vc/investment": {
+      "get": {
+        "operationId": "economics_server_rs_get_vc_investment_fc4b36a2b17b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "vc_investment"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/economics-server-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/vc/investment",
+        "x-dd-source-paths": [
+          "/vc/investment"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 32,
+  "x-dd-route-count": 32,
+  "x-dd-service": "economics-server-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}
