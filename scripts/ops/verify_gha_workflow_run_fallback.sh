@@ -3,8 +3,8 @@ set -euo pipefail
 
 namespace="${NAMESPACE:-default}"
 external_url="${EXTERNAL_WEBHOOK_URL:-}"
-clone_image='ghcr.io/oresoftware/gha-clone-server@sha256:44684171d909f96fe216d529bfc14f6f32a11e87c0f339d1877ac20606223c97'
-router_image='ghcr.io/oresoftware/gha-executor-router@sha256:59a31a496e5c528f89acb7643b8ced1ea14bc6c15b1d83b22a37f4ba529708e6'
+clone_image='ghcr.io/oresoftware/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8'
+router_image='ghcr.io/oresoftware/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f'
 
 for command in kubectl jq curl; do
   command -v "$command" >/dev/null 2>&1 || {
@@ -67,14 +67,13 @@ cleanup() {
       wait "$pid" 2>/dev/null || true
     fi
   done
-  rm -f "${clone_log:-}" "${router_log:-}" "${external_body:-}"
 }
 trap cleanup EXIT
 
 check_external_secret dd-gha-clone-server-secrets
 check_external_secret dd-gha-executor-router-secrets
 check_secret_keys dd-gha-clone-server-secrets \
-  auth_secret github_webhook_secret github_app_installation_token
+  auth_secret github_webhook_secret github_token
 check_secret_keys dd-gha-executor-router-secrets inbound_auth
 check_secret_keys dd-agent-secrets SERVER_AUTH_SECRET
 
@@ -85,13 +84,11 @@ check_deployment dd-gha-executor-router gha-executor-router "$router_image"
 [[ "$(env_value dd-gha-clone-server gha-clone-server GHA_CLONE_WEBHOOK_EXECUTION_ENABLED)" == true ]]
 [[ "$(env_value dd-gha-executor-router gha-executor-router GHA_EXECUTOR_ROUTER_EXECUTION_ENABLED)" == true ]]
 
-clone_log="$(mktemp)"
-router_log="$(mktemp)"
 kubectl -n "$namespace" port-forward service/dd-gha-clone-server 18125:8125 \
-  >"$clone_log" 2>&1 &
+  >/dev/null 2>&1 &
 clone_pf_pid=$!
 kubectl -n "$namespace" port-forward service/dd-gha-executor-router 18126:8126 \
-  >"$router_log" 2>&1 &
+  >/dev/null 2>&1 &
 router_pf_pid=$!
 
 for _ in $(seq 1 30); do
@@ -115,11 +112,10 @@ if [[ -n "$external_url" ]]; then
       exit 2
       ;;
   esac
-  external_body="$(mktemp)"
   delivery='00000000-0000-4000-8000-000000000001'
   status="$(
     curl --silent --show-error \
-      --output "$external_body" \
+      --output /dev/null \
       --write-out '%{http_code}' \
       --request POST \
       --header 'Content-Type: application/json' \

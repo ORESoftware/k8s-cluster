@@ -4,7 +4,7 @@ umask 077
 
 readonly script_name="${0##*/}"
 repository=''
-webhook_url='https://98.90.186.114/gha-webhooks/github'
+webhook_url=''
 secret_file=''
 temp_dir=''
 
@@ -21,7 +21,7 @@ Usage:
   register_gha_clone_budget_webhook.sh \
     --repository OWNER/REPO \
     --secret-file PATH \
-    [--url HTTPS_URL]
+    --url HTTPS_URL
 
 Creates or updates exactly one repository webhook for workflow_run events.
 The webhook secret is read from an owner-only regular file and is never accepted
@@ -72,6 +72,10 @@ github_api() {
 
 [[ "$repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
   echo "$script_name: --repository must be exact OWNER/REPO" >&2
+  exit 64
+}
+[[ -n "$webhook_url" ]] || {
+  echo "$script_name: --url is required; resolve the current public node edge first" >&2
   exit 64
 }
 [[ -n "$secret_file" && -f "$secret_file" && -r "$secret_file" && ! -L "$secret_file" ]] || {

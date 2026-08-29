@@ -1,0 +1,125 @@
+name: Activate GHA test-org fallback
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ops-activate-gha-test-fallback.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gha-test-org-fallback-activation
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name == 'workflow_dispatch' ||
+       contains(github.event.head_commit.message, '[activate-gha-test-fallback]'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate exact activation programs
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/bootstrap_gha_test_org_fallback.py \
+            scripts/ops/activate_gha_test_org_fallback.py
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Resolve the current protected node edge
+        id: edge
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "$INSTANCE_ID"
+          public_ip="$(
+            aws ec2 describe-instances \
+              --instance-ids "$INSTANCE_ID" \
+              --query 'Reservations[0].Instances[0].PublicIpAddress' \
+              --output text
+          )"
+          python3 - "$public_ip" <<'PY'
+          import ipaddress
+          import sys
+
+          address = ipaddress.ip_address(sys.argv[1])
+          if address.version != 4 or not address.is_global:
+              raise SystemExit("resolved node address is not global public IPv4")
+          PY
+          printf 'callback_url=https://%s/gha-webhooks/github\n' "$public_ip" >>"$GITHUB_OUTPUT"
+
+      - name: Verify, register, ping, and run exact-head canaries through SSM
+        env:
+          AWS_REGION_VALUE: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          CALLBACK_URL: ${{ steps.edge.outputs.callback_url }}
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          TRUSTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_REGION_VALUE"
+          test -n "$CALLBACK_URL"
+          test -n "$INSTANCE_ID"
+          test -n "$TRUSTED_SHA"
+
+          script_digest="$(sha256sum scripts/ops/activate_gha_test_org_fallback.py | awk '{print $1}')"
+          bootstrap="$(base64 <scripts/ops/bootstrap_gha_test_org_fallback.py | tr -d '\n')"
+          remote_command="printf '%s' '$bootstrap' | base64 --decode | KUBECONFIG=/etc/kubernetes/admin.conf python3 - '$TRUSTED_SHA' '$script_digest' '$CALLBACK_URL'"
+          parameters="$RUNNER_TEMP/gha-test-fallback-ssm.json"
+          jq -cn --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --region "$AWS_REGION_VALUE" \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --timeout-seconds 5700 \
+              --comment "Activate exact GHA test fallback from ${TRUSTED_SHA}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          test -n "$command_id"
+
+          deadline=$(( $(date +%s) + 5700 ))
+          status='Pending'
+          while test "$(date +%s)" -lt "$deadline"; do
+            status="$(
+              aws ssm get-command-invocation \
+                --region "$AWS_REGION_VALUE" \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || printf Pending
+            )"
+            case "$status" in
+              Success|Cancelled|Cancelling|Failed|TimedOut) break ;;
+            esac
+            sleep 5
+          done
+
+          invocation="$RUNNER_TEMP/gha-test-fallback-invocation.json"
+          aws ssm get-command-invocation \
+            --region "$AWS_REGION_VALUE" \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --output json >"$invocation"
+          jq -r '.StandardOutputContent // empty' "$invocation"
+          jq -r '.StandardErrorContent // empty' "$invocation" >&2
+          test "$status" = Success

@@ -125,10 +125,15 @@ test('live verifier is read-only and never decodes secret values', () => {
     '/healthz',
     '/readyz',
     'external route expected application HMAC rejection 401',
+    'github_token',
+    'ghcr.io/oresoftware/gha-clone-server@sha256:719a50b3d8cf105cd8c78bb66ce9d10dca072e4de28f6f7ba4fa79db446a2be8',
+    'ghcr.io/oresoftware/gha-executor-router@sha256:e87bee0e28911fbdc096d2fec0c1a65811b7d2173594d81c377dc437ac658e8f',
   ]) {
     assert.ok(script.includes(value), `verifier missing ${value}`);
   }
   assert.doesNotMatch(script, /base64\s+(?:--decode|-d)/);
   assert.doesNotMatch(script, /kubectl\s+(?:apply|create|delete|patch|replace|scale|set)/);
+  assert.doesNotMatch(script, /\brm\b/);
+  assert.doesNotMatch(script, /github_app_installation_token/);
   assert.doesNotMatch(script, /set -x/);
 });

@@ -164,7 +164,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workflow-name", default="CI", help="workflow display name")
     parser.add_argument(
         "--webhook-url",
-        default="https://98.90.186.114/gha-webhooks/github",
+        required=True,
         help="public or port-forwarded webhook URL",
     )
     parser.add_argument(

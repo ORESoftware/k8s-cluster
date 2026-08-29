@@ -47,7 +47,7 @@ spec:
                   key: SERVER_AUTH_SECRET
             - name: CI_PROFILE_RUNNER_RULES_JSON
               value: >-
-                {"ORESoftware/k8s-cluster":"rust-verify","discrete-event-systems-test/des-web-playwright-e2e":"playwright","discrete-event-systems-test/des-web-puppeteer-e2e":"puppeteer"}
+                {"ORESoftware/k8s-cluster":"rust-verify","gha-indie-worker-test/gha-clone-server.rs":"rust-verify","gha-indie-worker-test/gha-indie-worker.rs":"rust-verify","discrete-event-systems-test/des-web-playwright-e2e":"playwright","discrete-event-systems-test/des-web-puppeteer-e2e":"puppeteer"}
             - name: CI_PROFILE_RUNNER_WORK_ROOT
               value: /var/lib/dd-ci-profile-runner/jobs
             - name: CI_PROFILE_RUNNER_NERDCTL_BIN

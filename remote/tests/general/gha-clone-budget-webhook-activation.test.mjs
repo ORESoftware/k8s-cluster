@@ -144,7 +144,8 @@ test('hook registration is unambiguous, workflow_run-only, and keeps the secret 
   assert.match(registerScript, /--method POST/);
   assert.match(registerScript, /insecure_ssl: "0"/);
   assert.doesNotMatch(registerScript, /GITHUB_WEBHOOK_SECRET|--arg secret|echo .*\$webhook_secret|printf .*\$webhook_secret/);
-  assert.match(registerScript, /https:\/\/98\.90\.186\.114\/gha-webhooks\/github/);
+  assert.match(registerScript, /--url is required; resolve the current public node edge first/);
+  assert.doesNotMatch(registerScript, /https:\/\/98\.90\.186\.114/);
 });
 
 test('canary rejects bad HMAC, securely reads secrets, and proves one replay creates no new run', () => {
@@ -167,7 +168,8 @@ test('canary rejects bad HMAC, securely reads secrets, and proves one replay cre
   assert.match(canary, /run\.get\("workflowPath"\) != args\.workflow_path/);
   assert.match(canary, /state in \{"succeeded", "failed"\}/);
   assert.doesNotMatch(canary, /print\([^\n]*(webhook_secret|clone_auth)/);
-  assert.match(canary, /https:\/\/98\.90\.186\.114\/gha-webhooks\/github/);
+  assert.match(canary, /"--webhook-url",\n\s+required=True/);
+  assert.doesNotMatch(canary, /https:\/\/98\.90\.186\.114/);
 });
 
 test('runbook states the compatibility limitation and one-change rollback', () => {

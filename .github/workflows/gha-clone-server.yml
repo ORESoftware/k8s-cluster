@@ -9,6 +9,7 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ci-profile-runner.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
       - 'remote/ec2/renew-letsencrypt-gateway-cert.sh'
@@ -19,9 +20,13 @@ on:
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
       - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
       - 'remote/tests/general/gha-clone-webhook-preflight.test.mjs'
+      - 'remote/tests/general/gha-test-org-fallback-activation.test.mjs'
       - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'scripts/ops/register_gha_clone_budget_webhook.sh'
       - 'scripts/ops/canary_gha_clone_budget_webhook.py'
+      - 'scripts/ops/bootstrap_gha_test_org_fallback.py'
+      - 'scripts/ops/activate_gha_test_org_fallback.py'
+      - 'scripts/ops/verify_gha_workflow_run_fallback.sh'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
@@ -33,6 +38,7 @@ on:
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
       - '.github/workflows/gha-clone-server-meta.yml'
+      - '.github/workflows/ops-activate-gha-test-fallback.yml'
   push:
     branches: [main, dev]
     paths:
@@ -42,6 +48,7 @@ on:
       - 'remote/argocd/dd-next-runtime/dd-gha-executor-router*'
       - 'remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ci-profile-runner.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml'
       - 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
       - 'remote/ec2/renew-letsencrypt-gateway-cert.sh'
@@ -52,9 +59,13 @@ on:
       - 'remote/tests/general/gha-executor-router-activation.test.mjs'
       - 'remote/tests/general/gha-clone-budget-webhook-activation.test.mjs'
       - 'remote/tests/general/gha-clone-webhook-preflight.test.mjs'
+      - 'remote/tests/general/gha-test-org-fallback-activation.test.mjs'
       - 'remote/tests/general/build-server-profile-repository-policy.test.mjs'
       - 'scripts/ops/register_gha_clone_budget_webhook.sh'
       - 'scripts/ops/canary_gha_clone_budget_webhook.py'
+      - 'scripts/ops/bootstrap_gha_test_org_fallback.py'
+      - 'scripts/ops/activate_gha_test_org_fallback.py'
+      - 'scripts/ops/verify_gha_workflow_run_fallback.sh'
       - 'docs/gha-continuity-architecture.md'
       - 'docs/gha-independent-executor-routing.md'
       - 'docs/gha-executor-router-gitops.md'
@@ -66,6 +77,7 @@ on:
       - '.github/actions/checkout-remote-libs/action.yml'
       - '.github/workflows/gha-clone-server.yml'
       - '.github/workflows/gha-clone-server-meta.yml'
+      - '.github/workflows/ops-activate-gha-test-fallback.yml'
   workflow_dispatch:
     inputs:
       run_arc_smoke:
@@ -161,6 +173,10 @@ jobs:
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/gha-clone-server-meta.yml
+      - name: Validate protected test-org activation workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-activate-gha-test-fallback.yml
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
@@ -182,6 +198,7 @@ jobs:
             general/gha-executor-router-activation.test.mjs \
             general/gha-clone-budget-webhook-activation.test.mjs \
             general/gha-clone-webhook-preflight.test.mjs \
+            general/gha-test-org-fallback-activation.test.mjs \
             general/build-server-profile-repository-policy.test.mjs
       - name: Install pinned kubectl renderer
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
@@ -217,7 +234,11 @@ jobs:
           bash -n remote/ec2/renew-letsencrypt-gateway-cert.sh
           bash -n scripts/ops/preflight_gha_clone_webhook.sh
           bash -n scripts/ops/register_gha_clone_budget_webhook.sh
+          bash -n scripts/ops/verify_gha_workflow_run_fallback.sh
           python3 -m py_compile scripts/ops/canary_gha_clone_budget_webhook.py
+          python3 -m py_compile \
+            scripts/ops/bootstrap_gha_test_org_fallback.py \
+            scripts/ops/activate_gha_test_org_fallback.py
       - name: Reject committed credentials
         run: |
           if grep -RIE \

@@ -53,10 +53,11 @@ The operator token or GitHub App used for this one-time control-plane action nee
 umask 077
 scripts/ops/register_gha_clone_budget_webhook.sh \
   --repository ORESoftware/k8s-cluster \
-  --secret-file /secure/path/github_webhook_secret
+  --secret-file /secure/path/github_webhook_secret \
+  --url "https://${CURRENT_PUBLIC_NODE_IP}/gha-webhooks/github"
 ```
 
-The command is idempotent only when zero or one hook uses the exact callback URL. Multiple matching hooks are an ambiguous replay risk and fail closed for operator repair. The helper normalizes one optional terminal line ending, validates the actual 32–4096 byte visible-ASCII HMAC value, reads it through private files rather than an environment variable or process argument, configures only `workflow_run`, and verifies JSON payloads, TLS verification, active state, and the returned hook identity. Repeat it only for repositories already present in `dd-gha-clone-server.configmap.yaml` with exact workflow-path rules.
+Resolve `CURRENT_PUBLIC_NODE_IP` from current AWS state; the helper deliberately has no hard-coded callback default because an EC2 public address can rotate. The command is idempotent only when zero or one hook uses the exact callback URL. Multiple matching hooks are an ambiguous replay risk and fail closed for operator repair. The helper normalizes one optional terminal line ending, validates the actual 32–4096 byte visible-ASCII HMAC value, reads it through private files rather than an environment variable or process argument, configures only `workflow_run`, and verifies JSON payloads, TLS verification, active state, and the returned hook identity. Repeat it only for repositories already present in `dd-gha-clone-server.configmap.yaml` with exact workflow-path rules.
 
 ## Live proof and exact-SHA execution canary
 
@@ -70,37 +71,15 @@ kubectl -n default get externalsecret \
   dd-gha-clone-server-secrets dd-gha-executor-router-secrets
 ```
 
-Keep private status APIs on a local port-forward. Copy secret bytes into a mode-`0600` temporary directory without echoing them:
+For the two isolated `gha-indie-worker-test` repositories, use the protected activation workflow instead of copying credentials to the operator laptop. The one-shot workflow resolves the current EC2 public IP through short-lived GitHub OIDC credentials, invokes the node through SSM, fetches the activator at the exact workflow SHA and verifies its SHA-256 digest, then keeps the runtime HMAC, clone API authority, and protected hook-administration token only in process memory. The initial `dev` activation commit must include the explicit `[activate-gha-test-fallback]` marker; later unmarked pushes do not repeat activation. Once the workflow is present on the default branch it is also manually dispatchable.
 
-```bash
-set -euo pipefail
-umask 077
-tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"; kill "${pf_pid:-}" 2>/dev/null || true' EXIT
-
-kubectl -n default get secret dd-gha-clone-server-secrets \
-  -o jsonpath='{.data.github_webhook_secret}' | base64 -d >"$tmp/webhook"
-kubectl -n default get secret dd-gha-clone-server-secrets \
-  -o jsonpath='{.data.auth_secret}' | base64 -d >"$tmp/clone-auth"
-
-kubectl -n default port-forward service/dd-gha-clone-server 18125:8125 \
-  >"$tmp/port-forward.log" 2>&1 &
-pf_pid=$!
-
-python3 scripts/ops/canary_gha_clone_budget_webhook.py \
-  --repository ORESoftware/k8s-cluster \
-  --sha "$(git rev-parse HEAD)" \
-  --workflow-path .github/workflows/gha-clone-server-meta.yml \
-  --workflow-name 'GHA continuity server meta' \
-  --webhook-secret-file "$tmp/webhook" \
-  --clone-auth-secret-file "$tmp/clone-auth"
-```
+The activator refuses to enable hooks unless the live ExternalSecrets, exact image digests, execution flags, repository/workflow rules, build-server bindings, final privileged profile-runner bindings, gateway no-retry revision, Services, and health endpoints all match the reviewed contract. It permits no Kubernetes mutation. It then creates or reconciles exactly one active `workflow_run` hook per test repository, asks GitHub to emit a fresh signed `ping`, requires the recorded delivery to return HTTP `202`, and runs both exact-head synthetic terminal canaries. If hook or canary proof fails, it deactivates any test hooks it touched so the lane fails closed.
 
 The canary first sends an invalid HMAC and requires HTTP `401`. It then sends one signed exact-SHA `action_required` fixture, requires exactly one returned run ID, immediately replays the same body and delivery UUID, and requires a no-op response with no `runIds`. Finally it polls that exact run to a terminal state and re-verifies repository, SHA, and workflow path. Redirects, non-object JSON, oversized responses, mutable or uppercase revisions, public plain-HTTP status origins, and secret files outside the bounded one-line contract fail closed.
 
-A passing canary proves public TLS ingress, HMAC verification, repository extraction, exact commit extraction, exact-SHA workflow fetch, workflow-path allowlisting, YAML planning, router authentication/readiness, build-server profile acceptance, duplicate-delivery suppression, terminal execution, and run-state polling. Its output is redacted JSON containing only delivery ID, repository, immutable SHA, workflow path, run IDs, and terminal states.
+A passing synthetic canary proves public TLS ingress, HMAC verification, repository extraction, exact commit extraction, exact-SHA workflow fetch, workflow-path allowlisting, YAML planning, router authentication/readiness, build-server profile acceptance, final profile-runner admission, duplicate-delivery suppression, terminal execution, and run-state polling. Its output is redacted JSON containing only delivery ID, repository, immutable SHA, workflow path, run IDs, and terminal states. The separate hook-ping receipt proves that GitHub itself reached the registered endpoint with the configured secret.
 
-This is a synthetic application canary. It does **not** prove GitHub emitted that delivery, that the repository hook is currently active, or that an organization budget is exhausted. Retain an actual GitHub delivery receipt and authoritative capacity-broker evidence separately when those claims are required.
+The synthetic `workflow_run` application canary does **not** prove GitHub emitted that execution delivery or that an organization budget is exhausted. The activation workflow separately retains an exact active-hook inventory and a fresh GitHub-originated `ping` receipt; those prove hook installation and GitHub-to-cluster reachability at activation time, but they are not billing evidence. Retain an actual GitHub `workflow_run` delivery receipt and authoritative capacity-broker evidence separately when those claims are required.
 
 ## Rollback
 
