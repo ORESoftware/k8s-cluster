@@ -1,5 +1,9 @@
 name: Activate GHA test-org fallback
 
+# This narrow hosted entrypoint is intentionally retained for recovery windows:
+# it bootstraps the independent worker through OIDC + SSM without copying cloud
+# or GitHub administration credentials onto an operator laptop.
+
 on:
   push:
     branches: [dev]
