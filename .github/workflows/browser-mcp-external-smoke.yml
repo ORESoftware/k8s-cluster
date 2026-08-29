@@ -7,6 +7,10 @@ on:
       - '.github/workflows/browser-mcp-public-e2e.yml'
       - '.github/workflows/athleto-ui-tests.yml'
       - 'scripts/verify-browser-mcp.sh'
+      - 'remote/deployments/browser-mcp-rs/**'
+      - 'remote/deployments/web-scraper-service/**'
+      - 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml'
+      - 'remote/tests/general/browser-mcp-public-e2e.test.ts'
       - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
   push:
     branches: [main]
@@ -14,6 +18,10 @@ on:
       - '.github/workflows/browser-mcp-external-smoke.yml'
       - '.github/workflows/browser-mcp-public-e2e.yml'
       - 'scripts/verify-browser-mcp.sh'
+      - 'remote/deployments/browser-mcp-rs/**'
+      - 'remote/deployments/web-scraper-service/**'
+      - 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml'
+      - 'remote/tests/general/browser-mcp-public-e2e.test.ts'
       - 'remote/tests/general/scheduled-live-smoke-contract.test.mjs'
   workflow_dispatch:
   schedule:
