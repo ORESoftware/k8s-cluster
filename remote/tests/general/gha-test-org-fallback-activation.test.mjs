@@ -56,6 +56,11 @@ test('activator pins exact reviewed heads and validates every live enforcement l
   assert.match(activator, /invalid HMAC/);
   assert.match(activator, /delivery replay was not suppressed/);
   assert.match(activator, /deactivate_hooks/);
+  assert.match(activator, /publish_activation_evidence/);
+  assert.match(activator, /gha-test-fallback-activation:\{source_revision\}/);
+  assert.match(activator, /EVIDENCE_REPOSITORY = "ORESoftware\/k8s-cluster"/);
+  assert.match(activator, /EVIDENCE_ISSUE = 1093/);
+  assert.match(activator, /"sourceRevision": args\.source_revision/);
   assert.match(activator, /"githubWorkflowRunDeliveryProven": False/);
   assert.match(activator, /"githubPingDeliveryProven": True/);
   assert.match(activator, /"billingExhaustionProven": False/);
@@ -111,7 +116,13 @@ test('activation programs reject malformed entrypoint arguments before protected
 
   const activatorResult = spawnSync(
     'python3',
-    [activatorPath, '--callback-url', 'http://127.0.0.1/gha-webhooks/github'],
+    [
+      activatorPath,
+      '--callback-url',
+      'http://127.0.0.1/gha-webhooks/github',
+      '--source-revision',
+      '0123456789abcdef0123456789abcdef01234567',
+    ],
     { cwd: root, encoding: 'utf8' },
   );
   assert.notEqual(activatorResult.status, 0);

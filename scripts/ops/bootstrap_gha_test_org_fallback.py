@@ -116,6 +116,8 @@ def main() -> int:
         SCRIPT_PATH,
         "--callback-url",
         callback_url,
+        "--source-revision",
+        trusted_sha,
         "--namespace",
         "default",
         "--poll-seconds",

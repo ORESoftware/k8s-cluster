@@ -47,6 +47,9 @@ EXPECTED_ROUTER_IMAGE = (
 )
 EXPECTED_GATEWAY_REVISION = "2026-08-19-gha-webhook-no-retry"
 NAMESPACE_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$")
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+EVIDENCE_REPOSITORY = "ORESoftware/k8s-cluster"
+EVIDENCE_ISSUE = 1093
 
 
 @dataclass(frozen=True)
@@ -93,6 +96,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--callback-url", required=True)
+    parser.add_argument("--source-revision", required=True)
     parser.add_argument("--namespace", default="default")
     parser.add_argument("--poll-seconds", type=float, default=3.0)
     parser.add_argument("--timeout-seconds", type=float, default=1800.0)
@@ -106,6 +110,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--timeout-seconds must be between 300 and 7200")
     if not 0 <= args.reconcile_timeout_seconds <= 1800:
         parser.error("--reconcile-timeout-seconds must be between 0 and 1800")
+    if not SHA_RE.fullmatch(args.source_revision):
+        parser.error("--source-revision must be immutable lowercase 40-hex")
     validate_callback_url(args.callback_url)
     return args
 
@@ -780,6 +786,59 @@ def deactivate_hooks(admin_token: str, hooks: list[dict[str, Any]]) -> None:
         print(f"activation rollback deactivated {len(hooks)} test hooks", file=sys.stderr)
 
 
+def publish_activation_evidence(
+    admin_token: str,
+    source_revision: str,
+    evidence: dict[str, Any],
+) -> dict[str, Any]:
+    marker = f"<!-- gha-test-fallback-activation:{source_revision} -->"
+    issue_path = f"/repos/{EVIDENCE_REPOSITORY}/issues/{EVIDENCE_ISSUE}"
+    issue = github_request(admin_token, "GET", issue_path)
+    comment_count = issue.get("comments") if isinstance(issue, dict) else None
+    if not isinstance(comment_count, int) or comment_count < 0:
+        raise ActivationError("activation evidence issue returned an invalid comment count")
+    last_page = max(1, (comment_count + 99) // 100)
+    comments = github_request(
+        admin_token,
+        "GET",
+        f"{issue_path}/comments?per_page=100&page={last_page}",
+    )
+    if not isinstance(comments, list):
+        raise ActivationError("activation evidence issue comments are not an array")
+    for comment in comments:
+        body = comment.get("body") if isinstance(comment, dict) else None
+        if isinstance(body, str) and marker in body:
+            comment_id = comment.get("id")
+            comment_url = comment.get("html_url")
+            if not isinstance(comment_id, int) or not isinstance(comment_url, str):
+                raise ActivationError("existing activation evidence receipt is malformed")
+            return {"action": "existing", "id": comment_id, "url": comment_url}
+
+    body = (
+        marker
+        + "\n### GHA test-org fallback activation receipt\n\n"
+        + "The AWS-only in-cluster activator completed both exact-head synthetic canaries "
+        + "after fresh GitHub-originated hook pings. Sanitized evidence:\n\n```json\n"
+        + json.dumps(evidence, indent=2, sort_keys=True)
+        + "\n```\n\n"
+        + "Boundary: this proves hook reachability and synthetic fixed-profile execution. "
+        + "It does not prove a GitHub-originated `workflow_run` execution delivery or "
+        + "authoritative billing exhaustion."
+    )
+    created = github_request(
+        admin_token,
+        "POST",
+        f"{issue_path}/comments",
+        payload={"body": body},
+        expected=(201,),
+    )
+    comment_id = created.get("id") if isinstance(created, dict) else None
+    comment_url = created.get("html_url") if isinstance(created, dict) else None
+    if not isinstance(comment_id, int) or not isinstance(comment_url, str):
+        raise ActivationError("GitHub returned an invalid activation evidence receipt")
+    return {"action": "created", "id": comment_id, "url": comment_url}
+
+
 def post_webhook(
     callback_url: str,
     body: bytes,
@@ -949,20 +1008,25 @@ def main() -> int:
             )
             for pilot in PILOTS
         ]
+        evidence = {
+            "ok": True,
+            "sourceRevision": args.source_revision,
+            "callbackUrl": args.callback_url,
+            "cluster": cluster,
+            "hooks": hooks,
+            "canaries": canaries,
+            "githubWorkflowRunDeliveryProven": False,
+            "githubPingDeliveryProven": True,
+            "billingExhaustionProven": False,
+        }
+        evidence["githubIssueReceipt"] = publish_activation_evidence(
+            admin_token,
+            args.source_revision,
+            evidence,
+        )
     except Exception:
         deactivate_hooks(admin_token, hooks)
         raise
-
-    evidence = {
-        "ok": True,
-        "callbackUrl": args.callback_url,
-        "cluster": cluster,
-        "hooks": hooks,
-        "canaries": canaries,
-        "githubWorkflowRunDeliveryProven": False,
-        "githubPingDeliveryProven": True,
-        "billingExhaustionProven": False,
-    }
     print(json.dumps(evidence, sort_keys=True, separators=(",", ":")))
     return 0
 
