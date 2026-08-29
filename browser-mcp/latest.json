@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-08-29T02:15:51Z",
+  "workflow_commit": "8f8d4aa0c04fc9bf2c046c9d80e3694550fe09fa",
+  "source_revision": "main",
+  "status": "workflow_precondition_failed",
+  "failure_phase": "aws_oidc_assume_role_failed",
+  "aws_outcome": "failure",
+  "smoke_outcome": "skipped",
+  "expected_edges": [
+    "https://98.90.186.114/browser-mcp",
+    "https://hello.95-217-171-250.sslip.io/browser-mcp"
+  ],
+  "stdout": "",
+  "stderr": "",
+  "workflow_run_id": "33228506375",
+  "workflow_run_attempt": "1",
+  "source_commit": "8f8d4aa0c04fc9bf2c046c9d80e3694550fe09fa",
+  "published_at": "2026-08-29T02:17:39Z"
+}
