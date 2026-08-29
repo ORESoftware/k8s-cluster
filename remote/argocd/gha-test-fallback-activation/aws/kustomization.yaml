@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - rbac.yaml
+  - networkpolicy.yaml
+  - job.yaml
+
+configMapGenerator:
+  - name: dd-gha-test-fallback-activation
+    files:
+      - bootstrap.py
+    options:
+      labels:
+        app: dd-gha-test-fallback-activation
+        dd.dev/temporary: "true"
+      annotations:
+        argocd.argoproj.io/sync-wave: "-2"

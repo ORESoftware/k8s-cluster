@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-gha-test-fallback-activation
+  namespace: default
+  labels:
+    app: dd-gha-test-fallback-activation
+    dd.dev/temporary: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dd-gha-test-fallback-activation
+  namespace: default
+  labels:
+    app: dd-gha-test-fallback-activation
+    dd.dev/temporary: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - dd-agent-secrets
+      - dd-gha-clone-server-secrets
+      - dd-gha-executor-router-secrets
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - dd-gha-clone-server
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames:
+      - dd-gha-clone-server
+      - dd-gha-executor-router
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames:
+      - dd-build-server
+      - dd-ci-profile-runner
+      - dd-gha-clone-server
+      - dd-gha-executor-router
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["daemonsets"]
+    resourceNames:
+      - dd-remote-gateway
+    verbs: ["get"]
+  - apiGroups: ["external-secrets.io"]
+    resources: ["externalsecrets"]
+    resourceNames:
+      - dd-gha-clone-server-secrets
+      - dd-gha-executor-router-secrets
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dd-gha-test-fallback-activation
+  namespace: default
+  labels:
+    app: dd-gha-test-fallback-activation
+    dd.dev/temporary: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dd-gha-test-fallback-activation
+subjects:
+  - kind: ServiceAccount
+    name: dd-gha-test-fallback-activation
+    namespace: default
