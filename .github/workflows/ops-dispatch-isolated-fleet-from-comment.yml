@@ -117,3 +117,39 @@ jobs:
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/471/comments" \
             -f body="Dispatched the pinned safe public canonical repository-gap bootstrap from trusted main after ${before}. The child workflow will post one fresh owner code and exact run URL here; ignore all earlier codes." >/dev/null
+
+  dispatch_elenkos_protected_pat:
+    if: >-
+      github.event.issue.number == 1345 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.event.comment.body == 'ops-run-elenkos-protected-pat-existing:79cb872572a34c6e9cd2f054197ff7cc'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate and dispatch trusted-main Elenkos publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-elenkos-sonus-ci-20260819.yml?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = ops-bootstrap-elenkos-sonus-ci-20260819.yml
+          encoded="$(jq -er .content <<<"$workflow" | tr -d '\n')"
+          decoded="$(printf '%s' "$encoded" | base64 --decode)"
+          grep -F 'name: Bootstrap Elenkos repositories with protected PAT (one shot)' <<<"$decoded" >/dev/null
+          grep -F 'ELENKOS_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}' <<<"$decoded" >/dev/null
+          grep -F 'bash scripts/ops/validate_elenkos_fleet_payload_20260819.sh' <<<"$decoded" >/dev/null
+          grep -F -- '--execute' <<<"$decoded" >/dev/null
+          unset encoded decoded workflow
+
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ops-bootstrap-elenkos-sonus-ci-20260819.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/comments/${{ github.event.comment.id }}" \
+            >/dev/null || true
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/1345/comments" \
+            -f body="Dispatched the trusted-main Elenkos protected-PAT publisher after ${before}. Trigger run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            >/dev/null

@@ -43,11 +43,13 @@ jobs:
           prefix="${BUNDLE_PROTOCOL}:${BUNDLE_SHA256}:"
           comment="$(GH_TOKEN="$ISSUE_TOKEN" gh api \
             "repos/${GITHUB_REPOSITORY}/issues/comments/${BUNDLE_COMMENT_ID}")"
-          test "$(jq -r '.user.login' <<<"$comment")" = "$EXPECTED_LOGIN"
+          test "$(jq -er '.user.login' <<<"$comment")" = "$EXPECTED_LOGIN"
+          test "$(jq -er '.author_association' <<<"$comment")" = OWNER
           body="$(jq -er '.body' <<<"$comment")"
           [[ "$body" == "$prefix"* ]]
           encoded="${body#"$prefix"}"
           [[ "$encoded" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#encoded}" -gt 0
           test "${#encoded}" -le 65536
 
           archive="$RUNNER_TEMP/org-dotgithub-governance-bundle.tgz"
@@ -115,11 +117,13 @@ jobs:
           prefix="${BUNDLE_PROTOCOL}:${BUNDLE_SHA256}:"
           comment="$(GH_TOKEN="$ISSUE_TOKEN" gh api \
             "repos/${GITHUB_REPOSITORY}/issues/comments/${BUNDLE_COMMENT_ID}")"
-          test "$(jq -r '.user.login' <<<"$comment")" = "$EXPECTED_LOGIN"
+          test "$(jq -er '.user.login' <<<"$comment")" = "$EXPECTED_LOGIN"
+          test "$(jq -er '.author_association' <<<"$comment")" = OWNER
           body="$(jq -er '.body' <<<"$comment")"
           [[ "$body" == "$prefix"* ]]
           encoded="${body#"$prefix"}"
           [[ "$encoded" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#encoded}" -gt 0
           test "${#encoded}" -le 65536
 
           archive="$RUNNER_TEMP/org-dotgithub-governance-bundle.tgz"
@@ -206,7 +210,8 @@ jobs:
               --arg login "$EXPECTED_LOGIN" \
               --argjson after "$recipient_id" '
                 [
-                  .[][]
+                  (if (type == "array" and length > 0 and (.[0] | type) == "array")
+                   then .[][] else .[] end)
                   | select(.id > $after)
                   | select(.user.login == $login)
                   | select(.body | startswith($prefix))

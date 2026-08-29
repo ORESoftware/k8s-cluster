@@ -913,7 +913,7 @@
             {
               "chart": "",
               "path": "k8s/ec2",
-              "repo_url": "git@github.com:quaestor-ledger/billing-server.rs.git",
+              "repo_url": "https://github.com/quaestor-ledger/billing-server.rs.git",
               "target_revision": "main"
             }
           ],
@@ -942,7 +942,7 @@
             {
               "chart": "",
               "path": "k8s/ec2",
-              "repo_url": "git@github.com:quaestor-ledger/billing-server.rs.git",
+              "repo_url": "https://github.com/quaestor-ledger/billing-server.rs.git",
               "target_revision": "main"
             }
           ],
@@ -1242,7 +1242,7 @@
             {
               "chart": "",
               "path": "k8s/ec2",
-              "repo_url": "git@github.com:sagitta-stack/dart-server.git",
+              "repo_url": "https://github.com/sagitta-stack/dart-server.git",
               "target_revision": "main"
             }
           ],

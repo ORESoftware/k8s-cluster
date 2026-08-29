@@ -1,0 +1,154 @@
+name: Probe Sonus Auris remote Android path once
+run-name: Probe Sonus remote Android path attempt 2 from ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ops-sonus-remote-device-probe-once-20260811.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ops-sonus-remote-device-probe-once-20260811
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: sonus-remote-device-probe
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Probe managed host and connected Android without identifiers
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+
+          remote_probe="$RUNNER_TEMP/sonus-remote-device-probe.sh"
+          cat > "$remote_probe" <<'REMOTE'
+          set -eu
+
+          find_exec() {
+            for candidate in "$@"; do
+              if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+                printf '%s\n' "$candidate"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          home="${HOME:-/root}"
+          command_path() { command -v "$1" 2>/dev/null || true; }
+
+          printf 'system=%s\n' "$(uname -s 2>/dev/null || printf unknown)"
+          printf 'architecture=%s\n' "$(uname -m 2>/dev/null || printf unknown)"
+          printf 'disk_free_kib=%s\n' "$(df -Pk / 2>/dev/null | awk 'NR==2 {print $4+0}')"
+
+          flutter="$(find_exec "$(command_path flutter)" "$home/development/flutter/bin/flutter" /opt/flutter/bin/flutter || true)"
+          if [ -n "$flutter" ]; then
+            printf 'flutter_available=true\n'
+            "$flutter" --version 2>/dev/null | head -n 1 | sed 's/^/flutter_version=/' || true
+          else
+            printf 'flutter_available=false\n'
+          fi
+
+          adb="$(find_exec "$(command_path adb)" "${ANDROID_HOME:-}/platform-tools/adb" "${ANDROID_SDK_ROOT:-}/platform-tools/adb" "$home/Android/Sdk/platform-tools/adb" "$home/Library/Android/sdk/platform-tools/adb" || true)"
+          if [ -z "$adb" ]; then
+            printf 'adb_available=false\n'
+            printf 'authorized_android_count=0\n'
+            printf 'unauthorized_android_count=0\n'
+            printf 'offline_android_count=0\n'
+            printf 'sonus_package_present=not-checked\n'
+          else
+            printf 'adb_available=true\n'
+            "$adb" start-server >/dev/null 2>&1 || true
+            devices="$($adb devices 2>/dev/null || true)"
+            authorized="$(printf '%s\n' "$devices" | awk 'NR>1 && $2=="device" {n++} END {print n+0}')"
+            unauthorized="$(printf '%s\n' "$devices" | awk 'NR>1 && $2=="unauthorized" {n++} END {print n+0}')"
+            offline="$(printf '%s\n' "$devices" | awk 'NR>1 && $2=="offline" {n++} END {print n+0}')"
+            printf 'authorized_android_count=%s\n' "$authorized"
+            printf 'unauthorized_android_count=%s\n' "$unauthorized"
+            printf 'offline_android_count=%s\n' "$offline"
+            if [ "$authorized" -eq 1 ]; then
+              if "$adb" shell pm path com.ores.sonus_auris 2>/dev/null | grep -q '^package:'; then
+                printf 'sonus_package_present=true\n'
+              else
+                printf 'sonus_package_present=false\n'
+              fi
+            else
+              printf 'sonus_package_present=not-checked\n'
+            fi
+          fi
+
+          for tool in docker git aws sops java; do
+            path="$(command_path "$tool")"
+            if [ -n "$path" ]; then
+              printf '%s_available=true\n' "$tool"
+            else
+              printf '%s_available=false\n' "$tool"
+            fi
+          done
+
+          if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            printf 'docker_ready=true\n'
+          else
+            printf 'docker_ready=false\n'
+          fi
+
+          sdk_present=false
+          for sdk in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$home/Android/Sdk" "$home/Library/Android/sdk"; do
+            if [ -n "$sdk" ] && [ -d "$sdk" ]; then
+              sdk_present=true
+              break
+            fi
+          done
+          printf 'android_sdk_present=%s\n' "$sdk_present"
+          REMOTE
+
+          encoded="$(base64 --wrap=0 "$remote_probe")"
+          remote_command="printf '%s' '$encoded' | base64 --decode | bash"
+          parameters="$RUNNER_TEMP/sonus-remote-device-probe-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Probe Sonus Android path from trusted ${GITHUB_SHA}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 180); do
+            status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || true)"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,ResponseCode:ResponseCode,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}' \
+            --output json
+          test "$status" = Success

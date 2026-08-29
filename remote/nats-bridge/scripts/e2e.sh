@@ -160,7 +160,16 @@ step "1. Bridge rejection matrix (nothing may reach the bus)"
 assert_code "no token -> 401" 401 \
   -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" -H 'content-type: application/json' -d '{}'
 assert_code "wrong token -> 401" 401 \
-  -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" -H 'authorization: Bearer wrong-token-xxxxxx' \
+  -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" -H 'authorization: Bearer bbbbbbbbbbbbbbbb' \
+  -H 'content-type: application/json' -d '{}'
+assert_code "conflicting auth headers -> 401" 401 \
+  -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
+  -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'x-bridge-token: bbbbbbbbbbbbbbbb' \
+  -H 'content-type: application/json' -d '{}'
+assert_code "conflicting message-id aliases -> 400" 400 \
+  -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
+  -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" \
+  -H 'x-message-id: same' -H 'idempotency-key: other' \
   -H 'content-type: application/json' -d '{}'
 assert_code "off-allowlist subject -> 403" 403 \
   -X POST "${BRIDGE_URL}/publish/dd.remote.contracts.solana.settle" \
@@ -182,10 +191,10 @@ assert_code "oversize body -> 413" 413 \
   -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
   -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' \
   -d "@${WORK_DIR}/big.json"
-# 7, not 8: the oversize body is refused by axum's DefaultBodyLimit layer
+# 9, not 10: the oversize body is refused by axum's DefaultBodyLimit layer
 # before the handler runs, so it never reaches the handler's reject counter.
 assert_json "rejections counted, none published" \
-  "d['published_total']==0 and d['rejected_total']==7" "${BRIDGE_URL}/healthz"
+  "d['published_total']==0 and d['rejected_total']==9" "${BRIDGE_URL}/healthz"
 
 step "2. Durable-only subjects never downgrade to core NATS"
 assert_code "durable subject without stream -> 503" 503 \
@@ -196,10 +205,13 @@ assert_json "durability rejection is counted" \
   "d['durability_rejected_total']==1 and d['core_published_total']==0" "${BRIDGE_URL}/healthz"
 
 step "2b. Core-NATS fallback for an explicitly non-durable subject"
-assert_json "allowed subject -> 200 durable:false" \
-  "d['ok'] is True and d['durable'] is False" \
+assert_json "matching auth and message-id aliases -> 200 durable:false" \
+  "d['ok'] is True and d['durable'] is False and d['messageId']=='same'" \
   -X POST "${BRIDGE_URL}/publish/vxl.events.test" \
-  -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' -d '{"hello":"world"}'
+  -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" \
+  -H "x-bridge-token: ${BRIDGE_TOKEN_VALUE}" \
+  -H 'x-message-id: same' -H 'idempotency-key: same' \
+  -H 'content-type: application/json' -d '{"hello":"world"}'
 
 step "3. Vapi worker: provisioning + task lifecycle"
 start_worker

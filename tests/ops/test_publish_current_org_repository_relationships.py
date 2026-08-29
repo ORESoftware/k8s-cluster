@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 OPS = ROOT / "scripts" / "ops"
@@ -82,6 +83,69 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
             module.ORGANIZATIONS,
             tuple(module.current.ORGANIZATIONS),
         )
+        self.assertIs(
+            publisher.build_plan,
+            module.build_plan_with_exact_private_references,
+        )
+        self.assertIs(
+            module.governance.GitHubApi._retry_delay,
+            module.rate_limit_retry_delay,
+        )
+        self.assertIs(
+            publisher.base.GitHubApi._retry_delay,
+            module.rate_limit_retry_delay,
+        )
+
+    def test_dynamic_owner_identity_is_bound_to_preflight(self) -> None:
+        original = module.governance.EXPECTED_ACTOR
+        try:
+            observed = module.configure_expected_owner_login("fleet-admin-2")
+            self.assertEqual("fleet-admin-2", observed)
+            self.assertEqual("fleet-admin-2", module.governance.EXPECTED_ACTOR)
+        finally:
+            module.governance.EXPECTED_ACTOR = original
+
+    def test_dynamic_owner_identity_rejects_unsafe_values(self) -> None:
+        for value in ("", "-leading", "trailing-", "space owner", "owner/name"):
+            with self.subTest(value=value):
+                with self.assertRaises(RuntimeError):
+                    module.configure_expected_owner_login(value)
+
+    def test_primary_rate_limit_wait_honors_full_reset_window(self) -> None:
+        delay = module.rate_limit_retry_delay(
+            {
+                "x-ratelimit-remaining": "0",
+                "x-ratelimit-reset": "1900",
+            },
+            1,
+            now=1000.0,
+        )
+        self.assertEqual(902.0, delay)
+        self.assertGreater(delay, 60.0)
+
+    def test_primary_rate_limit_wait_is_safely_bounded(self) -> None:
+        delay = module.rate_limit_retry_delay(
+            {
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": "10000",
+            },
+            1,
+            now=1000.0,
+        )
+        self.assertEqual(module.MAX_PRIMARY_RATE_LIMIT_WAIT_SECONDS, delay)
+
+    def test_retry_after_is_case_insensitive_and_bounded(self) -> None:
+        delay = module.rate_limit_retry_delay(
+            {"retry-after": "480"},
+            1,
+            now=1000.0,
+        )
+        self.assertEqual(module.MAX_RETRY_AFTER_SECONDS, delay)
+
+    def test_fallback_retry_delay_remains_short_and_jittered(self) -> None:
+        with mock.patch.object(module.random, "random", return_value=0.25):
+            delay = module.rate_limit_retry_delay({}, 3, now=1000.0)
+        self.assertEqual(8.25, delay)
 
     def test_classifies_canonical_repository_roles(self) -> None:
         cases = {
@@ -116,6 +180,112 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertFalse(
             manifest["privacy"]["private_repository_names_published"]
         )
+
+    def test_exact_privacy_adapter_ignores_incidental_name_substrings(self) -> None:
+        inventory = [
+            {
+                **self.repository(".github"),
+                "full_name": "example-internal/.github",
+            },
+            {
+                **self.repository("internal", private=True),
+                "full_name": "example-internal/internal",
+            },
+        ]
+        with mock.patch.object(publisher.base, "fetch_file", return_value=None):
+            branch, files, tokens, result = (
+                module.build_plan_with_exact_private_references(
+                    object(),
+                    "example-internal",
+                    {"default_branch": "main"},
+                    inventory,
+                )
+            )
+        self.assertEqual("main", branch)
+        self.assertEqual(1, result["private_repository_count"])
+        self.assertIn('"name": "internal"', tokens)
+        self.assertIn("example-internal/internal", tokens)
+        self.assertNotIn("internal", json.loads(files[publisher.JSON_PATH][0])["repositories"])
+
+    def test_existing_readme_private_identity_is_redacted(self) -> None:
+        organization = "example-internal"
+        private_name = "private-control-plane"
+        private_full_name = f"{organization}/{private_name}"
+        existing_readme = mock.Mock(
+            content=(
+                "# Existing heading\n\n"
+                "Owner-authored public context.\n\n"
+                f"The projection includes [`{private_full_name}`]"
+                f"(https://github.com/{private_full_name}) with role `cli`.\n\n"
+                "Keep this owner-authored conclusion.\n"
+            ),
+            sha="readme-sha",
+        )
+
+        def fetch_existing(_api, _organization, path, _branch):
+            if path == "README.md":
+                return existing_readme
+            return None
+
+        inventory = [
+            {
+                **self.repository(".github"),
+                "full_name": f"{organization}/.github",
+            },
+            {
+                **self.repository(private_name, private=True),
+                "full_name": private_full_name,
+            },
+        ]
+        with mock.patch.object(
+            publisher.base,
+            "fetch_file",
+            side_effect=fetch_existing,
+        ):
+            _, files, tokens, _ = module.build_plan_with_exact_private_references(
+                object(),
+                organization,
+                {"default_branch": "main"},
+                inventory,
+            )
+
+        rendered = files["README.md"][0]
+        self.assertNotIn(private_full_name, rendered)
+        self.assertNotIn(f"https://github.com/{private_full_name}", rendered)
+        self.assertIn(module.PRIVATE_REFERENCE_REDACTION, rendered)
+        self.assertIn("Owner-authored public context.", rendered)
+        self.assertIn("Keep this owner-authored conclusion.", rendered)
+        self.assertIn(private_full_name, tokens)
+
+    def test_exact_privacy_adapter_rejects_generated_private_identity(self) -> None:
+        inventory = [
+            {
+                **self.repository(".github"),
+                "full_name": "example-internal/.github",
+            },
+            {
+                **self.repository("internal", private=True),
+                "full_name": "example-internal/internal",
+            },
+        ]
+        leaking_block = (
+            "[`internal`](https://github.com/example-internal/internal)"
+        )
+        with (
+            mock.patch.object(publisher.base, "fetch_file", return_value=None),
+            mock.patch.object(
+                publisher,
+                "relationship_readme_block",
+                return_value=leaking_block,
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "privacy preflight failed"):
+                module.build_plan_with_exact_private_references(
+                    object(),
+                    "example-internal",
+                    {"default_branch": "main"},
+                    inventory,
+                )
 
     def test_internal_relationships_follow_contract_direction(self) -> None:
         repositories = [
@@ -205,7 +375,7 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertIn("github.event.comment.user.login == 'ORESoftware'", workflow)
         self.assertIn("github.actor == 'ORESoftware'", workflow)
         self.assertIn(
-            "ops-publish-current-org-dotgithub-relationships:615:20260808-v1",
+            "ops-publish-current-org-dotgithub-relationships:615:20260808-v2",
             workflow,
         )
         self.assertIn("EXPECTED_COUNT: '62'", workflow)
@@ -213,6 +383,9 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertIn("openssl genpkey", workflow)
         self.assertIn("rsa_oaep_md:sha256", workflow)
         self.assertIn('select(.user.login == "ORESoftware")', workflow)
+        self.assertIn('EXPECTED_OWNER_LOGIN="$owner_login"', workflow)
+        self.assertIn("validate-owner-credential-authentication", workflow)
+        self.assertNotIn('test "$owner_login" = \'ORESoftware\'', workflow)
         self.assertIn("item.get(\"verified\") is not True", workflow)
         self.assertNotIn("GITHUB_ENV", workflow)
         self.assertNotIn("upload-artifact", workflow)
@@ -229,6 +402,7 @@ class CurrentRepositoryRelationshipPublisherTests(unittest.TestCase):
         self.assertNotIn("exactly 36", runbook)
         self.assertIn("repository-relationships.json", runbook)
         self.assertIn("RSA-OAEP-SHA256", runbook)
+        self.assertIn("private repository identity", runbook)
 
     def test_workflow_avoids_destructive_recovery_commands(self) -> None:
         lowered = WORKFLOW_PATH.read_text(encoding="utf-8").lower()

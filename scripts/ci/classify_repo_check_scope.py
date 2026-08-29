@@ -17,21 +17,37 @@ CONTROL_FILES = {
 
 GOVERNANCE_FILES = {
     ".github/workflows/ops-current-org-dotgithub-relationships-ephemeral-publish.yml",
+    ".github/workflows/ops-den-2797-publish-wave7-recovery-once.yml",
+    ".github/workflows/ops-provision-den-3286-pat-recipient-20260809.yml",
+    ".github/workflows/ops-publish-den-3286-encrypted-pat-20260809.yml",
+    ".github/workflows/ops-publish-test-org-expansion-20260808.yml",
     ".github/workflows/ops-sync-org-project-docs-rate-aware-once.yml",
     ".github/workflows/test-org-project-docs-evidence.yml",
     "docs/operations/org-dotgithub-relationship-publication.md",
     "docs/org-project-delivery-ledger-2026-08-05.md",
     "ops/portfolio/github-linear-project-registry.tsv",
+    "ops/requests/den-3286-encrypted-pat-20260809.json",
+    "ops/requests/den-3286-pat-recipient-20260809.json",
+    "scripts/den-2797-wave7-finalize.sh",
+    "scripts/den-2797-wave7-prepare.sh",
+    "scripts/den-2797-wave7-publish.sh",
+    "scripts/den-2797-wave7-receive.sh",
+    "scripts/den-2797-wave7-scrub.sh",
+    "scripts/den-2797-wave7-validate.sh",
     "scripts/ops/build_org_project_docs_retry_registry.py",
     "scripts/ops/org_repository_relationships_graph.py",
     "scripts/ops/org_repository_relationships_model.py",
     "scripts/ops/org_repository_relationships_render.py",
     "scripts/ops/org_repository_relationships_roles.py",
     "scripts/ops/prepare_org_project_docs_reconciler.py",
+    "scripts/ops/provision_den_3286_pat_recipient_20260809.sh",
     "scripts/ops/publish_current_org_repository_relationships.py",
+    "scripts/ops/publish_den_3286_with_encrypted_pat_20260809.sh",
     "scripts/ops/publish_org_repository_relationships.py",
+    "scripts/ops/publish_test_org_expansion_20260808.py.gz.b64",
     "scripts/ops/sync_org_project_docs.sh",
     "scripts/ops/sync_org_project_docs_rate_aware.py",
+    "scripts/ops/test-org-expansion-20260808.json.gz.b64",
     "scripts/ops/test_build_org_project_docs_retry_registry.py",
     "scripts/ops/test_sync_org_project_docs_rate_aware.py",
     "scripts/ops/test_upsert_managed_markdown_block.py",
@@ -46,6 +62,33 @@ GOVERNANCE_PREFIXES = (
     "ops/evidence/org-project-docs/",
     "ops/evidence/org-project-docs-rate-aware/",
 )
+
+# These files are validated by dedicated, credential-free workflows. A change
+# limited to this exact set has no dependency on remote/libs or private
+# deployment gitlinks, so the broad credential-backed jobs add no coverage.
+CREDENTIAL_FREE_CONTRACT_FILES = {
+    ".github/workflows/athleto-ui-tests.yml",
+    ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+    ".github/workflows/google-chat-relay-contract.yml",
+    ".github/workflows/browser-mcp-external-smoke.yml",
+    ".github/workflows/browser-mcp-public-e2e.yml",
+    ".github/workflows/den-319-private-fleet-contracts.yml",
+    ".github/workflows/github-app-submodule-auth.yml",
+    ".github/workflows/namespace-migration-contract.yml",
+    ".github/workflows/repo-check-scope-contract.yml",
+    "catalog/namespaces/migration-manifest.json",
+    "config/ci/k8s-submodule-github-app-allowlist.json",
+    "remote/tests/general/browser-mcp-public-e2e.test.ts",
+    "remote/tests/general/github-app-submodule-token.test.ts",
+    "remote/tests/general/private-submodule-ci-contract.test.ts",
+    "remote/tests/general/scheduled-live-smoke-contract.test.mjs",
+    "remote/tests/ui/lib/harness.mjs",
+    "remote/tests/ui/lib/live-targets.mjs",
+    "scripts/ops/repository_rename_alias_guard.py",
+    "scripts/ops/test_repository_rename_alias_guard.py",
+    "tools/google-chat-space-export/test_relay_workflows.py",
+    "tools/test_namespace_manifest.py",
+}
 
 
 class ScopeError(RuntimeError):
@@ -67,6 +110,10 @@ def is_governance_path(path: str) -> bool:
     )
 
 
+def is_credential_free_contract_path(path: str) -> bool:
+    return path in CREDENTIAL_FREE_CONTRACT_FILES
+
+
 def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]:
     changed = sorted({validate_path(path) for path in changed_files})
     if event_name != "pull_request":
@@ -75,6 +122,7 @@ def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]
             "event_name": event_name,
             "changed_files": changed,
             "governance_only": False,
+            "credential_free_contract_only": False,
             "private_contracts_required": True,
             "reason": "non_pull_request_runs_are_full_fleet_checks",
         }
@@ -90,17 +138,31 @@ def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]
             for path in changed
         )
     )
+    credential_free_contract_only = (
+        bool(non_control)
+        and all(is_credential_free_contract_path(path) for path in non_control)
+        and all(
+            path in CONTROL_FILES or is_credential_free_contract_path(path)
+            for path in changed
+        )
+    )
+    private_contracts_required = not (
+        governance_only or credential_free_contract_only
+    )
+    reason = "repository_or_private_contract_surface_changed"
+    if governance_only:
+        reason = "governance_only_no_private_gitlinks"
+    elif credential_free_contract_only:
+        reason = "credential_free_contract_only_no_private_gitlinks"
+
     return {
         "schema_version": 1,
         "event_name": event_name,
         "changed_files": changed,
         "governance_only": governance_only,
-        "private_contracts_required": not governance_only,
-        "reason": (
-            "governance_only_no_private_gitlinks"
-            if governance_only
-            else "repository_or_private_contract_surface_changed"
-        ),
+        "credential_free_contract_only": credential_free_contract_only,
+        "private_contracts_required": private_contracts_required,
+        "reason": reason,
     }
 
 

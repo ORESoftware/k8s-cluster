@@ -1,0 +1,1511 @@
+{
+  "observedAt": "2026-08-26T00:00:00Z",
+  "orgs": {
+    "3FA-app": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-web-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-api-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-desktop-app.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "3fa-app-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-web-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-api-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-desktop-app.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "3fa-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "canonical-cloud": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "canonical-cloud-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "canonical-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "cliptown": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "cliptown-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "cliptown-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "declarative-migrations": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-web-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-api-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "declarative-migrations-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-web-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-api-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "declmig-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "embedded-alerts": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-libs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-web-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-api-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "embedded-alerts-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-libs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-web-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-api-server.rs",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "eal-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "fiducia-cloud": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "fiducia-cloud-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "fiducia-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "messaging-intel": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "messaging-intel-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "msgint-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "opto-sync": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "opto-sync-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "opto-sync-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "quaestor-ledger": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "quaestor-ledger-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "quaestor-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "shared-auth": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "shared-auth-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "shared-auth-e2e",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "sonus-auris": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-auris-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "sonus-auris-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-lib-core",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-clients",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-infra",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "sonus-auris-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "zed-pkg": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    },
+    "zed-pkg-test": {
+      "repos": [
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-interfaces",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-cli",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-e2e",
+          "visibility": "private"
+        },
+        {
+          "archived": false,
+          "copiesLiveCredentials": false,
+          "defaultBranch": "main",
+          "hasZpkg": true,
+          "language": "Rust",
+          "name": "zed-monorepo",
+          "visibility": "private"
+        }
+      ],
+      "status": "ok"
+    }
+  }
+}
