@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/usacc-source-revision: '1564c51397ee08d00d112582bb6bba40044f5847'
+        dd.dev/usacc-source-revision: 'ada9facc85bec6d348b370bc36916bbc3a2bb741'
         dd.dev/usacc-monorepo-revision: '799c0f8ac120269ea62003f60288d74c2a48ec5d'
         dd.dev/telemetry-revision: '2026-06-08-usacc-rest-api'
       labels:
@@ -68,7 +68,7 @@ spec:
               exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: USACC_SOURCE_REVISION
-              value: '1564c51397ee08d00d112582bb6bba40044f5847'
+              value: 'ada9facc85bec6d348b370bc36916bbc3a2bb741'
             - name: USACC_MONOREPO_REVISION
               value: '799c0f8ac120269ea62003f60288d74c2a48ec5d'
             - name: HOST
