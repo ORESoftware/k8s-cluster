@@ -68,6 +68,8 @@ GOVERNANCE_PREFIXES = (
 # deployment gitlinks, so the broad credential-backed jobs add no coverage.
 CREDENTIAL_FREE_CONTRACT_FILES = {
     ".github/workflows/athleto-ui-tests.yml",
+    ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+    ".github/workflows/google-chat-relay-contract.yml",
     ".github/workflows/browser-mcp-external-smoke.yml",
     ".github/workflows/browser-mcp-public-e2e.yml",
     ".github/workflows/den-319-private-fleet-contracts.yml",
@@ -84,6 +86,7 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     "remote/tests/ui/lib/live-targets.mjs",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
+    "tools/google-chat-space-export/test_relay_workflows.py",
     "tools/test_namespace_manifest.py",
 }
 
