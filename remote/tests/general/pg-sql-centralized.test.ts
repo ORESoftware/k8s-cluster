@@ -32,6 +32,13 @@ const ALLOWED_OTHER_DIRS: ReadonlyArray<string> = [
   // .sql files are codegen INPUTS (consumed by `sqlc generate`), not authoritative DDL — the
   // pg-defs `--check` workflow keeps them locked to schema/schema.sql.
   'remote/libs/pg-defs/generated/go/sqlc',
+  // Upstream pg-defs owns editable per-organization shards. Its assembler and
+  // parity gate deterministically produce the sole shared-RDS contract above;
+  // downstream services still consume only schema/schema.sql.
+  'remote/libs/pg-defs/schema/orgs',
+  // Supabase project schemas describe separate project-local databases and are
+  // not inputs to the shared pg-defs RDS schema or its ORM generator.
+  'remote/libs/supabase-defs/projects',
   // Billing owns a separate SQLx-managed ledger database; those migrations are
   // intentionally outside the shared pg-defs RDS schema.
   'remote/deployments/billing-server-rs/migrations',

@@ -32,6 +32,14 @@ The value is a JSON array:
   {
     "repository": "https://github.com/zed-pkg/zed-cli.git",
     "profiles": ["rust-verify"]
+  },
+  {
+    "repository": "https://github.com/gha-indie-worker-test/gha-clone-server.rs.git",
+    "profiles": ["rust-verify"]
+  },
+  {
+    "repository": "https://github.com/gha-indie-worker-test/gha-indie-worker.rs.git",
+    "profiles": ["rust-verify"]
   }
 ]
 ```
@@ -115,6 +123,19 @@ This binding is a manual protected build-server lane for an immutable `zed-pkg/z
 
 The exact Zed rule rejects sibling and lookalike repositories such as `zed-pkg/zed-cli-tools`, `zed-pkg/zed-cli-test`, and `zed-pkg-test/zed-cli`. It also rejects downgrades to `node-verify`, browser, Python, Flutter, and other Rust profiles. Repository aliases are normalized through the same HTTPS/SSH, case, optional `.git`, and trailing-slash rules as every other exact binding.
 
+The isolated GHA canary rules bind:
+
+```text
+https://github.com/gha-indie-worker-test/gha-clone-server.rs.git -> rust-verify
+https://github.com/gha-indie-worker-test/gha-indie-worker.rs.git -> rust-verify
+```
+
+These are exact repository rules, not an organization prefix. They admit only
+the reviewed Rust profile and pair with exact workflow-path rules in the clone
+server ConfigMap. The test organization therefore cannot select Node, browser,
+Python, Flutter, deployment, image-push, or caller-defined execution. No
+production credentials or namespace authority are added by these bindings.
+
 Repositories without an exact rule continue to use the reviewed prefix fallback. Adding a sensitive repository should normally include an exact rule in the same pull request as its fixed profile and workflow contract. A manual-only continuity binding may reuse an already reviewed compiled profile when the change also proves exact repository admission, profile downgrade rejection, lookalike rejection, and the absence of webhook/compiler activation.
 
 ## Review and rollout rule
@@ -138,6 +159,6 @@ The Rust policy and profile tests prove:
 - generated Rust verification is ordered, locked, warnings-denied, explicit-path, and non-publishing;
 - no sensitive profile contains force flags, download-pipe execution, repository-wide crate discovery, or ignored failures.
 
-The GitOps contract test parses the complete JSON policy and verifies that `k8s-cluster` receives only `rust-verify`, `msgint-connectors` receives only `node-hardened-verify` and `node-hardened-test`, `3fa-interfaces` receives only `node-hardened-test` and `rust-generated-verify`, and `zed-cli` receives only `rust-verify`. It also proves Zed lookalikes are absent, no broader `zed-pkg/*` admission exists, and the documentation keeps webhook/compiler activation out of this manual lane.
+The GitOps contract test parses the complete JSON policy and verifies that `k8s-cluster` receives only `rust-verify`, `msgint-connectors` receives only `node-hardened-verify` and `node-hardened-test`, `3fa-interfaces` receives only `node-hardened-test` and `rust-generated-verify`, `zed-cli` receives only `rust-verify`, and both `gha-indie-worker-test` canaries receive only `rust-verify`. It also proves Zed lookalikes are absent, no broader `zed-pkg/*` or `gha-indie-worker-test/*` admission exists, and the documentation keeps webhook/compiler activation out of the manual Zed lane.
 
 Temporary formatter or branch-writing workflows are not part of the deployable policy. The reviewed pull-request diff must contain only the profile registry, GitOps configuration, documentation, and tests.

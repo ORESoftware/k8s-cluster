@@ -18,7 +18,9 @@ data:
     StreemPilot/streempilot-web-server.rs,
     StreemPilot/streempilot-interfaces,
     3FA-app/3fa-interfaces,
-    messaging-intel/msgint-connectors
+    messaging-intel/msgint-connectors,
+    gha-indie-worker-test/gha-clone-server.rs,
+    gha-indie-worker-test/gha-indie-worker.rs
   GHA_CLONE_WORKFLOW_RULES_JSON: |
     {
       "ORESoftware/k8s-cluster": [".github/workflows/gha-clone-server-meta.yml"],
@@ -28,5 +30,7 @@ data:
       "StreemPilot/streempilot-web-server.rs": [".github/workflows/ci-mirror.yml"],
       "StreemPilot/streempilot-interfaces": [".github/workflows/ci-mirror.yml"],
       "3FA-app/3fa-interfaces": [".github/workflows/gha-clone-contracts.yml"],
-      "messaging-intel/msgint-connectors": [".github/workflows/gha-clone-operator-config.yml"]
+      "messaging-intel/msgint-connectors": [".github/workflows/gha-clone-operator-config.yml"],
+      "gha-indie-worker-test/gha-clone-server.rs": [".github/workflows/gha-clone-server-meta.yml"],
+      "gha-indie-worker-test/gha-indie-worker.rs": [".github/workflows/gha-indie-worker-custom.yml"]
     }

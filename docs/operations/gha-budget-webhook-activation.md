@@ -21,7 +21,7 @@ Normal `failure`, `cancelled`, and `timed_out` conclusions are not mirrored by t
 
 ```text
 GitHub workflow_run webhook
-  -> ingress-nginx exact path /gha-webhooks/github
+  -> exact no-retry /gha-webhooks/github edge
   -> dd-gha-clone-server:8125/webhooks/github
   -> exact repo + SHA + workflow YAML planner
   -> dd-gha-executor-router:8126
@@ -30,6 +30,8 @@ GitHub workflow_run webhook
 ```
 
 The AWS host-port gateway and clusters with ingress-nginx expose only the exact webhook path. Health, readiness, run state, planner APIs, and manual-run APIs remain ClusterIP-only. The clone server has no direct NetworkPolicy path to the build server.
+
+Webhook POSTs must not be retried by an edge proxy. The dedicated ingress sets `proxy-next-upstream=off`, one upstream try, and request buffering off. The AWS host-port gateway renders the same two nginx location directives from the reviewed ConfigMap through a non-root, capability-dropped init container. The renderer requires exactly one webhook location and one insertion anchor and fails the gateway rollout closed on partial, duplicate, or structurally drifted directives. Application delivery UUID deduplication remains a second, independent boundary rather than a substitute for the edge rule.
 
 The build server remains unprivileged. For the exact `ORESoftware/k8s-cluster` + `rust-verify` binding, its fixed-command adapter verifies the cloned remote, immutable detached SHA, runner image, security flags, and workspace mount before delegating to `dd-ci-profile-runner`. That dedicated service is the only privileged host-containerd boundary. It accepts no caller-selected image, command, shell, mount, network, or resource limits; runs from a vulnerability-scanned digest-pinned image; and has no Kubernetes service-account token or node-local source checkout.
 
@@ -54,7 +56,7 @@ scripts/ops/register_gha_clone_budget_webhook.sh \
   --secret-file /secure/path/github_webhook_secret
 ```
 
-The command is idempotent by exact callback URL and configures only `workflow_run`, JSON payloads, TLS verification, and an active hook. Repeat it only for repositories already present in `dd-gha-clone-server.configmap.yaml` with exact workflow-path rules.
+The command is idempotent only when zero or one hook uses the exact callback URL. Multiple matching hooks are an ambiguous replay risk and fail closed for operator repair. The helper normalizes one optional terminal line ending, validates the actual 32–4096 byte visible-ASCII HMAC value, reads it through private files rather than an environment variable or process argument, configures only `workflow_run`, and verifies JSON payloads, TLS verification, active state, and the returned hook identity. Repeat it only for repositories already present in `dd-gha-clone-server.configmap.yaml` with exact workflow-path rules.
 
 ## Live proof and exact-SHA execution canary
 
@@ -63,6 +65,7 @@ First prove the GitOps objects and secrets are ready without printing secret val
 ```bash
 kubectl -n default rollout status deployment/dd-gha-executor-router --timeout=5m
 kubectl -n default rollout status deployment/dd-gha-clone-server --timeout=5m
+kubectl -n default rollout status daemonset/dd-remote-gateway --timeout=5m
 kubectl -n default get externalsecret \
   dd-gha-clone-server-secrets dd-gha-executor-router-secrets
 ```
@@ -93,9 +96,11 @@ python3 scripts/ops/canary_gha_clone_budget_webhook.py \
   --clone-auth-secret-file "$tmp/clone-auth"
 ```
 
-A passing canary proves all of these in one chain: public TLS ingress, HMAC verification, repository extraction, exact commit extraction, exact-SHA workflow fetch, workflow-path allowlist, YAML planning, router authentication/readiness, build-server profile acceptance, terminal execution, and run-state polling. Its output is redacted JSON containing only delivery ID, repository, immutable SHA, workflow path, run IDs, and terminal states.
+The canary first sends an invalid HMAC and requires HTTP `401`. It then sends one signed exact-SHA `action_required` fixture, requires exactly one returned run ID, immediately replays the same body and delivery UUID, and requires a no-op response with no `runIds`. Finally it polls that exact run to a terminal state and re-verifies repository, SHA, and workflow path. Redirects, non-object JSON, oversized responses, mutable or uppercase revisions, public plain-HTTP status origins, and secret files outside the bounded one-line contract fail closed.
 
-Before sending the valid canary, an unsigned POST to the public callback should return `401`; a valid but replayed delivery should be accepted as a no-op and must not create a second run.
+A passing canary proves public TLS ingress, HMAC verification, repository extraction, exact commit extraction, exact-SHA workflow fetch, workflow-path allowlisting, YAML planning, router authentication/readiness, build-server profile acceptance, duplicate-delivery suppression, terminal execution, and run-state polling. Its output is redacted JSON containing only delivery ID, repository, immutable SHA, workflow path, run IDs, and terminal states.
+
+This is a synthetic application canary. It does **not** prove GitHub emitted that delivery, that the repository hook is currently active, or that an organization budget is exhausted. Retain an actual GitHub delivery receipt and authoritative capacity-broker evidence separately when those claims are required.
 
 ## Rollback
 

@@ -13,16 +13,22 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # The LB is the KV/lock entry point. Network access is an explicit workload
-    # allowlist; a self-applied `dd.dev/fiducia-client=true` label is not a trust
-    # boundary. Application-layer auth and scopes remain mandatory.
-    #   - fiducia-auth: durable API-key KV reads/writes using a trusted service identity.
-    #   - dd-contract-service, dd-billing-server, dd-build-server: leases/fencing.
-    #   - dd-fabrication-server: legacy allowlisted secret overlay (replicas=0;
-    #     migrate to ESO before production use).
-    #   - dd-remote-gateway: public api.fiducia.cloud hop.
-    #   - External Secrets Operator: read-only Fiducia KV webhook provider.
-    #   - observability scrapers.
+    # ESO is the first migrated direct client. It can reach only the verified
+    # HTTPS listener; it has no NetworkPolicy path to the plaintext guard port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: external-secrets
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: external-secrets
+      ports:
+        - protocol: TCP
+          port: 8443
+    # Application clients migrate one by one. During this bounded transition the
+    # HTTPS data path is available while 8088 remains the load balancer's
+    # health/upgrade-only listener once the TLS secret is mounted. The LB code
+    # returns 426 for every non-probe plaintext request when TLS is enabled.
     - from:
         - podSelector:
             matchLabels:
@@ -45,12 +51,14 @@ spec:
                   - dd-billing-server
                   - dd-build-server
                   - dd-fabrication-server
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: external-secrets
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: external-secrets
+      ports:
+        - protocol: TCP
+          port: 8088
+        - protocol: TCP
+          port: 8443
+    # Observability may scrape only the plaintext health listener. It cannot
+    # reach the credential-bearing application listener on 8443.
+    - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability

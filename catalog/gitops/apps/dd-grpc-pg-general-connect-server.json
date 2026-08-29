@@ -1,0 +1,36 @@
+{
+  "$schema": "../application.schema.json",
+  "apiVersion": "oresoftware.dev/v1alpha1",
+  "kind": "GitOpsApplication",
+  "metadata": {
+    "name": "dd-grpc-pg-general-connect-server"
+  },
+  "spec": {
+    "argo": {
+      "automated": false,
+      "destinationServer": "https://kubernetes.default.svc",
+      "namespace": "ores-dev",
+      "project": "grpc-pg-contracts",
+      "prune": false,
+      "selfHeal": false
+    },
+    "inventory": {
+      "mode": "git-submodule",
+      "path": "remote/deployments/grpc-pg-general-connect-server",
+      "repository": "git@github.com:ORESoftware/grpc-pg-general-connect-server.git",
+      "revision": "37ac95d7be22729bac4a46be99b56a8517abea44"
+    },
+    "migration": {
+      "phase": "pilot-inert",
+      "staticApplication": "remote/argocd/apps/dd-grpc-pg-general-connect-server.application.yaml"
+    },
+    "owner": "ORESoftware",
+    "source": {
+      "mode": "direct-repository",
+      "path": "deploy/k8s",
+      "renderer": "kustomize",
+      "repository": "git@github.com:ORESoftware/grpc-pg-general-connect-server.git",
+      "targetRevision": "37ac95d7be22729bac4a46be99b56a8517abea44"
+    }
+  }
+}

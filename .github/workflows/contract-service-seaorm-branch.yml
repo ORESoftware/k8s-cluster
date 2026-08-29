@@ -21,7 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      EXPECTED_SHARED_COMMIT: 3c84cab532b27d328378f09fba5841f02644ae3b
       SERVICE_DIR: remote/deployments/contract-service-rs
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -34,19 +33,13 @@ jobs:
           toolchain: "1.97.0"
           components: rustfmt, clippy
       - name: Materialize the immutable public schema and SeaORM adapter
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -rf remote/libs
-          git init -q remote/libs
-          git -C remote/libs remote add origin \
-            https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
-          GIT_TERMINAL_PROMPT=0 git -C remote/libs fetch \
-            --no-tags --depth=1 origin "$EXPECTED_SHARED_COMMIT"
-          git -C remote/libs checkout -q --detach FETCH_HEAD
-          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_SHARED_COMMIT"
-          test -z "$(git -C remote/libs status --porcelain=v1 --untracked-files=all)"
+        id: shared
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
       - name: Validate shared authority and migration policy
+        env:
+          EXPECTED_SHARED_COMMIT: ${{ steps.shared.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -59,7 +52,10 @@ jobs:
           set -euo pipefail
           cd "$SERVICE_DIR"
           cargo generate-lockfile
-          cargo fmt --all -- --check
+          cargo fmt -- --check
+          cargo fmt \
+            --manifest-path ../../libs/pg-defs/generated/rust/sea-orm/Cargo.toml \
+            -- --check
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets
           cargo check --locked --all-targets
@@ -67,6 +63,8 @@ jobs:
             '(^|[^A-Za-z0-9_])sqlx::(query|query_as|query_scalar|migrate!)|\bPgPool(Options)?\b|^sqlx[[:space:]]*=' \
             Cargo.toml src
       - name: Record non-secret lock and contract evidence
+        env:
+          EXPECTED_SHARED_COMMIT: ${{ steps.shared.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail

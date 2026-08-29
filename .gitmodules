@@ -189,3 +189,7 @@
 	path = remote/deployments/anticaptrad-monorepo
 	url = https://github.com/anticaptrad/act-monorepo.git
 	branch = main
+[submodule "remote/deployments/grpc-pg-general-connect-server"]
+	path = remote/deployments/grpc-pg-general-connect-server
+	url = git@github.com:ORESoftware/grpc-pg-general-connect-server.git
+	branch = main

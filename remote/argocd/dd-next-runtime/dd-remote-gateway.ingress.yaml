@@ -96,6 +96,11 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "1m"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "5"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "65"
+    # Webhook delivery is already idempotent in the application, but the edge
+    # must never create an additional POST attempt after an upstream failure.
+    nginx.ingress.kubernetes.io/proxy-next-upstream: "off"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-tries: "1"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
     nginx.ingress.kubernetes.io/limit-rps: "5"
     nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
 spec:
