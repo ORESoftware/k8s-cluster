@@ -65,7 +65,7 @@
       "shared-auth-monorepo"
     ],
     "sonus-auris": [
-      "sonus-auris-backend.rs",
+      "sonus-auris-api-server.rs",
       "sonus-auris-monorepo"
     ],
     "usa-acc": [

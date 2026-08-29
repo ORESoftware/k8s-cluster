@@ -7,9 +7,14 @@ on:
       - ops/portfolio/github-linear-project-registry.tsv
       - scripts/ops/sync_org_project_docs.sh
       - scripts/ops/validate_org_project_docs_evidence.py
+      - scripts/ops/build_org_project_docs_retry_registry.py
+      - scripts/ops/test_build_org_project_docs_retry_registry.py
       - scripts/ops/tests/test_org_project_delivery_ledger.py
       - scripts/ops/tests/test_validate_org_project_docs_evidence.py
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_classify_repo_check_scope.py
       - ops/evidence/org-project-docs/**
+      - .github/workflows/repo-checks.yml
       - .github/workflows/test-org-project-docs-evidence.yml
   push:
     branches:
@@ -19,9 +24,14 @@ on:
       - ops/portfolio/github-linear-project-registry.tsv
       - scripts/ops/sync_org_project_docs.sh
       - scripts/ops/validate_org_project_docs_evidence.py
+      - scripts/ops/build_org_project_docs_retry_registry.py
+      - scripts/ops/test_build_org_project_docs_retry_registry.py
       - scripts/ops/tests/test_org_project_delivery_ledger.py
       - scripts/ops/tests/test_validate_org_project_docs_evidence.py
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_classify_repo_check_scope.py
       - ops/evidence/org-project-docs/**
+      - .github/workflows/repo-checks.yml
       - .github/workflows/test-org-project-docs-evidence.yml
 
 permissions:
@@ -32,14 +42,26 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout without credentials or private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
 
-      - name: Check shell syntax
-        run: bash -n scripts/ops/sync_org_project_docs.sh
-
-      - name: Run evidence and ledger regression tests
+      - name: Check shell and Python syntax
         run: |
-          python3 -m unittest scripts/ops/tests/test_validate_org_project_docs_evidence.py scripts/ops/tests/test_org_project_delivery_ledger.py
+          bash -n scripts/ops/sync_org_project_docs.sh
+          python3 -m py_compile \
+            scripts/ops/build_org_project_docs_retry_registry.py \
+            scripts/ci/classify_repo_check_scope.py
+
+      - name: Run evidence, retry-plan, scope, and ledger regression tests
+        run: |
+          python3 -m unittest \
+            scripts/ops/test_build_org_project_docs_retry_registry.py \
+            scripts/ci/test_classify_repo_check_scope.py \
+            scripts/ops/tests/test_validate_org_project_docs_evidence.py \
+            scripts/ops/tests/test_org_project_delivery_ledger.py
 
       - name: Enforce evidence quarantine or acceptance
         shell: bash
@@ -62,3 +84,23 @@ jobs:
           else
             exit "$validator_rc"
           fi
+
+      - name: Derive the exact retry set for the quarantined run
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/build_org_project_docs_retry_registry.py \
+            --audit ops/evidence/org-project-docs/audit.json \
+            --output /tmp/org-project-docs-retry.tsv \
+            --summary /tmp/org-project-docs-retry-summary.json \
+            --expected-count 64
+          test "$(wc -l < /tmp/org-project-docs-retry.tsv)" -eq 65
+          jq -e '
+            .schema_version == 1 and
+            .audit_is_valid == false and
+            .registry_records == 64 and
+            .retry_records == 64 and
+            .reason_counts.invalid == 26 and
+            .reason_counts.missing == 38 and
+            (.retry_organizations | length) == 64
+          ' /tmp/org-project-docs-retry-summary.json

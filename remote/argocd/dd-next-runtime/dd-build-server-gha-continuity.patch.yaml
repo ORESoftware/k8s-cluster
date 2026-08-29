@@ -18,6 +18,12 @@ spec:
             # entire test organization, to reach executable browser profiles.
             - name: BUILD_SERVER_ALLOWED_PROFILE_REPO_PREFIXES
               value: https://github.com/ORESoftware/,https://github.com/sonus-auris/,https://github.com/discrete-event-systems-test/des-web-playwright-e2e,https://github.com/discrete-event-systems-test/des-web-puppeteer-e2e,git@github.com:ORESoftware/,git@github.com:sonus-auris/,git@github.com:discrete-event-systems-test/des-web-playwright-e2e,git@github.com:discrete-event-systems-test/des-web-puppeteer-e2e
+            # The build-server stays unprivileged. The adapter delegates only
+            # the exact DES Playwright/Puppeteer nerdctl invocations after
+            # verifying the cloned remote and detached commit SHA; every other
+            # nerdctl command falls through to the host binary unchanged.
+            - name: BUILD_SERVER_NERDCTL_BIN
+              value: /etc/dd-build-server/nerdctl-profile-adapter.sh
             # Execution is enabled only for workflows that pass the fail-closed
             # static planner, immutable-revision check, exact repository
             # allowlist, and fixed reviewed browser profiles above.
@@ -39,3 +45,20 @@ spec:
               value: '3600'
             - name: BUILD_SERVER_GHA_MAX_RUNS
               value: '512'
+          volumeMounts:
+            - name: profile-runner-auth
+              mountPath: /var/run/secrets/dd-ci-profile-runner-auth
+              readOnly: true
+      volumes:
+        - name: rules
+          configMap:
+            name: dd-build-server-rules
+            optional: true
+            defaultMode: 0555
+        - name: profile-runner-auth
+          secret:
+            secretName: dd-agent-secrets
+            defaultMode: 0400
+            items:
+              - key: SERVER_AUTH_SECRET
+                path: SERVER_AUTH_SECRET

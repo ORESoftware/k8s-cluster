@@ -8,12 +8,16 @@ on:
       - .github/workflows/ops-run-benefactor-search-scraper-contract-probe-20260808.yml
       - scripts/ops/run_benefactor_search_scraper_contract_probe_20260808.sh
       - remote/deployments/benefactor-orchestrator/fixtures/search-scraper-contract-contact.html
+      - remote/argocd/dd-next-runtime/dd-web-scraper.networkpolicy.yaml
+      - remote/tests/general/benefactor-scraper-ingress-gitops.test.mjs
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-run-benefactor-search-scraper-contract-probe-20260808.yml
       - scripts/ops/run_benefactor_search_scraper_contract_probe_20260808.sh
       - remote/deployments/benefactor-orchestrator/fixtures/search-scraper-contract-contact.html
+      - remote/argocd/dd-next-runtime/dd-web-scraper.networkpolicy.yaml
+      - remote/tests/general/benefactor-scraper-ingress-gitops.test.mjs
   workflow_dispatch:
 
 permissions:
