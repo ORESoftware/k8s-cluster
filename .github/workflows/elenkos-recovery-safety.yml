@@ -1,0 +1,38 @@
+name: Elenkos recovery quarantine tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/ops/patch_elenkos_managed_tree_reconcile_20260820.py
+      - scripts/ops/test_elenkos_recovery_quarantine_20260829.py
+      - .github/workflows/ops-bootstrap-elenkos-sonus-ci-20260819.yml
+      - .github/workflows/elenkos-recovery-safety.yml
+
+permissions:
+  contents: read
+
+jobs:
+  hermetic-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Run mutation-denial and race regression tests
+        run: python3 scripts/ops/test_elenkos_recovery_quarantine_20260829.py -v
+      - name: Check actual source transformation without executing or rewriting it
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path.insert(0, 'scripts/ops')
+          from patch_elenkos_managed_tree_reconcile_20260820 import rewrite_source
+          source = Path('scripts/ops/recover_elenkos_partial_bootstrap_20260820.py').read_text()
+          result, state = rewrite_source(source)
+          assert state == 'applied'
+          assert rewrite_source(result) == (result, 'already-applied')
+          print('Actual recovery source transforms idempotently; no publisher or API ran.')
+          PY
