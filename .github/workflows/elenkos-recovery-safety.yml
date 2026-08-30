@@ -2,7 +2,7 @@ name: Elenkos recovery quarantine tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - scripts/ops/patch_elenkos_managed_tree_reconcile_20260820.py
       - scripts/ops/test_elenkos_recovery_quarantine_20260829.py
