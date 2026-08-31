@@ -8,6 +8,7 @@ labels:
 resources:
   - storageclass.yaml
   - applications.yaml
+  - hhaus-admin.applications.yaml
   - hhaus-edge.application.yaml
   - hhaus-runtime.application.yaml
   - ai-agent-coordinator.applications.yaml
