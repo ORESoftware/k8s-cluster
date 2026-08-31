@@ -10,7 +10,7 @@
     "name": "den-2786-phase-0",
     "phase": "phase-0",
     "registry": "catalog/namespaces/owners.json",
-    "registrySha256": "dc2bbe2c61b5f9b753cad4fc0a2c15d0c7e952cc3d7f774ffce7e3d1df76aba0",
+    "registrySha256": "b24c8b0976e8f71b89959f3faeef832ca37f17f88ee2d3e6af93c647591e559b",
     "rules": "catalog/namespaces/migration-rules.json",
     "rulesSha256": "9be5b077c04078c08fff30d1780fa006649b73ef648dfc68e205154b93edd606"
   },
