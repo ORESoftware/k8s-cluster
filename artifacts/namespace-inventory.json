@@ -1543,8 +1543,20 @@
       "target_preview": null
     },
     {
+      "column": 2,
+      "line": 109,
+      "owner": "unclassified",
+      "path": "docs/operations/daedalus-github-actions-continuity.md",
+      "reference": "dd/ci/github-apps/daedalus-fab-arc",
+      "rule_id": "fallback.slash-namespace",
+      "scope": "documentation",
+      "status": "unclassified",
+      "system": "slash-namespace",
+      "target_preview": null
+    },
+    {
       "column": 96,
-      "line": 41,
+      "line": 43,
       "owner": "ores",
       "path": "docs/operations/gha-budget-webhook-activation.md",
       "reference": "dd/remote-dev/agent-secrets",
@@ -2491,6 +2503,78 @@
       "target_preview": null
     },
     {
+      "column": 29,
+      "line": 47,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/daedalus-fab/README.md",
+      "reference": "dd/ci/github-apps/daedalus-fab-arc",
+      "rule_id": "fallback.slash-namespace",
+      "scope": "documentation",
+      "status": "unclassified",
+      "system": "slash-namespace",
+      "target_preview": null
+    },
+    {
+      "column": 7,
+      "line": 9,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/daedalus-fab/base/runner-networkpolicy.yaml",
+      "reference": "dd.dev/ci-runner",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 10,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+      "reference": "dd.dev/activation-state",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 14,
+      "line": 23,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+      "reference": "dd/ci/github-apps/daedalus-fab-arc",
+      "rule_id": "fallback.slash-namespace",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "slash-namespace",
+      "target_preview": null
+    },
+    {
+      "column": 14,
+      "line": 27,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+      "reference": "dd/ci/github-apps/daedalus-fab-arc",
+      "rule_id": "fallback.slash-namespace",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "slash-namespace",
+      "target_preview": null
+    },
+    {
+      "column": 14,
+      "line": 31,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+      "reference": "dd/ci/github-apps/daedalus-fab-arc",
+      "rule_id": "fallback.slash-namespace",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "slash-namespace",
+      "target_preview": null
+    },
+    {
       "column": 163,
       "line": 74,
       "owner": "unclassified",
@@ -3403,6 +3487,66 @@
       "target_preview": null
     },
     {
+      "column": 14,
+      "line": 131,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+      "reference": "dd.dev/ci-runner",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 19,
+      "line": 150,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+      "reference": "dd/ci/github-apps/daedalus-fab-arc",
+      "rule_id": "fallback.slash-namespace",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "slash-namespace",
+      "target_preview": null
+    },
+    {
+      "column": 14,
+      "line": 181,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+      "reference": "dd.dev/activation-state",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 15,
+      "line": 182,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 14,
+      "line": 212,
+      "owner": "unclassified",
+      "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+      "reference": "dd.dev/activation-state",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
       "column": 19,
       "line": 197,
       "owner": "unclassified",
@@ -3548,6 +3692,114 @@
     },
     {
       "column": 5,
+      "line": 12,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/linear-issue",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 37,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/activation-state",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 38,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 39,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/linear-issue",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 83,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/activation-state",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 84,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 85,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/linear-issue",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 15,
+      "line": 128,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/ci-runner",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 15,
+      "line": 129,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
       "line": 11,
       "owner": "unclassified",
       "path": "remote/argocd/clusters/aws/gha-ci.applications.yaml",
@@ -3652,6 +3904,42 @@
       "scope": "active",
       "status": "unclassified",
       "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 7,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/gha-test-fallback-activation.application.yaml",
+      "reference": "dd.dev/app",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 8,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/gha-test-fallback-activation.application.yaml",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 61,
+      "line": 10,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/aws/honeypot-platform/README.md",
+      "reference": "dd/remote-dev/honeypot-secrets",
+      "rule_id": "fallback.remote-dev",
+      "scope": "documentation",
+      "status": "unclassified",
+      "system": "slash-namespace",
       "target_preview": null
     },
     {
@@ -3767,6 +4055,114 @@
       "line": 6,
       "owner": "unclassified",
       "path": "remote/argocd/clusters/gcp/kustomization.yaml",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 12,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/linear-issue",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 37,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/activation-state",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 38,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 39,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/linear-issue",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 83,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/activation-state",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 84,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/cloud-provider",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 85,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/linear-issue",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 15,
+      "line": 128,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+      "reference": "dd.dev/ci-runner",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 15,
+      "line": 129,
+      "owner": "unclassified",
+      "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
       "reference": "dd.dev/cloud-provider",
       "rule_id": "fallback.metadata-key",
       "scope": "active",
@@ -4592,7 +4988,7 @@
     },
     {
       "column": 19,
-      "line": 315,
+      "line": 332,
       "owner": "ores",
       "path": "remote/argocd/dd-next-runtime/dd-build-server.deployment.yaml",
       "reference": "/home/ec2-user/codes/dd/dd-next-1",
@@ -6907,18 +7303,6 @@
       "target_preview": "secrets.oresoftware.com/fiducia-build"
     },
     {
-      "column": 34,
-      "line": 17,
-      "owner": "fiducia-cloud",
-      "path": "remote/argocd/fiducia/fiducia-load-balance.networkpolicy.yaml",
-      "reference": "dd.dev/fiducia-client",
-      "rule_id": "metadata.fiducia",
-      "scope": "active",
-      "status": "classified",
-      "system": "metadata-key",
-      "target_preview": "secrets.oresoftware.com/fiducia-client"
-    },
-    {
       "column": 9,
       "line": 10,
       "owner": "fiducia-cloud",
@@ -6929,6 +7313,30 @@
       "status": "classified",
       "system": "metadata-key",
       "target_preview": "secrets.oresoftware.com/fiducia-revocation-contract"
+    },
+    {
+      "column": 9,
+      "line": 10,
+      "owner": "fiducia-cloud",
+      "path": "remote/argocd/fiducia/fiducia-load-balance.tls.patch.yaml",
+      "reference": "dd.dev/fiducia-tls",
+      "rule_id": "metadata.fiducia",
+      "scope": "active",
+      "status": "classified",
+      "system": "metadata-key",
+      "target_preview": "secrets.oresoftware.com/fiducia-tls"
+    },
+    {
+      "column": 9,
+      "line": 11,
+      "owner": "fiducia-cloud",
+      "path": "remote/argocd/fiducia/fiducia-load-balance.tls.patch.yaml",
+      "reference": "dd.dev/fiducia-tls-rotation",
+      "rule_id": "metadata.fiducia",
+      "scope": "active",
+      "status": "classified",
+      "system": "metadata-key",
+      "target_preview": "secrets.oresoftware.com/fiducia-tls-rotation"
     },
     {
       "column": 11,
@@ -7351,6 +7759,114 @@
       "target_preview": null
     },
     {
+      "column": 5,
+      "line": 8,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+      "reference": "dd.dev/temporary",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 9,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+      "reference": "dd.dev/trusted-revision",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 9,
+      "line": 19,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+      "reference": "dd.dev/temporary",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 9,
+      "line": 20,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+      "reference": "dd.dev/trusted-revision",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 9,
+      "line": 16,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/kustomization.yaml",
+      "reference": "dd.dev/temporary",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 8,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/networkpolicy.yaml",
+      "reference": "dd.dev/temporary",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 8,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/rbac.yaml",
+      "reference": "dd.dev/temporary",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 20,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/rbac.yaml",
+      "reference": "dd.dev/temporary",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
+      "column": 5,
+      "line": 69,
+      "owner": "unclassified",
+      "path": "remote/argocd/gha-test-fallback-activation/aws/rbac.yaml",
+      "reference": "dd.dev/temporary",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
       "column": 9,
       "line": 16,
       "owner": "unclassified",
@@ -7421,6 +7937,18 @@
       "status": "unclassified",
       "system": "slash-namespace",
       "target_preview": null
+    },
+    {
+      "column": 14,
+      "line": 29,
+      "owner": "ores",
+      "path": "remote/argocd/meta-agents-platform/repo-creds.externalsecret.yaml",
+      "reference": "dd/remote-dev/agent-secrets",
+      "rule_id": "remote-dev.agent-secrets",
+      "scope": "active",
+      "status": "review-required",
+      "system": "slash-namespace",
+      "target_preview": "ores/dev/agents/provider-credentials"
     },
     {
       "column": 14,
@@ -8215,8 +8743,20 @@
       "target_preview": null
     },
     {
+      "column": 5,
+      "line": 44,
+      "owner": "unclassified",
+      "path": "remote/argocd/secrets/common/fiducia-webhook.yaml",
+      "reference": "dd.dev/transport",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
       "column": 11,
-      "line": 52,
+      "line": 53,
       "owner": "fiducia-cloud",
       "path": "remote/argocd/secrets/common/fiducia-webhook.yaml",
       "reference": "dd.dev/fiducia-kv-secrets",
@@ -14719,6 +15259,30 @@
       "target_preview": null
     },
     {
+      "column": 18,
+      "line": 207,
+      "owner": "ores",
+      "path": "scripts/ops/activate_gha_test_org_fallback.py",
+      "reference": "dd/remote-dev/agent-secrets",
+      "rule_id": "remote-dev.agent-secrets",
+      "scope": "active",
+      "status": "review-required",
+      "system": "slash-namespace",
+      "target_preview": "ores/dev/agents/provider-credentials"
+    },
+    {
+      "column": 25,
+      "line": 475,
+      "owner": "unclassified",
+      "path": "scripts/ops/activate_gha_test_org_fallback.py",
+      "reference": "dd.dev/gateway-config-revision",
+      "rule_id": "fallback.metadata-key",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "metadata-key",
+      "target_preview": null
+    },
+    {
       "column": 33,
       "line": 187,
       "owner": "ores",
@@ -14801,6 +15365,18 @@
       "status": "unclassified",
       "system": "slash-namespace",
       "target_preview": null
+    },
+    {
+      "column": 18,
+      "line": 69,
+      "owner": "ores",
+      "path": "scripts/ops/bootstrap_gha_test_org_fallback.py",
+      "reference": "dd/remote-dev/agent-secrets",
+      "rule_id": "remote-dev.agent-secrets",
+      "scope": "active",
+      "status": "review-required",
+      "system": "slash-namespace",
+      "target_preview": "ores/dev/agents/provider-credentials"
     },
     {
       "column": 14,
@@ -15322,31 +15898,31 @@
   "summary": {
     "byOwner": {
       "benefactor-cc": 3,
-      "fiducia-cloud": 81,
-      "ores": 496,
+      "fiducia-cloud": 82,
+      "ores": 499,
       "shared-auth": 13,
-      "unclassified": 683
+      "unclassified": 727
     },
     "byScope": {
-      "active": 1004,
-      "documentation": 185,
+      "active": 1049,
+      "documentation": 188,
       "test": 87
     },
     "byStatus": {
-      "classified": 113,
-      "review-required": 480,
-      "unclassified": 683
+      "classified": 114,
+      "review-required": 483,
+      "unclassified": 727
     },
     "bySystem": {
       "generated-package": 82,
       "host-path": 191,
-      "metadata-key": 437,
-      "slash-namespace": 452,
+      "metadata-key": 475,
+      "slash-namespace": 462,
       "source-package": 114
     },
-    "distinctReferences": 248,
-    "total": 1276,
-    "unclassifiedActive": 566
+    "distinctReferences": 254,
+    "total": 1324,
+    "unclassifiedActive": 607
   },
   "valid": true
 }

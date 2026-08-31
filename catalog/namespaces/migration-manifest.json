@@ -3,10 +3,10 @@
   "apiVersion": "oresoftware.dev/v1alpha1",
   "kind": "NamespaceMigrationManifest",
   "metadata": {
-    "entryCount": 1276,
+    "entryCount": 1324,
     "generatedBy": "tools/namespace_manifest.py",
     "inventory": "artifacts/namespace-inventory.json",
-    "inventorySha256": "e2b9b20000a621a10dc35e575a5ec701495c1eeb0edd3f199a6b2ba4b9173d16",
+    "inventorySha256": "dc29a483e272b8e2c7ca2035444c534e71062d31dd49fd1fbd070c55e77d956b",
     "name": "den-2786-phase-0",
     "phase": "phase-0",
     "registry": "catalog/namespaces/owners.json",
@@ -4381,6 +4381,37 @@
         "workload": null
       },
       {
+        "classificationStatus": "unclassified",
+        "column": 2,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/ci/github-apps/daedalus-fab-arc",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-591dabcc78d750b677ea35149724a80fc6eca0a7436f78a849bb3fac5151b02b",
+        "line": 109,
+        "migrationMode": "manual-review",
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded.",
+        "owner": "unclassified",
+        "path": "docs/operations/daedalus-github-actions-continuity.md",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.slash-namespace",
+        "scope": "documentation",
+        "system": "slash-namespace",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
         "classificationStatus": "review-required",
         "column": 96,
         "consumerGrants": [
@@ -4396,8 +4427,8 @@
         "current": "dd/remote-dev/agent-secrets",
         "destructiveCleanupAllowed": false,
         "environment": "dev",
-        "id": "nsocc-406d8d72cb93ed32de0fe3af1c85198b5dd02d6ec610f21f4870f54c2c716624",
-        "line": 41,
+        "id": "nsocc-c6fbcd78ac8687de1e90b3f61cbc6eb96a61d6a7dbfe4cae469356b3274b4e89",
+        "line": 43,
         "migrationMode": "copy-verify-cutover",
         "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
         "owner": "ores",
@@ -7055,6 +7086,192 @@
       },
       {
         "classificationStatus": "unclassified",
+        "column": 29,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/ci/github-apps/daedalus-fab-arc",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-e8fa797327760ea899f2377fdd4d0a072bb1a430d7bc67897592b4d924e6ab92",
+        "line": 47,
+        "migrationMode": "manual-review",
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/daedalus-fab/README.md",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.slash-namespace",
+        "scope": "documentation",
+        "system": "slash-namespace",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 7,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/ci-runner",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-7257125d7037edae8daa931ad839c21febaac1bc931202b6a8956482180a025c",
+        "line": 9,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/daedalus-fab/base/runner-networkpolicy.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/activation-state",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-beabaa995c879ac0b97d0b1c998789bcce4184770c2f27e0ef6e4d0ea94ef6fb",
+        "line": 10,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 14,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/ci/github-apps/daedalus-fab-arc",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-980f74e970af934f72b01598ce201df1ad7b043492ca0d5ce5e58125c71134ba",
+        "line": 23,
+        "migrationMode": "manual-review",
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.slash-namespace",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 14,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/ci/github-apps/daedalus-fab-arc",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-a6124bfdbf1abbb57c993cb929bc07768bbe2279e6ed109a832b1e0c8c41ec12",
+        "line": 27,
+        "migrationMode": "manual-review",
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.slash-namespace",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 14,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/ci/github-apps/daedalus-fab-arc",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-678ed19956f684eda598d3618ee22f817cb00379c8608ae21bfcbb73527ef1f3",
+        "line": 31,
+        "migrationMode": "manual-review",
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/daedalus-fab/daedalus-arc-github.externalsecret.template.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.slash-namespace",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
         "column": 139,
         "consumerGrants": [],
         "consumers": [],
@@ -9411,6 +9628,161 @@
       },
       {
         "classificationStatus": "unclassified",
+        "column": 14,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/ci-runner",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-392104e8214daf3fe9e2453a257e9272752f7f4892363da3e60770f6b048b1e3",
+        "line": 131,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 19,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/ci/github-apps/daedalus-fab-arc",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-805268554d6958d37edd994d418923e1863cfcfe68337d879e5164b2fd1147b2",
+        "line": 150,
+        "migrationMode": "manual-review",
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.slash-namespace",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 14,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/activation-state",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-943cd1c2d782fb869aa6d652be32b8306abe9b78d53675b6c9722e31e31ccbad",
+        "line": 181,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 15,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-fee2f84f04f378bda11003345a3bd21a12d010e850e820ef2f565b36459362cd",
+        "line": 182,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 14,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/activation-state",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-be527e26c9ce0ad8a41e3213c30e9c90926e9eb94aece0f5a17063aba6d0628b",
+        "line": 212,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/ci-runners/validate-daedalus-arc-continuity.py",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
         "column": 19,
         "consumerGrants": [],
         "consumers": [],
@@ -9797,6 +10169,285 @@
         "current": "dd.dev/linear-issue",
         "destructiveCleanupAllowed": false,
         "environment": null,
+        "id": "nsocc-af66b565c8a2b81a806878c3debf54cf87dc69b207223cf42b2b8ddaf801da8f",
+        "line": 12,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/activation-state",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-66a7c7a0da044038e99b05dc2a87c120886e1e5d7842d3ad76c2bc653c19c495",
+        "line": 37,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-b746677e2037e3f5d20ac33dc6063921b9ae360241a972fd7b2aa5233a4f8a13",
+        "line": 38,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/linear-issue",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-d3b3b14ae782b4b50b56be4330f197b592f52bbe304d067ad169fc91aa7fc3d3",
+        "line": 39,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/activation-state",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-ec1c05a4eb066f876274f273b8483922b56da0214a4919ce34a1ba96e90031db",
+        "line": 83,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-27d3f0250d3e93368c933b95453618966a5b02203fe17833082f5d5ce6d506db",
+        "line": 84,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/linear-issue",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-0e8db24b4e8935b3874573bdf68ccc1eefe8ff33d9603a8ed1d4eaae8e9cf0c0",
+        "line": 85,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 15,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/ci-runner",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-73be30d3c75ecce2a5a4852d5da94731ba5fb72df25fc6ac125c120f216e95f1",
+        "line": 128,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 15,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-af46c3566a28b8528f58a3b97fa2df7f4b0d0570ebe087b725f5932d7d84ab53",
+        "line": 129,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/linear-issue",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
         "id": "nsocc-03f77f9bd832c63d9f5dd3db7437f01790999c01d19cf1857851604bace8c58c",
         "line": 11,
         "migrationMode": "manual-review",
@@ -10060,6 +10711,99 @@
         "ruleId": "fallback.metadata-key",
         "scope": "active",
         "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/app",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-3418d2a053800dc30306d378733ec5bd0a36419f8063961fb54eddc59010fb7a",
+        "line": 7,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/gha-test-fallback-activation.application.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-686926313b386ad00185036a5b55007e25a1112d462e2ba3dcda6367d233258a",
+        "line": 8,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/gha-test-fallback-activation.application.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 61,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/remote-dev/honeypot-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-1715114b7c8ce5f5849479aa553ba65ff16a9b0080f05b0a198b46a2b1d52a2f",
+        "line": 10,
+        "migrationMode": "manual-review",
+        "notes": "Unknown remote-dev values are quarantined for ownership review and may not silently default to ores.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/aws/honeypot-platform/README.md",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.remote-dev",
+        "scope": "documentation",
+        "system": "slash-namespace",
         "target": null,
         "targetTemplate": null,
         "verification": {
@@ -10361,6 +11105,285 @@
         "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
         "owner": "unclassified",
         "path": "remote/argocd/clusters/gcp/kustomization.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/linear-issue",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-747117918176f6bf96850a1b28796fc6b228d12c061f6fd383e0dbcc8dcbd127",
+        "line": 12,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/activation-state",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-50dcd0aaeee06573e94356bda75d90cdb9658a5d0ba9f185f99220bf16704ce0",
+        "line": 37,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-c77501f8abd33122c79c61423cab819191770bf8cf175a9457f117fdcd6b7de4",
+        "line": 38,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/linear-issue",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-3c7d2838f39934e7f74d16e1030fa61e6efea8de6fe31aa076b7bbf68aa21c4a",
+        "line": 39,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/activation-state",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-4f6d6be5f1d82e6639eeed22bf16a3d5f43e909f19352ac6df30e3940112e27f",
+        "line": 83,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-1050446c729737951904cabc5e5308110f53c12c91b993a673a8f5a66e9a6d77",
+        "line": 84,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/linear-issue",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-fd959d6d9ca46fd4ce1ea5068aba575c130536d92bb77ed754008148609d7b76",
+        "line": 85,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 15,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/ci-runner",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-4bd6d8760142a8e6927f836e0a813cd21bb38c4338ec83eac61de4c160fa590e",
+        "line": 128,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 15,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/cloud-provider",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-ebc3d67fc4bbc60cf1346ae1ca5f3d63f7157b0972a2e8ef5bcea15293dc3f96",
+        "line": 129,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/clusters/hetzner/daedalus-ci.applications.yaml",
         "platformTargetException": null,
         "reviewState": "blocked",
         "rollback": {
@@ -12502,8 +13525,8 @@
         "current": "/home/ec2-user/codes/dd/dd-next-1",
         "destructiveCleanupAllowed": false,
         "environment": null,
-        "id": "nsocc-b73ce84a48c68d3c81870b846ab28d667122362c1d90bb9db12a8cad79d5634f",
-        "line": 315,
+        "id": "nsocc-29552898d63089c3e0502ebef70d56f7b7a7469c600fecafc45f1ba7e7730ec9",
+        "line": 332,
         "migrationMode": "service-specific-move",
         "notes": "Legacy developer checkout paths require an explicit GitHub owner and repository mapping before moving to /srv/ores/repos/<owner>/<repo>.",
         "owner": "ores",
@@ -18709,45 +19732,6 @@
       },
       {
         "classificationStatus": "classified",
-        "column": 34,
-        "consumerGrants": [
-          {
-            "access": "read",
-            "consumer": "ores",
-            "state": "required"
-          }
-        ],
-        "consumers": [
-          "ores"
-        ],
-        "current": "dd.dev/fiducia-client",
-        "destructiveCleanupAllowed": false,
-        "environment": null,
-        "id": "nsocc-b14ca1c0160653893e350ec31df3496a4c98231a6375e809061325ccefa33815",
-        "line": 17,
-        "migrationMode": "dual-write-cutover",
-        "notes": "Fiducia secret-delivery labels use the fixed secrets.oresoftware.com authority rather than a GitHub-owner-derived key prefix.",
-        "owner": "fiducia-cloud",
-        "path": "remote/argocd/fiducia/fiducia-load-balance.networkpolicy.yaml",
-        "platformTargetException": null,
-        "reviewState": "classified",
-        "rollback": {
-          "procedure": "Restore legacy key emission and readers or selectors, roll affected workloads, and verify the fleet returns to the pre-migration key set.",
-          "state": "required"
-        },
-        "ruleId": "metadata.fiducia",
-        "scope": "active",
-        "system": "metadata-key",
-        "target": "secrets.oresoftware.com/fiducia-client",
-        "targetTemplate": "secrets.oresoftware.com/fiducia-client",
-        "verification": {
-          "procedure": "Dual-emit old and new keys, roll or recreate affected workloads, verify all readers, selectors, and metrics, then prove no old-only objects remain.",
-          "state": "required"
-        },
-        "workload": "fiducia-secret-delivery"
-      },
-      {
-        "classificationStatus": "classified",
         "column": 9,
         "consumerGrants": [
           {
@@ -18779,6 +19763,84 @@
         "system": "metadata-key",
         "target": "secrets.oresoftware.com/fiducia-revocation-contract",
         "targetTemplate": "secrets.oresoftware.com/fiducia-revocation-contract",
+        "verification": {
+          "procedure": "Dual-emit old and new keys, roll or recreate affected workloads, verify all readers, selectors, and metrics, then prove no old-only objects remain.",
+          "state": "required"
+        },
+        "workload": "fiducia-secret-delivery"
+      },
+      {
+        "classificationStatus": "classified",
+        "column": 9,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "ores",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "ores"
+        ],
+        "current": "dd.dev/fiducia-tls",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-9b3a5b1734ef9e9ff67ad09ec92ca2934b594c7b265da7495c3846553d759907",
+        "line": 10,
+        "migrationMode": "dual-write-cutover",
+        "notes": "Fiducia secret-delivery labels use the fixed secrets.oresoftware.com authority rather than a GitHub-owner-derived key prefix.",
+        "owner": "fiducia-cloud",
+        "path": "remote/argocd/fiducia/fiducia-load-balance.tls.patch.yaml",
+        "platformTargetException": null,
+        "reviewState": "classified",
+        "rollback": {
+          "procedure": "Restore legacy key emission and readers or selectors, roll affected workloads, and verify the fleet returns to the pre-migration key set.",
+          "state": "required"
+        },
+        "ruleId": "metadata.fiducia",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": "secrets.oresoftware.com/fiducia-tls",
+        "targetTemplate": "secrets.oresoftware.com/fiducia-tls",
+        "verification": {
+          "procedure": "Dual-emit old and new keys, roll or recreate affected workloads, verify all readers, selectors, and metrics, then prove no old-only objects remain.",
+          "state": "required"
+        },
+        "workload": "fiducia-secret-delivery"
+      },
+      {
+        "classificationStatus": "classified",
+        "column": 9,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "ores",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "ores"
+        ],
+        "current": "dd.dev/fiducia-tls-rotation",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-e87835767d65004c77dd3d8898432bd6b9acd2c958b478679b0ffe98c1adf6d4",
+        "line": 11,
+        "migrationMode": "dual-write-cutover",
+        "notes": "Fiducia secret-delivery labels use the fixed secrets.oresoftware.com authority rather than a GitHub-owner-derived key prefix.",
+        "owner": "fiducia-cloud",
+        "path": "remote/argocd/fiducia/fiducia-load-balance.tls.patch.yaml",
+        "platformTargetException": null,
+        "reviewState": "classified",
+        "rollback": {
+          "procedure": "Restore legacy key emission and readers or selectors, roll affected workloads, and verify the fleet returns to the pre-migration key set.",
+          "state": "required"
+        },
+        "ruleId": "metadata.fiducia",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": "secrets.oresoftware.com/fiducia-tls-rotation",
+        "targetTemplate": "secrets.oresoftware.com/fiducia-tls-rotation",
         "verification": {
           "procedure": "Dual-emit old and new keys, roll or recreate affected workloads, verify all readers, selectors, and metrics, then prove no old-only objects remain.",
           "state": "required"
@@ -20048,6 +21110,285 @@
       },
       {
         "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/temporary",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-70826818a6bfb2959d5d344311d296403a3c43b60d2421198058e0793beb0bbd",
+        "line": 8,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/trusted-revision",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-3a5e02c964020c23f449baeda217d86a3e4a6158e981f84435a3309e5b515ee6",
+        "line": 9,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 9,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/temporary",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-17ef6054c18ec8aa2cdadcc9ae1c80276adf4e23ae7575a83cf88c230146e556",
+        "line": 19,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 9,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/trusted-revision",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-5d35247de3c2668cd0ebccbfcb7d96b219257523515236875088c1da9e9bef98",
+        "line": 20,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/job.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 9,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/temporary",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-68b0c9968659f3dfa68c00f5579d4600743ddd3b1720893f89a4a8a5c835c139",
+        "line": 16,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/kustomization.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/temporary",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-2ddd248cb7c7531b1a41eadcf9ad9b9199542c00696b6d49b152ffc8acfbdac8",
+        "line": 8,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/networkpolicy.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/temporary",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-bfb56c157fdb80fc094a9396dbaacc0c34162a53e464a70c48305ce4862f79e3",
+        "line": 8,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/rbac.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/temporary",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-0c2f96dc8ee5ee0349376963fa8e3a75c4c3965270d6025694a4c6c8f144038a",
+        "line": 20,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/rbac.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/temporary",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-477bc790cf7b09c147dc82b74e442ec585e21eae14094539af2961ef2400a45c",
+        "line": 69,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/gha-test-fallback-activation/aws/rbac.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "unclassified",
         "column": 9,
         "consumerGrants": [],
         "consumers": [],
@@ -20231,6 +21572,45 @@
           "state": "required"
         },
         "workload": null
+      },
+      {
+        "classificationStatus": "review-required",
+        "column": 14,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "meta-agents-demo",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "current": "dd/remote-dev/agent-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-4860a817609892bfe28a60959f786859aa92a702362c27a35433d2a9239bdb2b",
+        "line": 29,
+        "migrationMode": "copy-verify-cutover",
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
+        "owner": "ores",
+        "path": "remote/argocd/meta-agents-platform/repo-creds.externalsecret.yaml",
+        "platformTargetException": null,
+        "reviewState": "review-required",
+        "rollback": {
+          "procedure": "Point consumers back to the current path, refresh them, and verify readiness; retain the current object through the documented grace period.",
+          "state": "required"
+        },
+        "ruleId": "remote-dev.agent-secrets",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": "ores/dev/agents/provider-credentials",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "verification": {
+          "procedure": "Create or copy the target without logging values; compare non-secret version or checksum metadata, refresh the consumer, and prove readiness plus old-path rollback.",
+          "state": "required"
+        },
+        "workload": "agents"
       },
       {
         "classificationStatus": "unclassified",
@@ -22327,6 +23707,37 @@
         "workload": null
       },
       {
+        "classificationStatus": "unclassified",
+        "column": 5,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/transport",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-a68b75074e9c0f6537103a2fda4f15844c15244358217784df6259d0d562bbaf",
+        "line": 44,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "remote/argocd/secrets/common/fiducia-webhook.yaml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
         "classificationStatus": "classified",
         "column": 11,
         "consumerGrants": [
@@ -22342,8 +23753,8 @@
         "current": "dd.dev/fiducia-kv-secrets",
         "destructiveCleanupAllowed": false,
         "environment": null,
-        "id": "nsocc-83713d974fd59ab007f22b2dbfa239add6d07da1433aabb24da94f4209cc4351",
-        "line": 52,
+        "id": "nsocc-a7b7026915616f012e9124beac7291f6e6858657ab839390bb343df98cbc92fc",
+        "line": 53,
         "migrationMode": "dual-write-cutover",
         "notes": "Fiducia secret-delivery labels use the fixed secrets.oresoftware.com authority rather than a GitHub-owner-derived key prefix.",
         "owner": "fiducia-cloud",
@@ -39298,6 +40709,76 @@
       },
       {
         "classificationStatus": "review-required",
+        "column": 18,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "meta-agents-demo",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "current": "dd/remote-dev/agent-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-4ad7ba1476542c011e877274db4c4e58a71feefe2b459b50746104a93e1d5747",
+        "line": 207,
+        "migrationMode": "copy-verify-cutover",
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
+        "owner": "ores",
+        "path": "scripts/ops/activate_gha_test_org_fallback.py",
+        "platformTargetException": null,
+        "reviewState": "review-required",
+        "rollback": {
+          "procedure": "Point consumers back to the current path, refresh them, and verify readiness; retain the current object through the documented grace period.",
+          "state": "required"
+        },
+        "ruleId": "remote-dev.agent-secrets",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": "ores/dev/agents/provider-credentials",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "verification": {
+          "procedure": "Create or copy the target without logging values; compare non-secret version or checksum metadata, refresh the consumer, and prove readiness plus old-path rollback.",
+          "state": "required"
+        },
+        "workload": "agents"
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 25,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd.dev/gateway-config-revision",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-52cd27abfeed2b0b16421d7a21e25a4ad9ef5496880e51b7208e4c989e32d5ba",
+        "line": 475,
+        "migrationMode": "manual-review",
+        "notes": "Unknown metadata keys remain unclassified; new keys must use a reviewed DNS-qualified authority.",
+        "owner": "unclassified",
+        "path": "scripts/ops/activate_gha_test_org_fallback.py",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.metadata-key",
+        "scope": "active",
+        "system": "metadata-key",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
+      },
+      {
+        "classificationStatus": "review-required",
         "column": 33,
         "consumerGrants": [
           {
@@ -39520,6 +41001,45 @@
           "state": "required"
         },
         "workload": null
+      },
+      {
+        "classificationStatus": "review-required",
+        "column": 18,
+        "consumerGrants": [
+          {
+            "access": "read",
+            "consumer": "meta-agents-demo",
+            "state": "required"
+          }
+        ],
+        "consumers": [
+          "meta-agents-demo"
+        ],
+        "current": "dd/remote-dev/agent-secrets",
+        "destructiveCleanupAllowed": false,
+        "environment": "dev",
+        "id": "nsocc-cb44446d8d8ea80b96a474525925f78fe35862b82bd65ccf24499aaceca46f46",
+        "line": 69,
+        "migrationMode": "copy-verify-cutover",
+        "notes": "The current bundle crosses platform and product concerns; split product-specific credentials before treating the proposed platform target as final.",
+        "owner": "ores",
+        "path": "scripts/ops/bootstrap_gha_test_org_fallback.py",
+        "platformTargetException": null,
+        "reviewState": "review-required",
+        "rollback": {
+          "procedure": "Point consumers back to the current path, refresh them, and verify readiness; retain the current object through the documented grace period.",
+          "state": "required"
+        },
+        "ruleId": "remote-dev.agent-secrets",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": "ores/dev/agents/provider-credentials",
+        "targetTemplate": "ores/dev/agents/provider-credentials",
+        "verification": {
+          "procedure": "Create or copy the target without logging values; compare non-secret version or checksum metadata, refresh the consumer, and prove readiness plus old-path rollback.",
+          "state": "required"
+        },
+        "workload": "agents"
       },
       {
         "classificationStatus": "review-required",
@@ -41049,38 +42569,38 @@
     ],
     "summary": {
       "byClassificationStatus": {
-        "classified": 113,
-        "review-required": 480,
-        "unclassified": 683
+        "classified": 114,
+        "review-required": 483,
+        "unclassified": 727
       },
       "byOwner": {
         "benefactor-cc": 3,
-        "fiducia-cloud": 81,
-        "ores": 496,
+        "fiducia-cloud": 82,
+        "ores": 499,
         "shared-auth": 13,
-        "unclassified": 683
+        "unclassified": 727
       },
       "byReviewState": {
-        "blocked": 683,
-        "classified": 97,
-        "review-required": 496
+        "blocked": 727,
+        "classified": 98,
+        "review-required": 499
       },
       "byScope": {
-        "active": 1004,
-        "documentation": 185,
+        "active": 1049,
+        "documentation": 188,
         "test": 87
       },
       "bySystem": {
         "generated-package": 82,
         "host-path": 191,
-        "metadata-key": 437,
-        "slash-namespace": 452,
+        "metadata-key": 475,
+        "slash-namespace": 462,
         "source-package": 114
       },
-      "concreteTargets": 221,
-      "crossOwnerGrants": 193,
+      "concreteTargets": 225,
+      "crossOwnerGrants": 197,
       "destructiveCleanupAllowed": 0,
-      "total": 1276,
+      "total": 1324,
       "unresolvedTargetTemplates": 16
     }
   }
