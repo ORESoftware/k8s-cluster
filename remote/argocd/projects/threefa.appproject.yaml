@@ -1,10 +1,10 @@
-# AppProject for the 3FA sync server — the FIRST worked adoption of the app/platform
+# AppProject for the 3FA services — the FIRST worked adoption of the app/platform
 # boundary (see docs/app-deploy-contract.md, remote/argocd/projects/README.md).
 #
 # 3fa is the cleanest case: its manifests already live in the APP repo
 # (3FA-app/3fa-backend.rs, path deploy/k8s) and already target their own namespace
-# `threefa` — not `default`. This project pins that Application so it can ONLY source from
-# the 3fa repo, ONLY write to `threefa`, and create NO cluster-scoped resources except its
+# `threefa` — not `default`. This project pins those Applications so they can ONLY source from
+# the 3FA backend/web repos, ONLY write to `threefa`, and create NO cluster-scoped resources except its
 # own Namespace (transitional — see below).
 #
 # Safe to apply now: the threefa-sync-server Application is currently inert (awaits an
@@ -18,9 +18,10 @@ metadata:
   name: threefa
   namespace: argocd
 spec:
-  description: "Tenant project for the 3FA sync server — namespace threefa only."
+  description: "Tenant project for the 3FA backend and web server — namespace threefa only."
   sourceRepos:
     - "git@github.com:3FA-app/3fa-backend.rs.git"
+    - "git@github.com:3FA-app/3fa-web-server.rs.git"
   destinations:
     - server: https://kubernetes.default.svc
       namespace: threefa

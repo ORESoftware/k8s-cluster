@@ -1,0 +1,40 @@
+# Argo CD Application for the production 3FA web origin.
+#
+# The application tracks the app repository directly because Argo CD submodule
+# checkout is disabled. It remains safely inert until:
+#   1. 3FA-app/3fa-web-server.rs production changes are merged to main.
+#   2. Argo CD can read git@github.com:3FA-app/3fa-web-server.rs.git.
+#   3. The private GHCR image has an imagePullSecret in namespace threefa, or
+#      the package is otherwise made available to the cluster.
+#   4. ClusterSecretStore values referenced by the app ExternalSecret exist:
+#        threefa/supabase/url
+#        threefa/supabase/publishable-key
+#        threefa/web/server-secret
+#        threefa/shared-auth/service-credential
+#
+# Cloudflare retains the public multiapp.fyi hostnames. It should add the
+# cluster ingress as an origin only after /readyz is healthy; otherwise the
+# edge continues to emit its explicit JSON 503 response.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: threefa-web-server
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: threefa
+  source:
+    repoURL: git@github.com:3FA-app/3fa-web-server.rs.git
+    targetRevision: main
+    path: k8s/ec2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: threefa
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
