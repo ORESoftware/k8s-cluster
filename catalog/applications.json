@@ -4343,6 +4343,42 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "hhm",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/hhaus-runtime.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/runtime",
+              "repo_url": "https://github.com/hacker-house-medellin/hhm-infra.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "hhaus-runtime"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "argocd",
             "server": "https://kubernetes.default.svc"
           },
@@ -5133,10 +5169,10 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 154,
-    "applications": 109,
+    "application_documents": 155,
+    "applications": 110,
     "default_destination_namespace_declarations": 57,
-    "default_project_declarations": 116,
+    "default_project_declarations": 117,
     "duplicate_names": 25,
     "gitlink_render_path_violations": 0,
     "in_repo_source_declarations": 98

@@ -1,0 +1,23 @@
+# HHaus public runtimes are staged separately from the tunnel edge so missing
+# credentials or images cannot make a public hostname look healthy. This
+# Application deliberately has no automated sync policy. An operator must pin
+# both images by digest in hhm-infra and satisfy the documented database,
+# registry, and Shared Auth gates before the first sync.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hhaus-runtime
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hacker-house-medellin/hhm-infra.git
+    targetRevision: main
+    path: k8s/runtime
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hhm
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
