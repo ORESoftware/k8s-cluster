@@ -1,0 +1,166 @@
+# These Applications are intentionally manual. Sync only after the runbook's
+# node, storage, private-DNS, routing, backup, and secret gates are green.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-multicloud-cert-manager-gcp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.21.1
+    helm:
+      releaseName: cert-manager
+      values: |
+        crds:
+          enabled: true
+          keep: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-multicloud-trust-manager-gcp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: trust-manager
+    targetRevision: v0.24.0
+    helm:
+      releaseName: trust-manager
+      values: |
+        crds:
+          enabled: true
+          keep: true
+        app:
+          trust:
+            namespace: cert-manager
+          targetNamespaces:
+            - cockroachdb
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-multicloud-data-prerequisites-gcp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/multicloud-data-plane/prerequisites
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-multicloud-cockroach-operator-gcp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  project: default
+  source:
+    repoURL: https://charts.cockroachdb.com/v2
+    chart: cockroachdb-operator-chart
+    targetRevision: 1.0.0
+    helm:
+      releaseName: dd-cockroachdb-operator
+      values: |
+        numReplicas: 3
+        cloudRegion: us-central1
+        watchNamespaces: cockroachdb
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cockroach-operator
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-multicloud-cockroachdb-gcp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.cockroachdb.com/v2
+      chart: cockroachdb-chart
+      targetRevision: 26.3.1
+      helm:
+        releaseName: dd-cockroachdb
+        valueFiles:
+          - $values/remote/argocd/multicloud-data-plane/cockroachdb/values/common.yaml
+          - $values/remote/argocd/multicloud-data-plane/cockroachdb/values/gcp.yaml
+    - repoURL: https://github.com/ORESoftware/k8s-cluster.git
+      targetRevision: dev
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cockroachdb
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-multicloud-nats-supercluster-gcp
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "40"
+spec:
+  project: default
+  sources:
+    - repoURL: https://nats-io.github.io/k8s/helm/charts/
+      chart: nats
+      targetRevision: 2.14.6
+      helm:
+        releaseName: dd-nats-supercluster
+        valueFiles:
+          - $values/remote/argocd/multicloud-data-plane/nats/values/common.yaml
+          - $values/remote/argocd/multicloud-data-plane/nats/values/gcp.yaml
+    - repoURL: https://github.com/ORESoftware/k8s-cluster.git
+      targetRevision: dev
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nats-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

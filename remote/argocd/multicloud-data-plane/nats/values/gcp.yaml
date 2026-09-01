@@ -1,0 +1,94 @@
+config:
+  cluster:
+    merge:
+      name: ores-gcp
+  jetstream:
+    merge:
+      domain: ORES_GCP
+  gateway:
+    merge:
+      name: ores-gcp
+      reject_unknown_cluster: true
+      gateways:
+        - name: ores-aws
+          urls:
+            - nats://nats-gateway.aws.k8s.ores.internal:7222
+        - name: ores-azure
+          urls:
+            - nats://nats-gateway.azure.k8s.ores.internal:7222
+  serverNamePrefix: gcp-
+
+extraResources:
+  - apiVersion: v1
+    kind: Service
+    metadata:
+      name: dd-nats-gateway
+      namespace: nats-system
+      annotations:
+        networking.gke.io/load-balancer-type: Internal
+      labels:
+        dd.dev/cloud-provider: gcp
+        dd.dev/network-scope: private-multicloud
+    spec:
+      type: LoadBalancer
+      loadBalancerSourceRanges:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        # Google Cloud Load Balancing health-check systems only.
+        - 35.191.0.0/16
+        - 130.211.0.0/22
+      selector:
+        app.kubernetes.io/instance: dd-nats-supercluster
+        app.kubernetes.io/name: nats
+      ports:
+        - name: gateway
+          protocol: TCP
+          port: 7222
+          targetPort: gateway
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: dd-nats-supercluster-ingress
+      namespace: nats-system
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/instance: dd-nats-supercluster
+          app.kubernetes.io/name: nats
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: dd-nats-supercluster
+                  app.kubernetes.io/name: nats
+          ports:
+            - protocol: TCP
+              port: 4222
+            - protocol: TCP
+              port: 6222
+            - protocol: TCP
+              port: 7222
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  dd.dev/nats-client: "true"
+          ports:
+            - protocol: TCP
+              port: 4222
+        - from:
+            - ipBlock:
+                cidr: 10.0.0.0/8
+            - ipBlock:
+                cidr: 172.16.0.0/12
+            - ipBlock:
+                cidr: 192.168.0.0/16
+            - ipBlock:
+                cidr: 35.191.0.0/16
+            - ipBlock:
+                cidr: 130.211.0.0/22
+          ports:
+            - protocol: TCP
+              port: 7222

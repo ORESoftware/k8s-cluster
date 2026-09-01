@@ -15,6 +15,9 @@ resources:
   - scheduled-task-digest.application.yaml
   - gha-test-fallback-activation.application.yaml
   - honeypot-platform
+  # Register manual, fail-closed CockroachDB and NATS supercluster Applications.
+  # Their child workloads do not sync until the multi-cloud readiness gates pass.
+  - ../../multicloud-data-plane/clusters/aws
   # The root adopts the complete current overlay; retain newer child Application
   # declarations while adding drift detection and self-healing for the set.
   - root.application.yaml

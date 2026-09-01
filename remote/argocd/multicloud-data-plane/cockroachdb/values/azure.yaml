@@ -1,0 +1,9 @@
+cockroachdb:
+  crdbCluster:
+    service:
+      public:
+        type: LoadBalancer
+        annotations:
+          service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+        labels:
+          dd.dev/cloud-provider: azure

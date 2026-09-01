@@ -5,12 +5,13 @@ These Kustomize overlays are the cloud-specific ArgoCD bootstrap entry points fo
 
 - `aws/` for the EC2 kubeadm cluster.
 - `gcp/` for a GKE or kubeadm-on-GCP cluster.
+- `azure/` for the future AKS cluster bootstrap profile.
 - `hetzner/` for the Hetzner kubeadm cluster.
 
 ## Self-management (root app-of-apps)
 
 Each overlay contains a self-referencing root Application — `dd-root-aws`, `dd-root-gcp`,
-`dd-root-hetzner` — that syncs its own `remote/argocd/clusters/<cloud>` path (`automated`,
+`dd-root-azure`, `dd-root-hetzner` — that syncs its own `remote/argocd/clusters/<cloud>` path (`automated`,
 `prune`, `selfHeal`). This makes the entry point a true GitOps root rather than a one-shot
 apply: after bootstrap, edits to a cluster's Application set on `dev` reconcile automatically,
 out-of-band changes to the Application CRs heal back to Git, and each root surfaces in
@@ -34,5 +35,13 @@ Application for the matching store, plus one common Application for the shared E
 - GCP: `remote/argocd/secrets/providers/gcp` and `remote/argocd/secrets/common`
 - Hetzner: `remote/argocd/secrets/providers/hetzner` and `remote/argocd/secrets/common`
 
+Azure deliberately has no secret-store overlay yet: tenant, Key Vault, and workload identity
+values must be provisioned and reviewed rather than committed as placeholders. Its multi-cloud
+data-plane prerequisites stay manual until `ClusterSecretStore/dd-cluster-secrets` exists.
+
 The shared block-storage contract is `dd-block`. Provider overlays map it to EBS CSI, GCE PD CSI,
-or Hetzner CSI without changing app manifests.
+Azure Disk CSI, or Hetzner CSI without changing app manifests.
+
+AWS, GCP, and Azure also register the manual Applications under
+`remote/argocd/multicloud-data-plane`. Read `docs/multicloud-cockroachdb-nats.md`; registration is
+not authorization to sync stateful quorums.

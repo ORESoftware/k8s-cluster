@@ -1,0 +1,9 @@
+cockroachdb:
+  crdbCluster:
+    service:
+      public:
+        type: LoadBalancer
+        annotations:
+          networking.gke.io/load-balancer-type: Internal
+        labels:
+          dd.dev/cloud-provider: gcp

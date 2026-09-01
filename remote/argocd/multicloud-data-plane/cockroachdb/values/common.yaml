@@ -1,0 +1,96 @@
+# Final desired state. Bootstrap regions sequentially as described in the runbook;
+# never initialize the same logical cluster independently in more than one cloud.
+cockroachdb:
+  clusterDomain: cluster.local
+  tls:
+    enabled: true
+    selfSigner:
+      enabled: false
+    certManager:
+      enabled: false
+    externalCertificates:
+      enabled: true
+      certificates:
+        caConfigMapName: dd-cockroachdb-ca
+        nodeClientSecretName: dd-cockroachdb-node
+        nodeSecretName: dd-cockroachdb-node
+        rootSqlClientSecretName: dd-cockroachdb-root
+        httpSecretName: dd-cockroachdb-http
+  crdbCluster:
+    image:
+      name: cockroachdb/cockroach:v26.3.1
+      pullPolicy: IfNotPresent
+    dataStore:
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 100Gi
+          volumeMode: Filesystem
+          storageClassName: dd-block
+    rbac:
+      nodeReader:
+        create: true
+      serviceAccount:
+        create: true
+        name: dd-cockroachdb
+    regions:
+      - code: us-east-1
+        nodes: 3
+        cloudProvider: aws
+        namespace: cockroachdb
+        domain: aws.crdb.k8s.ores.internal
+      - code: us-central1
+        nodes: 3
+        cloudProvider: gcp
+        namespace: cockroachdb
+        domain: gcp.crdb.k8s.ores.internal
+      - code: eastus
+        nodes: 3
+        cloudProvider: azure
+        namespace: cockroachdb
+        domain: azure.crdb.k8s.ores.internal
+    service:
+      public:
+        name: dd-cockroachdb-public
+        type: ClusterIP
+        labels:
+          app.kubernetes.io/component: cockroachdb
+          dd.dev/network-scope: private-multicloud
+      ingress:
+        enabled: false
+    localityMappings:
+      - nodeLabel: topology.kubernetes.io/region
+        localityLabel: region
+      - nodeLabel: topology.kubernetes.io/zone
+        localityLabel: zone
+    podTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/component: cockroachdb
+          dd.dev/data-plane: cockroachdb
+      spec:
+        terminationGracePeriodSeconds: 300
+        containers:
+          - name: cockroachdb
+            resources:
+              requests:
+                cpu: "2"
+                memory: 8Gi
+              limits:
+                cpu: "4"
+                memory: 16Gi
+        topologySpreadConstraints:
+          - maxSkew: 1
+            topologyKey: topology.kubernetes.io/zone
+            whenUnsatisfiable: DoNotSchedule
+    persistentVolumeClaimRetentionPolicy:
+      whenDeleted: Retain
+
+k8s:
+  fullnameOverride: dd-cockroachdb
+  labels:
+    app.kubernetes.io/part-of: dd-multicloud-data-plane
+    dd.dev/data-plane: cockroachdb

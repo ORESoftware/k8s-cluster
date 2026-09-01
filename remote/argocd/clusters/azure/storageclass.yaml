@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: dd-block
+provisioner: disk.csi.azure.com
+parameters:
+  skuName: Premium_LRS
+  # CockroachDB is write-heavy; do not put its durability path behind host caching.
+  cachingMode: None
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer

@@ -1,0 +1,132 @@
+# The CA private key arrives through External Secrets. cert-manager issues the
+# provider-local node/client certificates; trust-manager publishes only the CA
+# certificate into the ConfigMap required by the CockroachDB operator API.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: dd-cockroachdb
+  namespace: cockroachdb
+spec:
+  ca:
+    secretName: dd-cockroachdb-ca
+---
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: dd-cockroachdb-ca
+spec:
+  sources:
+    - secret:
+        name: dd-cockroachdb-ca-trust-source
+        key: tls.crt
+  target:
+    configMap:
+      key: ca.crt
+      metadata:
+        labels:
+          dd.dev/pki-role: cockroachdb-trust-anchor
+    namespaceSelector:
+      matchLabels:
+        dd.dev/data-plane: cockroachdb
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dd-cockroachdb-node
+  namespace: cockroachdb
+spec:
+  secretName: dd-cockroachdb-node
+  duration: 8760h
+  renewBefore: 168h
+  commonName: node
+  subject:
+    organizations:
+      - Cockroach
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+  privateKey:
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Always
+  dnsNames:
+    - localhost
+    - dd-cockroachdb
+    - dd-cockroachdb.cockroachdb
+    - dd-cockroachdb.cockroachdb.svc.cluster.local
+    - "*.dd-cockroachdb"
+    - "*.dd-cockroachdb.cockroachdb"
+    - "*.dd-cockroachdb.cockroachdb.svc.cluster.local"
+    - dd-cockroachdb-public
+    - dd-cockroachdb-public.cockroachdb
+    - dd-cockroachdb-public.cockroachdb.svc.cluster.local
+    - dd-cockroachdb-join
+    - dd-cockroachdb-join.cockroachdb
+    - dd-cockroachdb-join.cockroachdb.svc.cluster.local
+    - dd-cockroachdb.cockroachdb.svc.aws.crdb.k8s.ores.internal
+    - dd-cockroachdb.cockroachdb.svc.gcp.crdb.k8s.ores.internal
+    - dd-cockroachdb.cockroachdb.svc.azure.crdb.k8s.ores.internal
+  ipAddresses:
+    - 127.0.0.1
+  issuerRef:
+    name: dd-cockroachdb
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dd-cockroachdb-root
+  namespace: cockroachdb
+spec:
+  secretName: dd-cockroachdb-root
+  duration: 672h
+  renewBefore: 48h
+  commonName: root
+  subject:
+    organizations:
+      - Cockroach
+  usages:
+    - digital signature
+    - key encipherment
+    - client auth
+  privateKey:
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Always
+  issuerRef:
+    name: dd-cockroachdb
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: dd-cockroachdb-http
+  namespace: cockroachdb
+spec:
+  secretName: dd-cockroachdb-http
+  duration: 8760h
+  renewBefore: 168h
+  commonName: dd-cockroachdb-public
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  privateKey:
+    algorithm: RSA
+    size: 3072
+    rotationPolicy: Always
+  dnsNames:
+    - dd-cockroachdb-public
+    - dd-cockroachdb-public.cockroachdb
+    - dd-cockroachdb-public.cockroachdb.svc.cluster.local
+    - dd-cockroachdb.cockroachdb.svc.aws.crdb.k8s.ores.internal
+    - dd-cockroachdb.cockroachdb.svc.gcp.crdb.k8s.ores.internal
+    - dd-cockroachdb.cockroachdb.svc.azure.crdb.k8s.ores.internal
+  issuerRef:
+    name: dd-cockroachdb
+    kind: Issuer
+    group: cert-manager.io

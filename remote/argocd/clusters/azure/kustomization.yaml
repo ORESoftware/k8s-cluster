@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+labels:
+  - pairs:
+      dd.dev/cloud-provider: azure
+
+resources:
+  - storageclass.yaml
+  - applications.yaml
+  - ../../multicloud-data-plane/clusters/azure
+  - root.application.yaml

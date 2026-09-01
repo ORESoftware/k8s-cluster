@@ -9,4 +9,6 @@ resources:
   - storageclass.yaml
   - applications.yaml
   - ai-agent-coordinator.applications.yaml
+  # Registration is safe before activation: all six child Applications are manual.
+  - ../../multicloud-data-plane/clusters/gcp
   - root.application.yaml

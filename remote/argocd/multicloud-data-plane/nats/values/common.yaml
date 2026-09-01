@@ -1,0 +1,165 @@
+fullnameOverride: dd-nats-supercluster
+namespaceOverride: nats-system
+
+tlsCA:
+  enabled: true
+  secretName: dd-nats-ca
+  dir: /etc/nats-ca-cert
+  key: ca.crt
+
+config:
+  cluster:
+    enabled: true
+    port: 6222
+    replicas: 3
+    noAdvertise: true
+    routeURLs:
+      useFQDN: true
+      k8sClusterDomain: cluster.local
+    tls:
+      enabled: true
+      secretName: dd-nats-route-tls
+      merge:
+        ca_file: /etc/nats-ca-cert/ca.crt
+        verify: true
+        timeout: 2
+  jetstream:
+    enabled: true
+    fileStore:
+      enabled: true
+      dir: /data
+      pvc:
+        enabled: true
+        size: 50Gi
+        storageClassName: dd-block
+      maxSize: 45Gi
+    memoryStore:
+      enabled: true
+      maxSize: 512Mi
+  nats:
+    port: 4222
+    tls:
+      enabled: true
+      secretName: dd-nats-client-tls
+      merge:
+        ca_file: /etc/nats-ca-cert/ca.crt
+        verify: true
+        timeout: 2
+  leafnodes:
+    enabled: false
+  websocket:
+    enabled: false
+  mqtt:
+    enabled: false
+  gateway:
+    enabled: true
+    port: 7222
+    tls:
+      enabled: true
+      secretName: dd-nats-gateway-tls
+      merge:
+        ca_file: /etc/nats-ca-cert/ca.crt
+        verify: true
+        timeout: 2
+  monitor:
+    enabled: true
+    port: 8222
+  profiling:
+    enabled: false
+  merge:
+    authorization:
+      token: << $NATS_AUTH_TOKEN >>
+    max_payload: 8MB
+
+container:
+  image:
+    repository: nats
+    tag: 2.14.6-alpine
+    pullPolicy: IfNotPresent
+  env:
+    NATS_AUTH_TOKEN:
+      valueFrom:
+        secretKeyRef:
+          name: dd-nats-client-auth
+          key: token
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+promExporter:
+  enabled: true
+  image:
+    repository: natsio/prometheus-nats-exporter
+    tag: 0.20.1
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  podMonitor:
+    enabled: false
+
+service:
+  enabled: true
+  ports:
+    nats:
+      enabled: true
+    leafnodes:
+      enabled: false
+    websocket:
+      enabled: false
+    mqtt:
+      enabled: false
+    cluster:
+      enabled: false
+    gateway:
+      enabled: false
+    monitor:
+      enabled: false
+    profiling:
+      enabled: false
+  merge:
+    metadata:
+      labels:
+        dd.dev/network-scope: cluster-local
+
+statefulSet:
+  merge:
+    spec:
+      persistentVolumeClaimRetentionPolicy:
+        whenDeleted: Retain
+        whenScaled: Retain
+
+podTemplate:
+  configChecksumAnnotation: true
+  terminationGracePeriodSeconds: 90
+  topologySpreadConstraints:
+    topology.kubernetes.io/zone:
+      maxSkew: 1
+      whenUnsatisfiable: DoNotSchedule
+  merge:
+    metadata:
+      labels:
+        dd.dev/data-plane: nats-supercluster
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
+podDisruptionBudget:
+  enabled: true
+  merge:
+    spec:
+      maxUnavailable: 1
+
+natsBox:
+  enabled: false
