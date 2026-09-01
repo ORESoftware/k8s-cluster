@@ -1,5 +1,5 @@
-name: Publish Canonical core repositories
-run-name: Publish Canonical core repositories @ ${{ github.sha }}
+name: Publish Canonical dependency repositories
+run-name: Publish Canonical dependency repositories @ ${{ github.sha }}
 
 on:
   pull_request:
@@ -12,12 +12,17 @@ on:
       - .github/workflows/ops-publish-canonical-core-repositories.yml
       - scripts/ops/publish_canonical_core_repositories_20260805.py
   workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type publish-canonical-lib-core
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-canonical-core-repositories
+  group: publish-canonical-dependency-repositories
   cancel-in-progress: false
 
 jobs:
@@ -38,13 +43,27 @@ jobs:
           script=scripts/ops/publish_canonical_core_repositories_20260805.py
           python3 -m py_compile "$script"
           python3 "$script" --validate-only
-          grep -q 'canonical-api-server.rs' "$script"
-          grep -q 'canonical-lib' "$script"
-          grep -q 'private": False' "$script"
+          grep -q '"canonical-api-server.rs"' "$script"
+          grep -q '"canonical-lib-core"' "$script"
+          grep -q '3fee2f107c6c23286e7cd163236acebf4b1d016e' "$script"
+          if grep -q '"canonical-lib":' "$script"; then
+            echo 'legacy canonical-lib must not remain a visibility-write target' >&2
+            exit 1
+          fi
+          grep -q '"private": False' "$script"
           git diff --check
 
+      - name: Validate explicit dispatch confirmation
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = publish-canonical-lib-core
+
   publish:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 75
@@ -53,9 +72,10 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      HANDSHAKE_NONCE: canonical-public-20260805-7e49bba28be34c2b97c5062a85806b4e
-      PUBLIC_KEY_PATH: .github/tmp/canonical-public-7e49bba28be34c2b97c5062a85806b4e.pub.pem
-      CIPHERTEXT_PATH: .github/tmp/canonical-public-7e49bba28be34c2b97c5062a85806b4e.enc.b64
+      CONFIRMATION: ${{ inputs.confirmation }}
+      HANDSHAKE_NONCE: canonical-lib-core-public-20260901-54d204d1865c4a33a85bfa2d31c86f26
+      PUBLIC_KEY_PATH: .github/tmp/canonical-lib-core-public-54d204d1865c4a33a85bfa2d31c86f26.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/canonical-lib-core-public-54d204d1865c4a33a85bfa2d31c86f26.enc.b64
 
     steps:
       - name: Check out exact trusted revision
@@ -73,6 +93,7 @@ jobs:
           set -Eeuo pipefail
           umask 077
 
+          test "$CONFIRMATION" = publish-canonical-lib-core
           test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
           test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -206,8 +227,8 @@ jobs:
             --hosts-file /tmp/canonical-public-hosts.yml
 
           for full_name in \
-            canonical-cloud/canonical-lib \
-            canonical-cloud/canonical-api-server.rs
+            canonical-cloud/canonical-api-server.rs \
+            canonical-cloud/canonical-lib-core
           do
             repository_json="$(curl --fail-with-body --silent --show-error \
               --header 'Accept: application/vnd.github+json' \
@@ -223,4 +244,4 @@ jobs:
 
           cleanup_credentials
           trap - EXIT
-          echo 'VERIFIED_CANONICAL_CORE_PUBLICATION 2/2'
+          echo 'VERIFIED_CANONICAL_DEPENDENCY_PUBLICATION 2/2'
