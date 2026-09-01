@@ -113,6 +113,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 tools/namespace_manifest.py render \
+            --root . \
+            > artifacts/namespace-manifest.expected.json
           python3 tools/namespace_manifest.py check \
             --root . \
             --format json \
@@ -190,6 +193,7 @@ jobs:
             artifacts/namespace-source-ref.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
+            artifacts/namespace-manifest.expected.json
             artifacts/namespace-manifest-report.json
             artifacts/namespace-manifest-invariants.json
             artifacts/namespace-manifest.sha256
