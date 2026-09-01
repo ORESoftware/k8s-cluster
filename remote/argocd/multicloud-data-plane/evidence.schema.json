@@ -1,0 +1,326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ORESoftware/k8s-cluster/remote/argocd/multicloud-data-plane/evidence.schema.json",
+  "title": "AWS/GCP/Azure CockroachDB and NATS activation evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "mode",
+    "evidence_started_at",
+    "evidence_completed_at",
+    "providers",
+    "cockroachdb",
+    "nats",
+    "fiducia_boundary"
+  ],
+  "properties": {
+    "schema_version": {"const": "dd.multicloud-data-plane.v1"},
+    "source": {"$ref": "#/$defs/source"},
+    "mode": {"enum": ["canary", "production"]},
+    "evidence_started_at": {"type": "string", "format": "date-time"},
+    "evidence_completed_at": {"type": "string", "format": "date-time"},
+    "providers": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"$ref": "#/$defs/provider"}
+    },
+    "cockroachdb": {"$ref": "#/$defs/cockroachdb"},
+    "nats": {"$ref": "#/$defs/nats"},
+    "fiducia_boundary": {"$ref": "#/$defs/fiduciaBoundary"},
+    "evidence_sha256": {"$ref": "#/$defs/sha256"}
+  },
+  "$defs": {
+    "sha40": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "git_sha", "observed_at"],
+      "properties": {
+        "repository": {"const": "ORESoftware/k8s-cluster"},
+        "git_sha": {"$ref": "#/$defs/sha40"},
+        "observed_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage_class", "encrypted", "snapshot_restore_verified"],
+      "properties": {
+        "storage_class": {"const": "dd-block"},
+        "encrypted": {"const": true},
+        "snapshot_restore_verified": {"const": true}
+      }
+    },
+    "privateDns": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "resolved", "addresses"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "resolved": {"const": true},
+        "addresses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 2, "maxLength": 64}
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "peer_cidrs",
+        "cockroach_sql_publicly_reachable",
+        "nats_gateway_publicly_reachable",
+        "private_dns"
+      ],
+      "properties": {
+        "peer_cidrs": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^(?:10|172|192)\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}/(?:1[6-9]|2[0-9]|3[0-2])$"}
+        },
+        "cockroach_sql_publicly_reachable": {"const": false},
+        "nats_gateway_publicly_reachable": {"const": false},
+        "private_dns": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "items": {"$ref": "#/$defs/privateDns"}
+        }
+      }
+    },
+    "caFingerprints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cockroach_sha256", "nats_sha256"],
+      "properties": {
+        "cockroach_sha256": {"$ref": "#/$defs/sha256"},
+        "nats_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "cluster_uid",
+        "region",
+        "zones",
+        "kubernetes_version",
+        "storage",
+        "network",
+        "ca_fingerprints"
+      ],
+      "properties": {
+        "provider": {"enum": ["aws", "gcp", "azure"]},
+        "cluster_uid": {"$ref": "#/$defs/uuid"},
+        "region": {"enum": ["us-east-1", "us-central1", "eastus"]},
+        "zones": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 64}
+        },
+        "kubernetes_version": {"type": "string", "pattern": "^v?[0-9]+\\.[0-9]+(?:\\.[0-9]+)?(?:[-+].*)?$"},
+        "storage": {"$ref": "#/$defs/storage"},
+        "network": {"$ref": "#/$defs/network"},
+        "ca_fingerprints": {"$ref": "#/$defs/caFingerprints"}
+      }
+    },
+    "locality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "region", "live_nodes"],
+      "properties": {
+        "provider": {"enum": ["aws", "gcp", "azure"]},
+        "region": {"enum": ["us-east-1", "us-central1", "eastus"]},
+        "live_nodes": {"const": 3}
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifact_sha256", "completed_at", "encrypted"],
+      "properties": {
+        "status": {"const": "success"},
+        "artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "encrypted": {"const": true}
+      }
+    },
+    "restore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "kind",
+        "source_artifact_sha256",
+        "target_cluster_uid",
+        "completed_at",
+        "rpo_seconds",
+        "rto_seconds"
+      ],
+      "properties": {
+        "status": {"const": "success"},
+        "kind": {"enum": ["point-in-time", "clean-room"]},
+        "source_artifact_sha256": {"$ref": "#/$defs/sha256"},
+        "target_cluster_uid": {"$ref": "#/$defs/uuid"},
+        "completed_at": {"type": "string", "format": "date-time"},
+        "rpo_seconds": {"type": "number", "minimum": 0},
+        "rto_seconds": {"type": "number", "minimum": 0}
+      }
+    },
+    "cockroachdb": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cluster_id",
+        "live_nodes",
+        "localities",
+        "unavailable_ranges",
+        "under_replicated_ranges",
+        "sql_tls_verified",
+        "wrong_ca_rejected",
+        "region_survival_verified",
+        "backup",
+        "restore"
+      ],
+      "properties": {
+        "cluster_id": {"$ref": "#/$defs/uuid"},
+        "live_nodes": {"const": 9},
+        "localities": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"$ref": "#/$defs/locality"}
+        },
+        "unavailable_ranges": {"const": 0},
+        "under_replicated_ranges": {"const": 0},
+        "sql_tls_verified": {"const": true},
+        "wrong_ca_rejected": {"const": true},
+        "region_survival_verified": {"const": true},
+        "backup": {"$ref": "#/$defs/backup"},
+        "restore": {"$ref": "#/$defs/restore"}
+      }
+    },
+    "regionalNatsCluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "jetstream_domain",
+        "servers",
+        "jetstream_replica_factor",
+        "connected_gateways",
+        "route_tls_verified",
+        "gateway_mtls_verified",
+        "client_mtls_verified",
+        "unknown_cluster_rejected"
+      ],
+      "properties": {
+        "provider": {"enum": ["aws", "gcp", "azure"]},
+        "jetstream_domain": {"enum": ["ORES_AWS", "ORES_GCP", "ORES_AZURE"]},
+        "servers": {"const": 3},
+        "jetstream_replica_factor": {"const": 3},
+        "connected_gateways": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"enum": ["aws", "gcp", "azure"]}
+        },
+        "route_tls_verified": {"const": true},
+        "gateway_mtls_verified": {"const": true},
+        "client_mtls_verified": {"const": true},
+        "unknown_cluster_rejected": {"const": true}
+      }
+    },
+    "crossRegionDurability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategies",
+        "redelivery_verified",
+        "dlq_verified",
+        "snapshot_restore_verified",
+        "partition_recovery_verified",
+        "duplicate_protected_effects",
+        "mirror_lag_seconds"
+      ],
+      "properties": {
+        "strategies": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["jetstream-mirrors", "jetstream-sources", "snapshot-restore", "transactional-outbox"]
+          }
+        },
+        "redelivery_verified": {"const": true},
+        "dlq_verified": {"const": true},
+        "snapshot_restore_verified": {"const": true},
+        "partition_recovery_verified": {"const": true},
+        "duplicate_protected_effects": {"const": 0},
+        "mirror_lag_seconds": {"type": "number", "minimum": 0}
+      }
+    },
+    "nats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "regional_clusters",
+        "cross_region_durability",
+        "legacy_bootstrap_remains_authoritative",
+        "operator_account_jwt_isolation_verified",
+        "subject_acl_verified"
+      ],
+      "properties": {
+        "regional_clusters": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"$ref": "#/$defs/regionalNatsCluster"}
+        },
+        "cross_region_durability": {"$ref": "#/$defs/crossRegionDurability"},
+        "legacy_bootstrap_remains_authoritative": {"const": true},
+        "operator_account_jwt_isolation_verified": {"type": "boolean"},
+        "subject_acl_verified": {"type": "boolean"}
+      }
+    },
+    "fiduciaBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direct_nats_gateway_member",
+        "shared_nats_ca",
+        "shared_nats_account",
+        "shared_jetstream_domain",
+        "gateway_mode",
+        "replay_protection_verified",
+        "idempotency_verified"
+      ],
+      "properties": {
+        "direct_nats_gateway_member": {"const": false},
+        "shared_nats_ca": {"const": false},
+        "shared_nats_account": {"const": false},
+        "shared_jetstream_domain": {"const": false},
+        "gateway_mode": {"const": "authenticated-application-api"},
+        "replay_protection_verified": {"const": true},
+        "idempotency_verified": {"const": true}
+      }
+    }
+  }
+}
