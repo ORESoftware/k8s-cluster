@@ -25,21 +25,18 @@ const providers = {
   aws: {
     region: 'us-east-1',
     peerRegions: ['gcp', 'azure'],
-    jetStreamDomain: 'ORES_AWS',
     storageProvisioner: 'ebs.csi.aws.com',
     internalAnnotation: 'service.beta.kubernetes.io/aws-load-balancer-scheme: internal',
   },
   gcp: {
     region: 'us-central1',
     peerRegions: ['aws', 'azure'],
-    jetStreamDomain: 'ORES_GCP',
     storageProvisioner: 'pd.csi.storage.gke.io',
     internalAnnotation: 'networking.gke.io/load-balancer-type: Internal',
   },
   azure: {
     region: 'eastus',
     peerRegions: ['aws', 'gcp'],
-    jetStreamDomain: 'ORES_AZURE',
     storageProvisioner: 'disk.csi.azure.com',
     internalAnnotation: 'service.beta.kubernetes.io/azure-load-balancer-internal: "true"',
   },
@@ -142,13 +139,13 @@ test('CockroachDB private PKI is secret-backed and publishes only its public tru
   assert.doesNotMatch(externalSecrets + pki, /^kind: Secret$/m);
 });
 
-test('NATS is three independent regional R3 JetStream clusters with closed mTLS gateways', async () => {
+test('NATS is one authenticated supercluster with explicit regional R3 stream placement', async () => {
   const common = await readRepoFile(
     'remote/argocd/multicloud-data-plane/nats/values/common.yaml',
   );
 
   assert.match(common, /cluster:\n\s+enabled: true[\s\S]*replicas: 3/);
-  assert.match(common, /jetstream:\n\s+enabled: true/);
+  assert.match(common, /jetstream:\n\s+enabled: true\n\s+merge:\n\s+domain: ORES_MULTICLOUD/);
   assert.match(common, /storageClassName: dd-block/);
   assert.match(common, /size: 50Gi/);
   assert.match(common, /gateway:\n\s+enabled: true\n\s+port: 7222/);
@@ -156,8 +153,17 @@ test('NATS is three independent regional R3 JetStream clusters with closed mTLS 
   assert.match(common, /secretName: dd-nats-route-tls/);
   assert.match(common, /secretName: dd-nats-client-tls/);
   assert.match(common, /secretName: dd-nats-ca/);
-  assert.match(common, /token: << \$NATS_AUTH_TOKEN >>/);
-  assert.match(common, /name: dd-nats-client-auth\n\s+key: token/);
+  assert.match(common, /accounts:\n\s+DD_APP:\n\s+jetstream: enabled/);
+  assert.match(common, /SYS:[\s\S]*system_account: SYS/);
+  assert.match(common, /user: << \$NATS_APP_USER >>/);
+  assert.match(common, /password: << \$NATS_APP_PASSWORD >>/);
+  assert.match(common, /user: << \$NATS_SYSTEM_USER >>/);
+  assert.match(common, /password: << \$NATS_SYSTEM_PASSWORD >>/);
+  assert.match(common, /name: dd-nats-client-auth\n\s+key: username/);
+  assert.match(common, /name: dd-nats-client-auth\n\s+key: password/);
+  assert.match(common, /name: dd-nats-system-auth\n\s+key: username/);
+  assert.match(common, /name: dd-nats-system-auth\n\s+key: password/);
+  assert.doesNotMatch(common, /authorization:\n\s+token:/);
   assert.match(common, /persistentVolumeClaimRetentionPolicy:[\s\S]*whenDeleted: Retain/);
   assert.match(common, /maxUnavailable: 1/);
   assert.match(common, /topology\.kubernetes\.io\/zone:[\s\S]*DoNotSchedule/);
@@ -170,7 +176,7 @@ test('NATS is three independent regional R3 JetStream clusters with closed mTLS 
     );
 
     assert.ok((overlay.match(new RegExp(`name: ores-${provider}`, 'g')) ?? []).length >= 2, provider);
-    assert.match(overlay, new RegExp(`domain: ${contract.jetStreamDomain}`), provider);
+    assert.doesNotMatch(overlay, /domain:/, provider);
     assert.match(overlay, /reject_unknown_cluster: true/, provider);
     assert.match(overlay, new RegExp(contract.internalAnnotation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     assert.match(overlay, /kind: NetworkPolicy/);
@@ -189,6 +195,53 @@ test('NATS is three independent regional R3 JetStream clusters with closed mTLS 
   }
 });
 
+test('NATS secret and placement contracts are fail-closed', async () => {
+  const externalSecrets = await readRepoFile(
+    'remote/argocd/multicloud-data-plane/prerequisites/external-secrets.yaml',
+  );
+  const runbook = await readRepoFile('docs/multicloud-cockroachdb-nats.md');
+
+  assert.match(externalSecrets, /name: dd-nats-client-auth[\s\S]*key: dd\/multicloud\/nats-client-auth/);
+  assert.match(externalSecrets, /name: dd-nats-system-auth[\s\S]*key: dd\/multicloud\/nats-system-auth/);
+  assert.match(runbook, /--js-domain ORES_MULTICLOUD/);
+  assert.match(runbook, /--cluster ores-(?:aws|gcp|azure)/);
+  assert.match(runbook, /explicit stream placement/i);
+  assert.match(runbook, /nine-member JetStream metadata quorum/i);
+});
+
+test('the pinned NATS chart renders the shared domain, accounts, and secret references', () => {
+  for (const provider of Object.keys(providers)) {
+    const rendered = execFileSync(
+      'helm',
+      [
+        'template',
+        'dd-nats-supercluster',
+        'nats',
+        '--repo',
+        'https://nats-io.github.io/k8s/helm/charts/',
+        '--version',
+        '2.14.6',
+        '--namespace',
+        'nats-system',
+        '-f',
+        'remote/argocd/multicloud-data-plane/nats/values/common.yaml',
+        '-f',
+        `remote/argocd/multicloud-data-plane/nats/values/${provider}.yaml`,
+      ],
+      { cwd: repoRoot, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 },
+    );
+
+    assert.match(rendered, /"domain": "ORES_MULTICLOUD"/, provider);
+    assert.match(rendered, /"DD_APP": \{[\s\S]*"jetstream": "enabled"/, provider);
+    assert.match(rendered, /"SYS": \{[\s\S]*"system_account": "SYS"/, provider);
+    assert.match(rendered, /"password": \$NATS_APP_PASSWORD/, provider);
+    assert.match(rendered, /"password": \$NATS_SYSTEM_PASSWORD/, provider);
+    assert.match(rendered, new RegExp(`"name": "ores-${provider}"`), provider);
+    assert.match(rendered, /name: dd-nats-client-auth[\s\S]*name: dd-nats-system-auth/, provider);
+    assert.doesNotMatch(rendered, /NATS_AUTH_TOKEN/, provider);
+  }
+});
+
 test('the new supercluster does not replace the existing bootstrap NATS plane', async () => {
   const bootstrap = await readRepoFile('remote/argocd/messaging/nats.deployment.yaml');
   const awsRoot = await readRepoFile('remote/argocd/clusters/aws/applications.yaml');
@@ -198,6 +251,6 @@ test('the new supercluster does not replace the existing bootstrap NATS plane', 
   assert.match(awsRoot, /name: dd-messaging/);
   assert.match(runbook, /existing `messaging\/dd-nats` bootstrap remains authoritative/);
   assert.match(runbook, /Fiducia is not a fourth NATS gateway member/);
-  assert.match(runbook, /Gateways connect the three NATS clusters/);
-  assert.match(runbook, /do not[\s\S]*replicate durable streams automatically/i);
+  assert.match(runbook, /Gateways connect the three regional NATS clusters/);
+  assert.match(runbook, /does not[\s\S]*replicate a stream into another region automatically/i);
 });

@@ -2,9 +2,6 @@ config:
   cluster:
     merge:
       name: ores-aws
-  jetstream:
-    merge:
-      domain: ORES_AWS
   gateway:
     merge:
       name: ores-aws
