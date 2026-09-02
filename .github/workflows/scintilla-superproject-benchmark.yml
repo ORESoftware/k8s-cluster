@@ -30,7 +30,7 @@ env:
   BUILDX_VERSION: v0.37.0
   RUNNER_PATH: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
   RUNNER_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_repository || 'scintilla-run/gleam-lambda-runner' }}
-  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '7c636a3f5da466816005ae0d53d6634641e820e9' }}
+  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '9ff8af8d691454e2b39928555e57e554384999e6' }}
 
 jobs:
   build-and-benchmark:
@@ -98,14 +98,34 @@ jobs:
           fi
           printf 'sha=%s\n' "$pin" >> "$GITHUB_OUTPUT"
 
-      - name: Materialize the pinned Scintilla monorepo
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Initialize the pinned private Scintilla monorepo with an owner-scoped installation token
+        id: scintilla-monorepo
+        continue-on-error: true
+        shell: bash
+        env:
+          SUBMODULE_REPORT_PATH: ${{ runner.temp }}/scintilla-monorepo-access.tsv
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          GITHUB_API_VERSION: '2026-03-10'
+        run: >-
+          bash scripts/ci/init-submodules-with-github-app.sh
+          remote/deployments/scintilla-run-monorepo
+
+      - name: Upload the sanitized Scintilla monorepo access report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          repository: scintilla-run/scintilla-run-monorepo
-          ref: ${{ steps.monorepo-pin.outputs.sha }}
-          path: remote/deployments/scintilla-run-monorepo
-          fetch-depth: 1
-          persist-credentials: false
+          name: scintilla-monorepo-access-${{ matrix.arch }}
+          path: ${{ runner.temp }}/scintilla-monorepo-access.tsv
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail when the pinned Scintilla monorepo is unavailable
+        if: steps.scintilla-monorepo.outcome == 'failure'
+        shell: bash
+        run: |
+          echo 'The pinned Scintilla monorepo is unavailable; inspect the sanitized access report.' >&2
+          exit 1
 
       - name: Overlay the candidate runner at its canonical nested path
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
