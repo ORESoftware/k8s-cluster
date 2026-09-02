@@ -1,0 +1,202 @@
+name: Scintilla superproject multi-architecture benchmark
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/scintilla-superproject-benchmark.yml"
+      - "docs/scintilla-superproject-benchmark.md"
+      - ".gitmodules"
+  workflow_dispatch:
+    inputs:
+      runner_repository:
+        description: Public Scintilla runner repository to overlay into the pinned monorepo
+        required: true
+        default: scintilla-run/gleam-lambda-runner
+        type: string
+      runner_ref:
+        description: Branch, tag, or immutable commit to build
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scintilla-superproject-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILDX_VERSION: v0.37.0
+  RUNNER_PATH: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
+  RUNNER_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_repository || 'scintilla-run/gleam-lambda-runner' }}
+  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '7c636a3f5da466816005ae0d53d6634641e820e9' }}
+
+jobs:
+  build-and-benchmark:
+    name: Build and benchmark ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+            runner_machine: x86_64
+            dockerfile: Dockerfile.x86_64.dkf
+            iterations: 7
+            startup_timeout_ms: 60000
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            runner_machine: aarch64
+            dockerfile: Dockerfile.arm64.dkf
+            iterations: 7
+            startup_timeout_ms: 60000
+    env:
+      LEGACY_IMAGE: scintilla-legacy:${{ matrix.arch }}-${{ github.run_id }}
+      LEAN_IMAGE: scintilla-lean:${{ matrix.arch }}-${{ github.run_id }}
+
+    steps:
+      - name: Check out the cluster superproject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify native runner architecture
+        shell: bash
+        env:
+          EXPECTED_RUNNER_MACHINE: ${{ matrix.runner_machine }}
+        run: |
+          set -euo pipefail
+          actual="$(uname -m)"
+          if [[ "$actual" != "$EXPECTED_RUNNER_MACHINE" ]]; then
+            echo "runner architecture $actual does not match $EXPECTED_RUNNER_MACHINE" >&2
+            exit 1
+          fi
+          docker version
+          node --version
+
+      - name: Check out pinned private remote libraries with the narrow deploy key
+        id: remote-libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Resolve the pinned Scintilla monorepo gitlink
+        id: monorepo-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-files --stage -- remote/deployments/scintilla-run-monorepo | awk '$1 == 160000 { print $2; exit }')"
+          if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'Scintilla monorepo does not resolve to one mode-160000 gitlink.' >&2
+            exit 1
+          fi
+          printf 'sha=%s\n' "$pin" >> "$GITHUB_OUTPUT"
+
+      - name: Materialize the pinned Scintilla monorepo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scintilla-run/scintilla-run-monorepo
+          ref: ${{ steps.monorepo-pin.outputs.sha }}
+          path: remote/deployments/scintilla-run-monorepo
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Overlay the candidate runner at its canonical nested path
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.RUNNER_REPOSITORY }}
+          ref: ${{ env.RUNNER_REF }}
+          path: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify every authoritative source revision
+        shell: bash
+        env:
+          EXPECTED_LIBS_SHA: ${{ steps.remote-libs.outputs.sha }}
+          EXPECTED_MONOREPO_SHA: ${{ steps.monorepo-pin.outputs.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_LIBS_SHA"
+          test "$(git -C remote/deployments/scintilla-run-monorepo rev-parse HEAD)" = "$EXPECTED_MONOREPO_SHA"
+          candidate="$(git -C "$RUNNER_PATH" rev-parse HEAD)"
+          if [[ "$RUNNER_REF" =~ ^[0-9a-f]{40}$ ]] && [[ "$candidate" != "$RUNNER_REF" ]]; then
+            echo "candidate runner resolved to $candidate instead of $RUNNER_REF" >&2
+            exit 1
+          fi
+          printf 'remote/libs=%s\nmonorepo=%s\nrunner=%s\n' \
+            "$EXPECTED_LIBS_SHA" "$EXPECTED_MONOREPO_SHA" "$candidate"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Build the compatibility image from the full superproject
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform "${{ matrix.platform }}" \
+            --file "$RUNNER_PATH/Dockerfile" \
+            --tag "$LEGACY_IMAGE" \
+            --cache-from "type=gha,scope=scintilla-legacy-${{ matrix.arch }}" \
+            --cache-to "type=gha,mode=max,scope=scintilla-legacy-${{ matrix.arch }}" \
+            --provenance=false \
+            --sbom=false \
+            --load \
+            .
+
+      - name: Build the lean architecture-specific image from the full superproject
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform "${{ matrix.platform }}" \
+            --file "$RUNNER_PATH/${{ matrix.dockerfile }}" \
+            --tag "$LEAN_IMAGE" \
+            --cache-from "type=gha,scope=scintilla-lean-${{ matrix.arch }}" \
+            --cache-to "type=gha,mode=max,scope=scintilla-lean-${{ matrix.arch }}" \
+            --provenance=false \
+            --sbom=false \
+            --load \
+            .
+
+      - name: Verify loaded OCI architectures
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Architecture}}' "$LEGACY_IMAGE")" = "${{ matrix.arch }}"
+          test "$(docker image inspect --format '{{.Architecture}}' "$LEAN_IMAGE")" = "${{ matrix.arch }}"
+
+      - name: Measure image size and create-to-health cold start
+        id: benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/scintilla-benchmark-${{ matrix.arch }}"
+          mkdir -p "$output"
+          node "$RUNNER_PATH/scripts/benchmark-container-cold-start.mjs" \
+            --platform "${{ matrix.platform }}" \
+            --legacy-image "$LEGACY_IMAGE" \
+            --lean-image "$LEAN_IMAGE" \
+            --iterations "${{ matrix.iterations }}" \
+            --timeout-ms "${{ matrix.startup_timeout_ms }}" \
+            --output "$output/results.json" \
+            --markdown "$output/results.md"
+          printf 'output=%s\n' "$output" >> "$GITHUB_OUTPUT"
+          cat "$output/results.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish benchmark evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scintilla-superproject-${{ matrix.arch }}-${{ env.RUNNER_REF }}
+          path: ${{ steps.benchmark.outputs.output }}
+          if-no-files-found: error
+          retention-days: 30
