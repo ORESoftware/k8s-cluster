@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       runner_repository:
-        description: Public Scintilla runner repository to overlay into the pinned monorepo
+        description: Public Scintilla runner repository to overlay into the pinned monorepo path
         required: true
         default: scintilla-run/gleam-lambda-runner
         type: string
@@ -86,7 +86,7 @@ jobs:
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
-      - name: Resolve the pinned Scintilla monorepo gitlink
+      - name: Resolve and retain the pinned Scintilla monorepo provenance
         id: monorepo-pin
         shell: bash
         run: |
@@ -97,35 +97,7 @@ jobs:
             exit 1
           fi
           printf 'sha=%s\n' "$pin" >> "$GITHUB_OUTPUT"
-
-      - name: Initialize the pinned private Scintilla monorepo with an owner-scoped installation token
-        id: scintilla-monorepo
-        continue-on-error: true
-        shell: bash
-        env:
-          SUBMODULE_REPORT_PATH: ${{ runner.temp }}/scintilla-monorepo-access.tsv
-          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
-          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
-          GITHUB_API_VERSION: '2026-03-10'
-        run: >-
-          bash scripts/ci/init-submodules-with-github-app.sh
-          remote/deployments/scintilla-run-monorepo
-
-      - name: Upload the sanitized Scintilla monorepo access report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: scintilla-monorepo-access-${{ matrix.arch }}
-          path: ${{ runner.temp }}/scintilla-monorepo-access.tsv
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Fail when the pinned Scintilla monorepo is unavailable
-        if: steps.scintilla-monorepo.outcome == 'failure'
-        shell: bash
-        run: |
-          echo 'The pinned Scintilla monorepo is unavailable; inspect the sanitized access report.' >&2
-          exit 1
+          mkdir -p remote/deployments/scintilla-run-monorepo/apps
 
       - name: Overlay the candidate runner at its canonical nested path
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,13 +116,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_LIBS_SHA"
-          test "$(git -C remote/deployments/scintilla-run-monorepo rev-parse HEAD)" = "$EXPECTED_MONOREPO_SHA"
+          actual_monorepo_pin="$(git ls-files --stage -- remote/deployments/scintilla-run-monorepo | awk '$1 == 160000 { print $2; exit }')"
+          test "$actual_monorepo_pin" = "$EXPECTED_MONOREPO_SHA"
           candidate="$(git -C "$RUNNER_PATH" rev-parse HEAD)"
           if [[ "$RUNNER_REF" =~ ^[0-9a-f]{40}$ ]] && [[ "$candidate" != "$RUNNER_REF" ]]; then
             echo "candidate runner resolved to $candidate instead of $RUNNER_REF" >&2
             exit 1
           fi
-          printf 'remote/libs=%s\nmonorepo=%s\nrunner=%s\n' \
+          printf 'remote/libs=%s\nmonorepo-gitlink=%s\nrunner=%s\n' \
             "$EXPECTED_LIBS_SHA" "$EXPECTED_MONOREPO_SHA" "$candidate"
 
       - name: Set up Docker Buildx
@@ -158,7 +131,7 @@ jobs:
         with:
           version: ${{ env.BUILDX_VERSION }}
 
-      - name: Build the compatibility image from the full superproject
+      - name: Build the compatibility image from the full cluster-root context
         shell: bash
         run: |
           set -euo pipefail
@@ -173,7 +146,7 @@ jobs:
             --load \
             .
 
-      - name: Build the lean architecture-specific image from the full superproject
+      - name: Build the lean architecture-specific image from the full cluster-root context
         shell: bash
         run: |
           set -euo pipefail
@@ -216,7 +189,7 @@ jobs:
       - name: Publish benchmark evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: scintilla-superproject-${{ matrix.arch }}-${{ env.RUNNER_REF }}
+          name: scintilla-superproject-${{ matrix.arch }}-${{ github.run_id }}
           path: ${{ steps.benchmark.outputs.output }}
           if-no-files-found: error
           retention-days: 30
