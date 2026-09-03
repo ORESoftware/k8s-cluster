@@ -47,15 +47,18 @@ jobs:
           set -euo pipefail
           python3 tools/test_namespace_migration.py
           python3 tools/test_namespace_manifest.py
+          report_path="$RUNNER_TEMP/namespace-manifest-report.json"
+          export REPORT_PATH="$report_path"
           python3 tools/namespace_manifest.py check \
             --root . \
             --format json \
-            > "$RUNNER_TEMP/namespace-manifest-report.json"
+            > "$report_path"
           python3 - <<'PY'
           import json
+          import os
           from pathlib import Path
           report = json.loads(
-              Path("/tmp/namespace-manifest-report.json").read_text(encoding="utf-8")
+              Path(os.environ["REPORT_PATH"]).read_text(encoding="utf-8")
           )
           if report.get("valid") is not True or report.get("diagnostics") != []:
               raise SystemExit(f"namespace manifest remains invalid: {report}")
