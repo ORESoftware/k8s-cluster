@@ -1,0 +1,83 @@
+name: one-shot regenerate namespace manifest
+
+on:
+  push:
+    branches:
+      - fix/namespace-manifest-current-main-20260903
+    paths:
+      - .github/workflows/one-shot-regenerate-namespace-manifest.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate-and-verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+
+      - name: Generate canonical inventory and manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/namespace_manifest.py \
+            tools/test_namespace_migration.py \
+            tools/test_namespace_manifest.py
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py render \
+            --root . \
+            > "$RUNNER_TEMP/migration-manifest.json"
+          mv "$RUNNER_TEMP/migration-manifest.json" \
+            catalog/namespaces/migration-manifest.json
+
+      - name: Run namespace adversarial and deterministic checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/test_namespace_migration.py
+          python3 tools/test_namespace_manifest.py
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > "$RUNNER_TEMP/namespace-manifest-report.json"
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(
+              Path("/tmp/namespace-manifest-report.json").read_text(encoding="utf-8")
+          )
+          if report.get("valid") is not True or report.get("diagnostics") != []:
+              raise SystemExit(f"namespace manifest remains invalid: {report}")
+          PY
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            artifacts/namespace-inventory.json \
+            catalog/namespaces/migration-manifest.json | sort)"
+          test "$changed" = "$expected"
+
+      - name: Commit only the canonical manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ORESoftware'
+          git config user.email 'alex@oresoftware.com'
+          git add -- catalog/namespaces/migration-manifest.json
+          git diff --cached --check
+          git diff --cached --quiet && {
+            echo 'namespace manifest was already current' >&2
+            exit 1
+          }
+          git commit -m 'fix(namespace): regenerate deterministic migration manifest'
+          git push origin HEAD:fix/namespace-manifest-current-main-20260903
