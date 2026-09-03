@@ -1,0 +1,88 @@
+name: DEN-3179 regenerate application catalog
+
+on:
+  push:
+    branches:
+      - agent/den-3179-register-disabled-recovery-app
+    paths:
+      - .github/workflows/den-3179-regenerate-application-catalog.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-3179-regenerate-application-catalog
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-3179-register-disabled-recovery-app'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+
+      - name: Regenerate and validate catalog
+        run: |
+          set -euo pipefail
+          nix develop --accept-flake-config -c python3 tools/application_catalog.py generate catalog/applications.json
+          nix develop --accept-flake-config -c python3 tools/application_catalog.py check catalog/applications.json
+
+      - name: Publish generated catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- catalog/applications.json; then
+            echo 'catalog already current'
+            exit 0
+          fi
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          repository = os.environ['GITHUB_REPOSITORY']
+          branch = os.environ['GITHUB_REF_NAME']
+          token = os.environ['GH_TOKEN']
+          headers = {
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'den-3179-catalog-generator',
+          }
+
+          def request(url: str, *, method: str = 'GET', payload: dict | None = None) -> dict:
+              data = None if payload is None else json.dumps(payload).encode('utf-8')
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              with urllib.request.urlopen(req, timeout=30) as response:
+                  return json.load(response)
+
+          metadata_url = (
+              f'https://api.github.com/repos/{repository}/contents/'
+              f'catalog/applications.json?ref={branch}'
+          )
+          current_sha = request(metadata_url)['sha']
+          content = base64.b64encode(
+              open('catalog/applications.json', 'rb').read()
+          ).decode('ascii')
+          request(
+              f'https://api.github.com/repos/{repository}/contents/catalog/applications.json',
+              method='PUT',
+              payload={
+                  'message': 'chore(DEN-3179): regenerate canonical application catalog',
+                  'content': content,
+                  'sha': current_sha,
+                  'branch': branch,
+              },
+          )
+          PY
