@@ -152,9 +152,10 @@ fn validate_template(catalog_root: &Path, spec: &TemplateSpec) -> Result<(), Str
     let text = fs::read_to_string(&path)
         .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
     let manifest = non_comment_body(&text);
+    let policy_marker = format!("rate-limit.ores.io/policy-id: {POLICY_ID}");
 
     for required in [
-        &format!("rate-limit.ores.io/policy-id: {POLICY_ID}"),
+        policy_marker.as_str(),
         "rate-limit.ores.io/activation: disabled-template",
         PLACEHOLDER_TARGET,
     ] {
@@ -170,8 +171,9 @@ fn validate_template(catalog_root: &Path, spec: &TemplateSpec) -> Result<(), Str
     let activation = parse_activation(&manifest, spec.relative_path)?;
     if !state_is_catalog_valid(spec.controller, scope, activation) {
         return Err(format!(
-            "{} has an invalid {:?}/{scope:?}/{activation:?} catalog state",
-            spec.relative_path, spec.controller
+            "{} has an invalid {}/{scope:?}/{activation:?} catalog state",
+            spec.relative_path,
+            spec.controller.as_str()
         ));
     }
 
@@ -181,8 +183,9 @@ fn validate_template(catalog_root: &Path, spec: &TemplateSpec) -> Result<(), Str
         .collect::<Vec<_>>();
     if signatures != [spec.controller] {
         return Err(format!(
-            "{} must contain exactly one controller signature; found {signatures:?}",
-            spec.relative_path
+            "{} must contain exactly the {} controller signature; found {signatures:?}",
+            spec.relative_path,
+            spec.controller.as_str()
         ));
     }
 
@@ -258,7 +261,7 @@ fn validate_controller_primitives(manifest: &str, spec: &TemplateSpec) -> Result
             forbid_all(
                 manifest,
                 spec.relative_path,
-                &["limit-whitelist", "haproxy-ingress.github.io", "rateLimit:"],
+                &["limit-whitelist", "haproxy-ingress.github.io", "ratelimit:"],
             )?;
         }
         Controller::EnvoyGateway => {
@@ -294,7 +297,7 @@ fn validate_controller_primitives(manifest: &str, spec: &TemplateSpec) -> Result
             forbid_all(
                 manifest,
                 spec.relative_path,
-                &["limit-whitelist", "nginx.ingress.kubernetes.io", "rateLimit:"],
+                &["limit-whitelist", "nginx.ingress.kubernetes.io", "ratelimit:"],
             )?;
         }
     }
@@ -392,9 +395,11 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(accepted.len(), 3);
-        assert!(accepted.iter().all(|(_, _, activation)| {
-            *activation == Activation::DisabledTemplate
-        }));
+        assert!(
+            accepted
+                .iter()
+                .all(|(_, _, activation)| *activation == Activation::DisabledTemplate)
+        );
     }
 
     #[test]
