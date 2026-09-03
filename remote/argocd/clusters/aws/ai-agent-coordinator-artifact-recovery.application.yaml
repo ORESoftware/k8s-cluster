@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agent-coordinator-artifact-recovery
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: ai-agent-coordinator-artifact-recovery
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/part-of: oresoftware-agent-platform
+  annotations:
+    denman.linear.app/issue: DEN-3179
+    oresoftware.dev/activation: disabled
+spec:
+  project: ai-agent-coordinator
+  source:
+    repoURL: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+    targetRevision: c5a08d1afd26d2982e53fc2066bde9cf64ee5d19
+    path: deploy/continuous-artifact-recovery/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-agent-coordinator
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true

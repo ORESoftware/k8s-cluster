@@ -1,0 +1,174 @@
+name: AI agent coordinator artifact recovery GitOps
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ai-agent-coordinator-artifact-recovery-gitops.yml'
+      - 'remote/argocd/clusters/aws/ai-agent-coordinator-artifact-recovery.application.yaml'
+      - 'remote/argocd/clusters/aws/kustomization.yaml'
+      - 'remote/argocd/clusters/gcp/kustomization.yaml'
+      - 'remote/argocd/clusters/hetzner/kustomization.yaml'
+      - 'remote/tests/general/ai-agent-coordinator-artifact-recovery-gitops.test.ts'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/ai-agent-coordinator-artifact-recovery-gitops.yml'
+      - 'remote/argocd/clusters/aws/ai-agent-coordinator-artifact-recovery.application.yaml'
+      - 'remote/argocd/clusters/aws/kustomization.yaml'
+      - 'remote/argocd/clusters/gcp/kustomization.yaml'
+      - 'remote/argocd/clusters/hetzner/kustomization.yaml'
+      - 'remote/tests/general/ai-agent-coordinator-artifact-recovery-gitops.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARTIFACT_RECOVERY_REVISION: c5a08d1afd26d2982e53fc2066bde9cf64ee5d19
+  ARTIFACT_RECOVERY_IMAGE: ghcr.io/oresoftware/ai-agent-coordinator-artifact-recovery:sha-5af90a5f89b76a91c348f2e6d5e52cf06e3fc311
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out cluster repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ai-agent-coordinator-artifact-recovery-gitops.yml
+
+      - name: Check out immutable worker source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ai-agent-coordinator.rs
+          ref: ${{ env.ARTIFACT_RECOVERY_REVISION }}
+          path: upstream/ai-agent-coordinator
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install focused test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+
+      - name: Run AWS-only registration tests
+        run: pnpm exec tsx --test general/ai-agent-coordinator-artifact-recovery-gitops.test.ts
+        working-directory: remote/tests
+
+      - name: Render AWS root and immutable upstream worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream/ai-agent-coordinator rev-parse HEAD)" = "$ARTIFACT_RECOVERY_REVISION"
+          kubectl kustomize remote/argocd/clusters/aws > /tmp/aws-applications.yaml
+          kubectl kustomize upstream/ai-agent-coordinator/deploy/continuous-artifact-recovery/k8s > /tmp/artifact-recovery-worker.yaml
+
+      - name: Validate manual registration and disabled child workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby <<'RUBY'
+          require 'yaml'
+
+          def documents(path)
+            YAML.load_stream(File.read(path)).compact
+          end
+
+          def fail_contract(message)
+            warn("artifact-recovery GitOps contract: #{message}")
+            exit(1)
+          end
+
+          aws = documents('/tmp/aws-applications.yaml')
+          matches = aws.select do |resource|
+            resource['kind'] == 'Application' &&
+              resource.dig('metadata', 'name') == 'ai-agent-coordinator-artifact-recovery'
+          end
+          fail_contract('AWS must contain exactly one recovery Application') unless matches.length == 1
+          app = matches.first
+          fail_contract('Application must use the strict coordinator project') unless app.dig('spec', 'project') == 'ai-agent-coordinator'
+          source = app.dig('spec', 'source')
+          fail_contract('Application repository drifted') unless source['repoURL'] == 'https://github.com/ORESoftware/ai-agent-coordinator.rs.git'
+          fail_contract('Application revision drifted') unless source['targetRevision'] == ENV.fetch('ARTIFACT_RECOVERY_REVISION')
+          fail_contract('Application path drifted') unless source['path'] == 'deploy/continuous-artifact-recovery/k8s'
+          fail_contract('Application destination drifted') unless app.dig('spec', 'destination') == {
+            'server' => 'https://kubernetes.default.svc',
+            'namespace' => 'ai-agent-coordinator'
+          }
+          fail_contract('Application must remain visibly disabled') unless app.dig('metadata', 'annotations', 'oresoftware.dev/activation') == 'disabled'
+          fail_contract('child auto-sync is forbidden before canary approval') if app.dig('spec', 'syncPolicy')&.key?('automated')
+          fail_contract('Application must not create the namespace') if app.dig('spec', 'syncPolicy', 'syncOptions').to_a.include?('CreateNamespace=true')
+
+          worker = documents('/tmp/artifact-recovery-worker.yaml')
+          fail_contract('worker source contains a plaintext Secret') if worker.any? { |resource| resource['kind'] == 'Secret' }
+          fail_contract('worker resource escaped the tenant namespace') unless worker.all? do |resource|
+            resource.dig('metadata', 'namespace') == 'ai-agent-coordinator'
+          end
+
+          deployments = worker.select { |resource| resource['kind'] == 'Deployment' }
+          fail_contract('worker source must contain exactly one Deployment') unless deployments.length == 1
+          deployment = deployments.first
+          fail_contract('worker Deployment must remain replicas zero') unless deployment.dig('spec', 'replicas') == 0
+          fail_contract('worker Deployment must remain visibly disabled') unless deployment.dig('metadata', 'annotations', 'oresoftware.dev/activation') == 'disabled'
+          fail_contract('worker pod template must remain visibly disabled') unless deployment.dig('spec', 'template', 'metadata', 'annotations', 'oresoftware.dev/activation') == 'disabled'
+          containers = deployment.dig('spec', 'template', 'spec', 'containers')
+          fail_contract('worker Deployment must contain one container') unless containers.length == 1
+          fail_contract('worker image drifted') unless containers.first['image'] == ENV.fetch('ARTIFACT_RECOVERY_IMAGE')
+
+          config = worker.find do |resource|
+            resource['kind'] == 'ConfigMap' &&
+              resource.dig('metadata', 'name') == 'ai-agent-coordinator-artifact-recovery'
+          end
+          fail_contract('worker ConfigMap missing') unless config
+          fail_contract('worker count must be exactly three') unless config.dig('data', 'ARTIFACT_RECOVERY_WORKER_COUNT') == '3'
+          fail_contract('50-day source window drifted') unless config.dig('data', 'ARTIFACT_RECOVERY_WINDOW_HOURS') == '1200'
+          fail_contract('source overlap drifted') unless config.dig('data', 'ARTIFACT_RECOVERY_OVERLAP_HOURS') == '6'
+
+          external = worker.find { |resource| resource['kind'] == 'ExternalSecret' }
+          fail_contract('worker ExternalSecret missing') unless external
+          fail_contract('worker secret store drifted') unless external.dig('spec', 'secretStoreRef') == {
+            'kind' => 'ClusterSecretStore',
+            'name' => 'dd-cluster-secrets'
+          }
+          fail_contract('worker protected bundle drifted') unless external.dig('spec', 'dataFrom', 0, 'extract', 'key') == 'dd/remote-dev/ai-agent-coordinator-artifact-recovery'
+
+          policy = worker.find { |resource| resource['kind'] == 'NetworkPolicy' }
+          fail_contract('worker NetworkPolicy missing') unless policy
+          fail_contract('worker policy must be egress-only') unless policy.dig('spec', 'policyTypes') == ['Egress'] && !policy.dig('spec').key?('ingress')
+          RUBY
+
+      - name: Reject credentials and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          paths=(
+            remote/argocd/clusters/aws/ai-agent-coordinator-artifact-recovery.application.yaml
+            remote/argocd/clusters/aws/kustomization.yaml
+            remote/tests/general/ai-agent-coordinator-artifact-recovery-gitops.test.ts
+            .github/workflows/ai-agent-coordinator-artifact-recovery-gitops.yml
+          )
+          if grep -nE '^(<<<<<<<|=======|>>>>>>>)' "${paths[@]}"; then
+            echo 'git conflict markers are forbidden' >&2
+            exit 1
+          fi
+          if grep -nE '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|lin_api_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9_-]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' "${paths[@]}"; then
+            echo 'credential-shaped material is forbidden' >&2
+            exit 1
+          fi

@@ -9,6 +9,7 @@ resources:
   - storageclass.yaml
   - applications.yaml
   - ai-agent-coordinator.applications.yaml
+  - ai-agent-coordinator-artifact-recovery.application.yaml
   - gha-ci.applications.yaml
   - daedalus-ci.applications.yaml
   - zed.bootstrap.application.yaml
