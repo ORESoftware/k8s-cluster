@@ -3,10 +3,10 @@
   "apiVersion": "oresoftware.dev/v1alpha1",
   "kind": "NamespaceMigrationManifest",
   "metadata": {
-    "entryCount": 1250,
+    "entryCount": 1251,
     "generatedBy": "tools/namespace_manifest.py",
     "inventory": "artifacts/namespace-inventory.json",
-    "inventorySha256": "1a3aeeb5346727a0ffd0894aa7083091c0cfe92a765a4ae884531146b492abb2",
+    "inventorySha256": "c9223c5eee842e50d67a393fc275ad50968dcd5e828d6daefb6560ae389e02e0",
     "name": "den-2786-phase-0",
     "phase": "phase-0",
     "registry": "catalog/namespaces/owners.json",
@@ -86,8 +86,8 @@
         "current": "dd/remote-dev/browser-mcp-secrets",
         "destructiveCleanupAllowed": false,
         "environment": "dev",
-        "id": "nsocc-e23812a9dd80ae78c0ba4f9300601ccd206b9fd6bdfe65a7433e306ce3465a23",
-        "line": 144,
+        "id": "nsocc-91ce59d8a5ed7ca2590523cb359b249f28d978c29a55dda22564d9dae9d586f8",
+        "line": 137,
         "migrationMode": "manual-review",
         "notes": "Unknown remote-dev values are quarantined for ownership review and may not silently default to ores.",
         "owner": "unclassified",
@@ -117,8 +117,8 @@
         "current": "/home/ec2-user/codes/dd/dd-next-1",
         "destructiveCleanupAllowed": false,
         "environment": null,
-        "id": "nsocc-bf55433ce5f248f3e9fad756e60b060051129d09cc449fd166bcd2d56dc3ec8f",
-        "line": 158,
+        "id": "nsocc-9961ed3e29adbc5f3b0929a9ceea4cbf50c43768bcc4c8d4e86a307f91ddd8b2",
+        "line": 151,
         "migrationMode": "service-specific-move",
         "notes": "Legacy developer checkout paths require an explicit GitHub owner and repository mapping before moving to /srv/ores/repos/<owner>/<repo>.",
         "owner": "ores",
@@ -139,6 +139,37 @@
           "state": "required"
         },
         "workload": "node-repositories"
+      },
+      {
+        "classificationStatus": "unclassified",
+        "column": 23,
+        "consumerGrants": [],
+        "consumers": [],
+        "current": "dd/telemetry",
+        "destructiveCleanupAllowed": false,
+        "environment": null,
+        "id": "nsocc-af70947fe4640485288190a9135e2c8cd19fe0673a306064257037343d1d6ef3",
+        "line": 77,
+        "migrationMode": "manual-review",
+        "notes": "Unknown slash namespace values remain unclassified until an accountable owner and rollback plan are recorded.",
+        "owner": "unclassified",
+        "path": ".github/workflows/browser-test-driver-e2e.yml",
+        "platformTargetException": null,
+        "reviewState": "blocked",
+        "rollback": {
+          "procedure": "No migration is authorized. Preserve the current reference and restore any accidental change immediately while classification remains blocked.",
+          "state": "required"
+        },
+        "ruleId": "fallback.slash-namespace",
+        "scope": "active",
+        "system": "slash-namespace",
+        "target": null,
+        "targetTemplate": null,
+        "verification": {
+          "procedure": "Keep the current reference unchanged. Resolve its owner, environment, workload, target, consumers, and non-secret success criteria before any migration attempt.",
+          "state": "required"
+        },
+        "workload": null
       },
       {
         "classificationStatus": "unclassified",
@@ -12223,8 +12254,8 @@
         "current": "/home/ec2-user/codes/dd/dd-next-1",
         "destructiveCleanupAllowed": false,
         "environment": null,
-        "id": "nsocc-edf79e86c9807bd4f292e6f07af15a40cb0bf4c9d123d29243fe08e7e4527f59",
-        "line": 174,
+        "id": "nsocc-d1363287d97f824e14ee975412859be39bed0e88755a8128a064542dd85f6de7",
+        "line": 211,
         "migrationMode": "service-specific-move",
         "notes": "Legacy developer checkout paths require an explicit GitHub owner and repository mapping before moving to /srv/ores/repos/<owner>/<repo>.",
         "owner": "ores",
@@ -40261,22 +40292,22 @@
       "byClassificationStatus": {
         "classified": 114,
         "review-required": 483,
-        "unclassified": 653
+        "unclassified": 654
       },
       "byOwner": {
         "benefactor-cc": 3,
         "fiducia-cloud": 81,
         "ores": 500,
         "shared-auth": 13,
-        "unclassified": 653
+        "unclassified": 654
       },
       "byReviewState": {
-        "blocked": 653,
+        "blocked": 654,
         "classified": 98,
         "review-required": 499
       },
       "byScope": {
-        "active": 980,
+        "active": 981,
         "documentation": 184,
         "test": 86
       },
@@ -40284,13 +40315,13 @@
         "generated-package": 82,
         "host-path": 192,
         "metadata-key": 405,
-        "slash-namespace": 457,
+        "slash-namespace": 458,
         "source-package": 114
       },
       "concreteTargets": 224,
       "crossOwnerGrants": 195,
       "destructiveCleanupAllowed": 0,
-      "total": 1250,
+      "total": 1251,
       "unresolvedTargetTemplates": 16
     }
   }
