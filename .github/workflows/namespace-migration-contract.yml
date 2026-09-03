@@ -210,7 +210,7 @@ jobs:
           persist-credentials: false
           submodules: false
 
-      - name: Regenerate the candidate and normalize exact count assertions
+      - name: Regenerate the deterministic inventory and manifest
         shell: bash
         run: |
           set -euo pipefail
@@ -223,66 +223,6 @@ jobs:
             --root . \
             --format json \
             > artifacts/namespace-manifest-generate.json
-
-          python3 - <<'PY'
-          import json
-          import re
-          from pathlib import Path
-
-          manifest = json.loads(
-              Path('catalog/namespaces/migration-manifest.json').read_text(
-                  encoding='utf-8'
-              )
-          )
-          entries = manifest['spec']['entries']
-          entry_count = len(entries)
-          unclassified_count = sum(
-              1 for entry in entries if entry.get('owner') == 'unclassified'
-          )
-          path = Path('tools/test_namespace_manifest.py')
-          text = path.read_text(encoding='utf-8')
-          edits = (
-              (
-                  r'self\.assertEqual\(\d+, len\(entries\)\)',
-                  f'self.assertEqual({entry_count}, len(entries))',
-              ),
-              (
-                  r'self\.assertEqual\(\d+, len\(blocked\)\)',
-                  f'self.assertEqual({unclassified_count}, len(blocked))',
-              ),
-              (
-                  r'self\.assertEqual\(\d+, report\["entryCount"\]\)',
-                  f'self.assertEqual({entry_count}, report["entryCount"])',
-              ),
-          )
-          for pattern, replacement in edits:
-              text, count = re.subn(pattern, replacement, text, count=1)
-              if count != 1:
-                  raise SystemExit(
-                      f'expected one count assertion for {pattern!r}, found {count}'
-                  )
-          path.write_text(text, encoding='utf-8')
-          print(
-              json.dumps(
-                  {
-                      'entryCount': entry_count,
-                      'unclassifiedCount': unclassified_count,
-                  },
-                  sort_keys=True,
-              )
-          )
-          PY
-
-          # Regenerate after the assertion edit so source locations and hashes
-          # describe the exact files uploaded below.
-          python3 tools/namespace_migration.py inventory \
-            --root . \
-            --format json \
-            > artifacts/namespace-inventory.json
-          python3 tools/namespace_manifest.py generate \
-            --root . \
-            --format json \
-            > artifacts/namespace-manifest-generate-final.json
 
       - name: Run the complete candidate contract suite
         shell: bash
@@ -318,7 +258,6 @@ jobs:
           sha256sum \
             artifacts/namespace-inventory.json \
             catalog/namespaces/migration-manifest.json \
-            tools/test_namespace_manifest.py \
             > artifacts/namespace-baseline-candidate.sha256
           git diff --check
 
@@ -332,6 +271,5 @@ jobs:
             artifacts/namespace-manifest-report.json
             artifacts/namespace-baseline-candidate.sha256
             catalog/namespaces/migration-manifest.json
-            tools/test_namespace_manifest.py
           if-no-files-found: error
           retention-days: 14
