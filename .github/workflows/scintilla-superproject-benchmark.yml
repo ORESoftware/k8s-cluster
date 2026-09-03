@@ -58,6 +58,7 @@ jobs:
     env:
       LEGACY_IMAGE: scintilla-legacy:${{ matrix.arch }}-${{ github.run_id }}
       LEAN_IMAGE: scintilla-lean:${{ matrix.arch }}-${{ github.run_id }}
+      SCINTILLA_READ_TOKEN: ${{ secrets.SCINTILLA_READ_TOKEN }}
 
     steps:
       - name: Check out the cluster superproject
@@ -66,16 +67,18 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Verify native runner architecture
+      - name: Verify native runner architecture and dedicated checkout credential
         shell: bash
-        env:
-          EXPECTED_RUNNER_MACHINE: ${{ matrix.runner_machine }}
         run: |
           set -euo pipefail
           actual="$(uname -m)"
-          if [[ "$actual" != "$EXPECTED_RUNNER_MACHINE" ]]; then
-            echo "runner architecture $actual does not match $EXPECTED_RUNNER_MACHINE" >&2
+          if [[ "$actual" != "${{ matrix.runner_machine }}" ]]; then
+            echo "runner architecture $actual does not match ${{ matrix.runner_machine }}" >&2
             exit 1
+          fi
+          if [[ -z "$SCINTILLA_READ_TOKEN" ]]; then
+            echo 'SCINTILLA_READ_TOKEN must be hydrated through the protected administration workflow.' >&2
+            exit 2
           fi
           docker version
           node --version
@@ -107,7 +110,7 @@ jobs:
           path: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
           fetch-depth: 1
           persist-credentials: false
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          token: ${{ env.SCINTILLA_READ_TOKEN }}
 
       - name: Verify every authoritative source revision
         shell: bash
