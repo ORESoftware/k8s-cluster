@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Disabled catalog component. It is intentionally not referenced by any live
+# kustomization. Copy into an application overlay only after reviewing the
+# per-controller-replica effective limit.
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      labelSelector: rate-limit.ores.io/profile=public-anonymous-ingress
+    patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: replace-me-before-enabling
+        labels:
+          rate-limit.ores.io/policy-id: public-anonymous-ingress
+          rate-limit.ores.io/activation: disabled-template
+          rate-limit.ores.io/scope: per-replica
+        annotations:
+          nginx.ingress.kubernetes.io/limit-rps: "20"
+          nginx.ingress.kubernetes.io/limit-connections: "10"
+          nginx.ingress.kubernetes.io/limit-burst-multiplier: "5"
