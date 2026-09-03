@@ -107,7 +107,7 @@ jobs:
           path: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
           fetch-depth: 1
           persist-credentials: false
-          token: ${{ secrets.ORG_GITOPS_TOKEN || github.token }}
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Verify every authoritative source revision
         shell: bash
