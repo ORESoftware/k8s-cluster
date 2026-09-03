@@ -1,0 +1,60 @@
+# The HHaus admin control plane stays manual and split into three Applications:
+# provider-backed Secrets first, then the independently owned web and API
+# runtimes. None may be synchronized before the isolated admin DB, dedicated
+# Shared Auth realm, immutable images, and Cloudflare Access gates are ready.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hhaus-admin-secrets
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hacker-house-medellin/hhm-infra.git
+    targetRevision: main
+    path: k8s/admin-secrets
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hhm-admin
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hhaus-admin-web
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hacker-house-medellin/hhm-admin-web-server.rs.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hhm-admin
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hhaus-admin-api
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hacker-house-medellin/hhm-admin-api-server.rs.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hhm-admin
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

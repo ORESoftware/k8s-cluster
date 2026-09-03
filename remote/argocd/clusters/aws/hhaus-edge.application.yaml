@@ -1,0 +1,25 @@
+# HHaus edge is sourced directly from its upstream infrastructure repository.
+# The application is intentionally AWS-only and renders the upstream path;
+# vendoring that repository here as a submodule would not give ArgoCD a
+# renderable source.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: hhaus-edge
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/hacker-house-medellin/hhm-infra.git
+    targetRevision: main
+    path: k8s/edge
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: hhm-edge
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
