@@ -34,7 +34,6 @@ jobs:
             tools/test_namespace_migration.py \
             tools/test_namespace_manifest.py
           python3 tools/test_namespace_migration.py
-          python3 tools/test_namespace_manifest.py
           python3 tools/namespace_migration.py inventory \
             --root . \
             --format json \
@@ -55,6 +54,7 @@ jobs:
             --root . \
             --format json \
             > artifacts/namespace-manifest-report.json
+          python3 tools/test_namespace_manifest.py
           python3 - <<'PY'
           import json
           from pathlib import Path
