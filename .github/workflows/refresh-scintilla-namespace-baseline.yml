@@ -74,6 +74,10 @@ jobs:
                       r'self\.assertEqual\(\d+, len\(blocked\)\)',
                       f'self.assertEqual({unclassified_count}, len(blocked))',
                   ),
+                  (
+                      r'self\.assertEqual\(\d+, report\["entryCount"\]\)',
+                      f'self.assertEqual({entry_count}, report["entryCount"])',
+                  ),
               ],
               Path('.github/workflows/namespace-migration-contract.yml'): [
                   (
