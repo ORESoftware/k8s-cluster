@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       runner_repository:
-        description: Public Scintilla runner repository to overlay into the pinned monorepo path
+        description: Scintilla runner repository to overlay into the pinned monorepo path
         required: true
         default: scintilla-run/gleam-lambda-runner
         type: string
@@ -30,7 +30,7 @@ env:
   BUILDX_VERSION: v0.37.0
   RUNNER_PATH: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
   RUNNER_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_repository || 'scintilla-run/gleam-lambda-runner' }}
-  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '9ff8af8d691454e2b39928555e57e554384999e6' }}
+  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || 'fdb818fbd20ca6535d2915c50825dd87ba52d60f' }}
 
 jobs:
   build-and-benchmark:
@@ -107,6 +107,7 @@ jobs:
           path: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
           fetch-depth: 1
           persist-credentials: false
+          token: ${{ secrets.ORG_GITOPS_TOKEN || github.token }}
 
       - name: Verify every authoritative source revision
         shell: bash
