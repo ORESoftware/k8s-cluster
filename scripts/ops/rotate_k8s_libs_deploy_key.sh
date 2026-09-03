@@ -19,8 +19,19 @@ for command in aws base64 curl git jq openssl sha256sum ssh ssh-keygen tar; do
 done
 
 work="$(mktemp -d /tmp/k8s-libs-deploy-key.XXXXXX)"
+deploy_key_id=''
+secret_updated=false
 cleanup() {
-  unset GH_TOKEN GIT_SSH_COMMAND
+  status=$?
+  trap - EXIT
+  set +e
+  unset GIT_SSH_COMMAND
+  # A new key that never became the target secret is an orphan. Remove only
+  # that newly-created key; never touch a pre-existing key during rollback.
+  if [[ "$status" -ne 0 && -n "$deploy_key_id" && "$secret_updated" != true ]]; then
+    gh api --method DELETE "repos/$source_repository/keys/$deploy_key_id" >/dev/null 2>&1 || true
+  fi
+  unset GH_TOKEN
   python3 - "$work" <<'PY'
 import shutil
 import sys
@@ -29,6 +40,7 @@ path = Path(sys.argv[1])
 if path.exists():
     shutil.rmtree(path)
 PY
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -75,17 +87,20 @@ chmod 644 "$public_key"
 key_fingerprint="$(ssh-keygen -lf "$public_key" -E sha256 | awk '{print $2}')"
 [[ "$key_fingerprint" == SHA256:* ]]
 
+# Snapshot only the keys owned by this rotation contract. They remain active
+# until the replacement has authenticated, read the source repository, and
+# become the target Actions secret.
 existing_keys="$work/existing-deploy-keys.json"
+prior_key_ids="$work/prior-deploy-key-ids.txt"
 gh api --paginate --slurp "repos/$source_repository/keys?per_page=100" \
   | jq 'add' > "$existing_keys"
+jq -r --arg prefix "$key_prefix" \
+  '.[] | select((.title // "") | startswith($prefix)) | .id' \
+  "$existing_keys" > "$prior_key_ids"
 while IFS= read -r key_id; do
-  [[ "$key_id" =~ ^[0-9]+$ ]]
-  gh api --method DELETE "repos/$source_repository/keys/$key_id"
-done < <(
-  jq -r --arg prefix "$key_prefix" \
-    '.[] | select((.title // "") | startswith($prefix)) | .id' \
-    "$existing_keys"
-)
+  [[ -z "$key_id" || "$key_id" =~ ^[0-9]+$ ]]
+done < "$prior_key_ids"
+prior_key_count="$(grep -c . "$prior_key_ids" || true)"
 
 created_key="$work/created-deploy-key.json"
 gh api --method POST "repos/$source_repository/keys" \
@@ -99,6 +114,7 @@ jq -e --arg title "$key_title" '
   (.verified == true or .verified == false)
 ' "$created_key" >/dev/null
 deploy_key_id="$(jq -r '.id' "$created_key")"
+[[ "$deploy_key_id" =~ ^[0-9]+$ ]]
 
 known_hosts="$work/known_hosts"
 ssh -o BatchMode=yes \
@@ -125,6 +141,36 @@ secret_names="$work/repository-secret-names.txt"
 gh secret list --repo "$target_repository" --json name --jq '.[].name' \
   | LC_ALL=C sort > "$secret_names"
 grep -Fxq K8S_LIBS_DEPLOY_KEY "$secret_names"
+secret_updated=true
+
+# Retire only the keys observed before this rotation, and only after the new
+# credential is usable and durably installed. A concurrent key not present in
+# the snapshot is never deleted by this run.
+retired_key_ids="$work/retired-deploy-key-ids.txt"
+: > "$retired_key_ids"
+while IFS= read -r key_id; do
+  [[ -z "$key_id" ]] && continue
+  [[ "$key_id" =~ ^[0-9]+$ ]]
+  [[ "$key_id" != "$deploy_key_id" ]]
+  gh api --method DELETE "repos/$source_repository/keys/$key_id"
+  printf '%s\n' "$key_id" >> "$retired_key_ids"
+done < "$prior_key_ids"
+retired_key_count="$(grep -c . "$retired_key_ids" || true)"
+[[ "$retired_key_count" -eq "$prior_key_count" ]]
+
+current_key="$work/current-deploy-key.json"
+gh api "repos/$source_repository/keys/$deploy_key_id" > "$current_key"
+jq -e --argjson id "$deploy_key_id" --arg title "$key_title" '
+  .id == $id and .title == $title and .read_only == true
+' "$current_key" >/dev/null
+
+final_matching_keys="$work/final-matching-deploy-keys.json"
+gh api --paginate --slurp "repos/$source_repository/keys?per_page=100" \
+  | jq --arg prefix "$key_prefix" '[add[] | select((.title // "") | startswith($prefix))]' \
+  > "$final_matching_keys"
+jq -e --argjson id "$deploy_key_id" '
+  length == 1 and .[0].id == $id and .[0].read_only == true
+' "$final_matching_keys" >/dev/null
 
 mkdir -p "$(dirname "$evidence_file")"
 jq -n \
@@ -135,8 +181,10 @@ jq -n \
   --arg key_fingerprint "$key_fingerprint" \
   --arg remote_main "$remote_main" \
   --argjson deploy_key_id "$deploy_key_id" \
+  --argjson prior_key_count "$prior_key_count" \
+  --argjson retired_key_count "$retired_key_count" \
   '{
-    schema_version: 1,
+    schema_version: 2,
     target_repository: $target_repository,
     source_repository: $source_repository,
     authenticated_login: $authenticated_login,
@@ -148,9 +196,14 @@ jq -n \
     ssh_authentication_verified: true,
     repository_read_verified: true,
     actions_secret_name: "K8S_LIBS_DEPLOY_KEY",
+    actions_secret_updated_before_retirement: true,
+    prior_matching_key_count: $prior_key_count,
+    retired_prior_key_count: $retired_key_count,
+    final_matching_key_count: 1,
+    rollback_removes_only_uninstalled_new_key: true,
     credential_value_recorded: false
   }' > "$evidence_file"
 chmod 600 "$evidence_file"
 
-printf 'rotated read-only deploy key id=%s source=%s target=%s\n' \
-  "$deploy_key_id" "$source_repository" "$target_repository"
+printf 'rotated read-only deploy key id=%s source=%s target=%s retired=%s\n' \
+  "$deploy_key_id" "$source_repository" "$target_repository" "$retired_key_count"
