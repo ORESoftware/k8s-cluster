@@ -3,6 +3,9 @@ kind: Component
 
 # Disabled catalog component. Peer-summed scope is valid only when the adopting
 # HAProxy Ingress controller has healthy peer stick-table synchronization.
+resources:
+  - catalog-marker.yaml
+
 patches:
   - target:
       group: networking.k8s.io
