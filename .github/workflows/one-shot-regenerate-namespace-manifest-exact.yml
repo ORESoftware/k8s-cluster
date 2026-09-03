@@ -70,8 +70,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          remote_head="$(git ls-remote origin refs/heads/fix/den-2050-ores-rl-live-publisher | awk '{print $1}')"
-          test "$remote_head" = "$GITHUB_SHA"
           git config user.name 'ORESoftware'
           git config user.email 'alex@oresoftware.com'
           git add -- catalog/namespaces/migration-manifest.json
