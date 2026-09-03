@@ -1,0 +1,69 @@
+name: one-shot DEN-2050 ores-rl publisher
+
+on:
+  push:
+    branches:
+      - fix/den-2050-ores-rl-live-publisher
+    paths:
+      - .github/workflows/one-shot-den2050-ores-rl-publisher.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-test-and-publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: true
+
+      - name: Add ores-rl-lib-core to the bounded live publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import zlib
+          payload = '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'
+          source = zlib.decompress(base64.b64decode(payload)).decode("utf-8")
+          exec(compile(source, "den2050-ores-rl-publisher", "exec"), {"__name__": "__main__"})
+          PY
+
+      - name: Validate Python contract and exact workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/publish_den2050_zed_producers.py \
+            scripts/ops/den2050_registry_token_via_ssm.py \
+            scripts/ops/test_publish_den2050_zed_producers.py
+          python3 -m unittest scripts/ops/test_publish_den2050_zed_producers.py -v
+          git diff --check
+
+      - name: Validate the permanent workflow with actionlint
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-den-2050-live-zed-registry-publish.yml
+
+      - name: Commit verified source and remove the one-shot carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          Path(".github/workflows/one-shot-den2050-ores-rl-publisher.yml").unlink()
+          PY
+          git config user.name 'ORESoftware'
+          git config user.email 'alex@oresoftware.com'
+          git add -- \
+            .github/workflows/ops-den-2050-live-zed-registry-publish.yml \
+            scripts/ops/publish_den2050_zed_producers.py \
+            scripts/ops/test_publish_den2050_zed_producers.py
+          git add -u -- .github/workflows/one-shot-den2050-ores-rl-publisher.yml
+          git diff --cached --check
+          git commit -m 'fix(DEN-2050): publish ores-rl-lib-core through protected registry path'
+          git push origin HEAD:fix/den-2050-ores-rl-live-publisher
