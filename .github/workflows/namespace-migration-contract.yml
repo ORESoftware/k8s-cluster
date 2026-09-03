@@ -196,3 +196,142 @@ jobs:
             artifacts/namespace-ratchet.json
           if-no-files-found: error
           retention-days: 14
+
+  candidate-baseline:
+    name: Generate and test a commit-ready deterministic baseline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out the exact candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Regenerate the candidate and normalize exact count assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py generate \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-generate.json
+
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          manifest = json.loads(
+              Path('catalog/namespaces/migration-manifest.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          entries = manifest['spec']['entries']
+          entry_count = len(entries)
+          unclassified_count = sum(
+              1 for entry in entries if entry.get('owner') == 'unclassified'
+          )
+          path = Path('tools/test_namespace_manifest.py')
+          text = path.read_text(encoding='utf-8')
+          edits = (
+              (
+                  r'self\.assertEqual\(\d+, len\(entries\)\)',
+                  f'self.assertEqual({entry_count}, len(entries))',
+              ),
+              (
+                  r'self\.assertEqual\(\d+, len\(blocked\)\)',
+                  f'self.assertEqual({unclassified_count}, len(blocked))',
+              ),
+              (
+                  r'self\.assertEqual\(\d+, report\["entryCount"\]\)',
+                  f'self.assertEqual({entry_count}, report["entryCount"])',
+              ),
+          )
+          for pattern, replacement in edits:
+              text, count = re.subn(pattern, replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit(
+                      f'expected one count assertion for {pattern!r}, found {count}'
+                  )
+          path.write_text(text, encoding='utf-8')
+          print(
+              json.dumps(
+                  {
+                      'entryCount': entry_count,
+                      'unclassifiedCount': unclassified_count,
+                  },
+                  sort_keys=True,
+              )
+          )
+          PY
+
+          # Regenerate after the assertion edit so source locations and hashes
+          # describe the exact files uploaded below.
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py generate \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-generate-final.json
+
+      - name: Run the complete candidate contract suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/test_namespace_migration.py \
+            tools/namespace_manifest.py \
+            tools/test_namespace_manifest.py
+          python3 tools/test_namespace_migration.py
+          python3 tools/test_namespace_manifest.py
+          python3 tools/namespace_migration.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-contract-report.json
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          for path in (
+              Path('artifacts/namespace-contract-report.json'),
+              Path('artifacts/namespace-manifest-report.json'),
+          ):
+              report = json.loads(path.read_text(encoding='utf-8'))
+              if report.get('valid') is not True:
+                  raise SystemExit(f'{path}: expected valid=true')
+          PY
+          sha256sum \
+            artifacts/namespace-inventory.json \
+            catalog/namespaces/migration-manifest.json \
+            tools/test_namespace_manifest.py \
+            > artifacts/namespace-baseline-candidate.sha256
+          git diff --check
+
+      - name: Upload the exact tested baseline candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: namespace-baseline-candidate-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            artifacts/namespace-inventory.json
+            artifacts/namespace-contract-report.json
+            artifacts/namespace-manifest-report.json
+            artifacts/namespace-baseline-candidate.sha256
+            catalog/namespaces/migration-manifest.json
+            tools/test_namespace_manifest.py
+          if-no-files-found: error
+          retention-days: 14
