@@ -1,0 +1,97 @@
+name: one-shot regenerate namespace manifest v3
+
+on:
+  push:
+    branches:
+      - fix/den-2050-ores-rl-live-publisher
+    paths:
+      - .github/workflows/one-shot-regenerate-namespace-manifest-v3.yml
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: true
+          submodules: false
+
+      - name: Generate and validate canonical manifest
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          carrier=.github/workflows/one-shot-regenerate-namespace-manifest-v3.yml
+          mkdir -p artifacts
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/namespace_manifest.py \
+            tools/test_namespace_migration.py \
+            tools/test_namespace_manifest.py
+          python3 tools/test_namespace_migration.py
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          carrier = '.github/workflows/one-shot-regenerate-namespace-manifest-v3.yml'
+          inventory = json.loads(Path('artifacts/namespace-inventory.json').read_text())
+          leaked = [item for item in inventory.get('occurrences', []) if item.get('path') == carrier]
+          if leaked:
+              raise SystemExit(f'temporary workflow affects namespace identities: {leaked}')
+          PY
+          python3 tools/namespace_manifest.py render --root . \
+            > artifacts/migration-manifest.json
+          cp artifacts/migration-manifest.json catalog/namespaces/migration-manifest.json
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-report.json
+          python3 tools/test_namespace_manifest.py
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('artifacts/namespace-manifest-report.json').read_text())
+          if report.get('valid') is not True or report.get('diagnostics') != []:
+              raise SystemExit(f'generated manifest did not validate: {report}')
+          if report.get('entryCount') != report.get('inventoryEntryCount'):
+              raise SystemExit(f'entry count mismatch: {report}')
+          PY
+          git diff --check -- catalog/namespaces/migration-manifest.json
+
+      - name: Commit only deterministic manifest output
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name 'ORESoftware'
+          git config user.email 'alex@oresoftware.com'
+          git add -- catalog/namespaces/migration-manifest.json
+          changed="$(git diff --cached --name-only)"
+          if [[ -z "$changed" ]]; then
+            echo 'namespace manifest already matches exact inventory'
+            exit 0
+          fi
+          test "$changed" = 'catalog/namespaces/migration-manifest.json'
+          git diff --cached --check
+          tree="$(git write-tree)"
+          commit="$(printf '%s\n' 'chore(namespaces): regenerate exact deterministic migration manifest' | git commit-tree "$tree" -p HEAD)"
+          git push origin "$commit":refs/heads/fix/den-2050-ores-rl-live-publisher
+
+      - name: Upload deterministic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: namespace-manifest-v3-${{ github.run_id }}
+          path: |
+            artifacts/namespace-inventory.json
+            artifacts/migration-manifest.json
+            artifacts/namespace-manifest-report.json
+          if-no-files-found: error
+          retention-days: 14
