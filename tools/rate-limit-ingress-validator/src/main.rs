@@ -297,7 +297,11 @@ fn validate_controller_primitives(manifest: &str, spec: &TemplateSpec) -> Result
             forbid_all(
                 manifest,
                 spec.relative_path,
-                &["limit-whitelist", "nginx.ingress.kubernetes.io", "ratelimit:"],
+                &[
+                    "limit-whitelist",
+                    "nginx.ingress.kubernetes.io",
+                    "ratelimit:",
+                ],
             )?;
         }
     }
