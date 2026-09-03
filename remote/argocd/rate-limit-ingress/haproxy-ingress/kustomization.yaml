@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Disabled catalog component. Peer-summed scope is valid only when the adopting
+# HAProxy Ingress controller has healthy peer stick-table synchronization.
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: Ingress
+      labelSelector: rate-limit.ores.io/profile=public-anonymous-ingress
+    patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: replace-me-before-enabling
+        labels:
+          rate-limit.ores.io/policy-id: public-anonymous-ingress
+          rate-limit.ores.io/activation: disabled-template
+          rate-limit.ores.io/scope: peer-summed
+        annotations:
+          haproxy-ingress.github.io/limit-rps: "20"
+          haproxy-ingress.github.io/limit-connections: "10"
+          rate-limit.ores.io/peers-required: "true"
