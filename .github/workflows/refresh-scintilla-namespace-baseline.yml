@@ -1,6 +1,7 @@
 name: Refresh namespace baseline after Scintilla benchmark cleanup
 
 # dd:execution-carrier owner=DEN-1095 expires=2026-09-10
+# retry: refresh every exact generated-count invariant
 on:
   push:
     branches:
