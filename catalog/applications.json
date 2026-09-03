@@ -125,6 +125,42 @@
       "name": "ai-agent-coordinator"
     },
     {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "ai-agent-coordinator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/ai-agent-coordinator-artifact-recovery.application.yaml",
+          "project": "ai-agent-coordinator",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/continuous-artifact-recovery/k8s",
+              "repo_url": "https://github.com/ORESoftware/ai-agent-coordinator.rs.git",
+              "target_revision": "c5a08d1afd26d2982e53fc2066bde9cf64ee5d19"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": false,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "ai-agent-coordinator-artifact-recovery"
+    },
+    {
       "declaration_count": 4,
       "declarations": [
         {
@@ -1676,6 +1712,42 @@
             "server": "https://kubernetes.default.svc"
           },
           "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/gha-test-fallback-activation.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/gha-test-fallback-activation/aws",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-gha-test-fallback-activation"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "default",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
           "manifest_path": "remote/argocd/apps/dd-git-rs.application.yaml",
           "project": "default",
           "sources": [
@@ -2344,6 +2416,690 @@
       "name": "dd-mlflow"
     },
     {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cert-manager",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/aws/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cert-manager",
+              "path": "",
+              "repo_url": "https://charts.jetstack.io",
+              "target_revision": "v1.21.1"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cert-manager-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cert-manager",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/azure/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cert-manager",
+              "path": "",
+              "repo_url": "https://charts.jetstack.io",
+              "target_revision": "v1.21.1"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cert-manager-azure"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cert-manager",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/gcp/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cert-manager",
+              "path": "",
+              "repo_url": "https://charts.jetstack.io",
+              "target_revision": "v1.21.1"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cert-manager-gcp"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cockroach-operator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 3,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/aws/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cockroachdb-operator-chart",
+              "path": "",
+              "repo_url": "https://charts.cockroachdb.com/v2",
+              "target_revision": "1.0.0"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cockroach-operator-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cockroach-operator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 3,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/azure/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cockroachdb-operator-chart",
+              "path": "",
+              "repo_url": "https://charts.cockroachdb.com/v2",
+              "target_revision": "1.0.0"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cockroach-operator-azure"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cockroach-operator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 3,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/gcp/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cockroachdb-operator-chart",
+              "path": "",
+              "repo_url": "https://charts.cockroachdb.com/v2",
+              "target_revision": "1.0.0"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cockroach-operator-gcp"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cockroachdb",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 4,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/aws/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cockroachdb-chart",
+              "path": "",
+              "repo_url": "https://charts.cockroachdb.com/v2",
+              "target_revision": "26.3.1"
+            },
+            {
+              "chart": "",
+              "path": "",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cockroachdb-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cockroachdb",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 4,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/azure/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cockroachdb-chart",
+              "path": "",
+              "repo_url": "https://charts.cockroachdb.com/v2",
+              "target_revision": "26.3.1"
+            },
+            {
+              "chart": "",
+              "path": "",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cockroachdb-azure"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cockroachdb",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 4,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/gcp/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "cockroachdb-chart",
+              "path": "",
+              "repo_url": "https://charts.cockroachdb.com/v2",
+              "target_revision": "26.3.1"
+            },
+            {
+              "chart": "",
+              "path": "",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-cockroachdb-gcp"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "default",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/aws/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/multicloud-data-plane/prerequisites",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-data-prerequisites-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "default",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/azure/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/multicloud-data-plane/prerequisites",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-data-prerequisites-azure"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "default",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/gcp/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/multicloud-data-plane/prerequisites",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-data-prerequisites-gcp"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "nats-system",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 5,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/aws/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "nats",
+              "path": "",
+              "repo_url": "https://nats-io.github.io/k8s/helm/charts/",
+              "target_revision": "2.14.6"
+            },
+            {
+              "chart": "",
+              "path": "",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-nats-supercluster-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "nats-system",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 5,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/azure/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "nats",
+              "path": "",
+              "repo_url": "https://nats-io.github.io/k8s/helm/charts/",
+              "target_revision": "2.14.6"
+            },
+            {
+              "chart": "",
+              "path": "",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-nats-supercluster-azure"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "nats-system",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 5,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/gcp/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "nats",
+              "path": "",
+              "repo_url": "https://nats-io.github.io/k8s/helm/charts/",
+              "target_revision": "2.14.6"
+            },
+            {
+              "chart": "",
+              "path": "",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-nats-supercluster-gcp"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cert-manager",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/aws/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "trust-manager",
+              "path": "",
+              "repo_url": "https://charts.jetstack.io",
+              "target_revision": "v0.24.0"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-trust-manager-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cert-manager",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/azure/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "trust-manager",
+              "path": "",
+              "repo_url": "https://charts.jetstack.io",
+              "target_revision": "v0.24.0"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-trust-manager-azure"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "cert-manager",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/multicloud-data-plane/clusters/gcp/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "trust-manager",
+              "path": "",
+              "repo_url": "https://charts.jetstack.io",
+              "target_revision": "v0.24.0"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": true,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-multicloud-trust-manager-gcp"
+    },
+    {
       "declaration_count": 4,
       "declarations": [
         {
@@ -2720,6 +3476,42 @@
       ],
       "duplicate_name": false,
       "name": "dd-root-aws"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/azure/root.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/clusters/azure",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-root-azure"
     },
     {
       "declaration_count": 1,
@@ -4007,7 +4799,7 @@
       "name": "edge-cache-warmer"
     },
     {
-      "declaration_count": 4,
+      "declaration_count": 5,
       "declarations": [
         {
           "application_namespace": "argocd",
@@ -4047,6 +4839,35 @@
           },
           "document_index": 0,
           "manifest_path": "remote/argocd/clusters/aws/applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "external-secrets",
+              "path": "",
+              "repo_url": "https://charts.external-secrets.io",
+              "target_revision": "0.18.2"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "external-secrets",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/azure/applications.yaml",
           "project": "default",
           "sources": [
             {
@@ -4423,6 +5244,111 @@
       "name": "keda"
     },
     {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "meta-agents",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/meta-agents-platform/applications.yaml",
+          "project": "meta-agents",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/k8s",
+              "repo_url": "https://github.com/meta-agents-demo/meta-agent-control-plane.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "meta-agent-control-plane"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/meta-agents.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/meta-agents-platform",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "meta-agents-platform"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "meta-agents",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/meta-agents-platform/applications.yaml",
+          "project": "meta-agents",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/k8s",
+              "repo_url": "https://github.com/meta-agents-demo/metagents.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "metagents"
+    },
+    {
       "declaration_count": 3,
       "declarations": [
         {
@@ -4692,6 +5618,42 @@
       "name": "threefa-sync-server"
     },
     {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "threefa",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/threefa-web-server.application.yaml",
+          "project": "threefa",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/ec2",
+              "repo_url": "git@github.com:3FA-app/3fa-web-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": true,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "CreateNamespace=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "threefa-web-server"
+    },
+    {
       "declaration_count": 2,
       "declarations": [
         {
@@ -4956,12 +5918,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 149,
-    "applications": 104,
-    "default_destination_namespace_declarations": 56,
-    "default_project_declarations": 113,
+    "application_documents": 175,
+    "applications": 129,
+    "default_destination_namespace_declarations": 60,
+    "default_project_declarations": 135,
     "duplicate_names": 25,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 96
+    "in_repo_source_declarations": 108
   }
 }
