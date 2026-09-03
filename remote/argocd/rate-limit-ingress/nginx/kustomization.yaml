@@ -4,6 +4,9 @@ kind: Component
 # Disabled catalog component. It is intentionally not referenced by any live
 # kustomization. Copy into an application overlay only after reviewing the
 # per-controller-replica effective limit.
+resources:
+  - catalog-marker.yaml
+
 patches:
   - target:
       group: networking.k8s.io
