@@ -1,0 +1,145 @@
+name: Apply tested namespace baseline for PR 1460
+
+# dd:execution-carrier owner=DEN-1095 expires=2026-09-10
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - .github/workflows/refresh-namespace-baseline-pr-1460.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-namespace-baseline-pr-1460
+  cancel-in-progress: false
+
+jobs:
+  apply-test-and-self-delete:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.number == 1460 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'fix/scintilla-submodule-app-bootstrap-20260903' &&
+      github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact trusted branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/scintilla-submodule-app-bootstrap-20260903
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+
+      - name: Remove the carrier and temporary candidate job before generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -- .github/workflows/refresh-namespace-baseline-pr-1460.yml
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/namespace-migration-contract.yml')
+          text = path.read_text(encoding='utf-8')
+          marker = '\n  candidate-baseline:\n'
+          if text.count(marker) != 1:
+              raise SystemExit(
+                  f'expected one temporary candidate job marker, found {text.count(marker)}'
+              )
+          path.write_text(text.split(marker, 1)[0].rstrip() + '\n', encoding='utf-8')
+          PY
+
+      - name: Regenerate the final-tree inventory and migration manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py generate \
+            --root . \
+            --format json \
+            > /tmp/namespace-manifest-generate.json
+
+      - name: Run the complete deterministic contract suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            tools/namespace_migration.py \
+            tools/test_namespace_migration.py \
+            tools/namespace_manifest.py \
+            tools/test_namespace_manifest.py
+          python3 tools/test_namespace_migration.py
+          python3 tools/test_namespace_manifest.py
+          python3 tools/namespace_migration.py check \
+            --root . \
+            --format json \
+            > /tmp/namespace-contract-report.json
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > /tmp/namespace-manifest-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(
+              Path('catalog/namespaces/migration-manifest.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          inventory = json.loads(
+              Path('artifacts/namespace-inventory.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          contract = json.loads(
+              Path('/tmp/namespace-contract-report.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          report = json.loads(
+              Path('/tmp/namespace-manifest-report.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          entry_count = len(manifest['spec']['entries'])
+          checks = {
+              'inventory valid': inventory.get('valid') is True,
+              'inventory diagnostics empty': inventory.get('diagnostics') == [],
+              'contract valid': contract.get('valid') is True,
+              'manifest report valid': report.get('valid') is True,
+              'entry counts agree': (
+                  entry_count == len(inventory.get('occurrences', []))
+                  and report.get('entryCount') == entry_count
+                  and report.get('inventoryEntryCount') == entry_count
+                  and manifest['metadata']['entryCount'] == entry_count
+              ),
+              'execution disabled': manifest['spec'].get('executionAuthorized') is False,
+              'cleanup disabled': all(
+                  entry.get('destructiveCleanupAllowed') is False
+                  for entry in manifest['spec']['entries']
+              ),
+          }
+          failed = [name for name, valid in checks.items() if not valid]
+          if failed:
+              raise SystemExit('final namespace baseline failed: ' + ', '.join(failed))
+          print(json.dumps({'entryCount': entry_count, 'checks': checks}, sort_keys=True))
+          PY
+          git diff --check
+
+      - name: Commit the canonical baseline and carrier cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'chore(namespaces): refresh deterministic baseline for cross-org App changes'
+          git push origin HEAD:fix/scintilla-submodule-app-bootstrap-20260903
