@@ -72,3 +72,48 @@ jobs:
           path: artifacts/
           if-no-files-found: error
           retention-days: 14
+
+  candidate:
+    name: Generate and validate commit-ready application catalog
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.number == 1460 &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+
+      - name: Generate and independently validate the deterministic catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          nix develop --accept-flake-config -c \
+            python tools/application_catalog.py generate catalog/applications.json
+          nix develop --accept-flake-config -c \
+            python tools/application_catalog.py validate catalog/applications.json
+          nix develop --accept-flake-config -c \
+            python -m unittest \
+              tools/test_application_catalog.py \
+              tools/test_application_catalog_multisource.py
+          git diff --check
+          sha256sum catalog/applications.json > catalog/applications.json.sha256
+
+      - name: Publish exact tested catalog candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: application-catalog-candidate-${{ github.event.pull_request.head.sha }}
+          path: |
+            catalog/applications.json
+            catalog/applications.json.sha256
+          if-no-files-found: error
+          retention-days: 14
