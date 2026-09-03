@@ -1,0 +1,97 @@
+name: exact-head-audit-pr-1457
+
+on:
+  push:
+    branches:
+      - automation/exact-head-audit-pr-1457-20260903
+    paths:
+      - .github/workflows/exact-head-audit-pr-1457.yml
+
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: write
+  statuses: read
+
+concurrency:
+  group: exact-head-audit-pr-1457
+  cancel-in-progress: true
+
+jobs:
+  audit-and-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_PR: "1457"
+    steps:
+      - name: Check out audit definition
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Read exact pull-request state
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr view "$TARGET_PR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefOid,statusCheckRollup \
+            > /tmp/pr.json
+          jq '{state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefOid,checks:[.statusCheckRollup[] | {name:(.name // .context // "unknown"),status:(.status // null),conclusion:(.conclusion // .state // null)}]}' /tmp/pr.json
+
+      - name: Enforce fail-closed merge conditions
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '.state == "OPEN"' /tmp/pr.json >/dev/null
+          jq -e '.isDraft == false' /tmp/pr.json >/dev/null
+          jq -e '.mergeable == "MERGEABLE"' /tmp/pr.json >/dev/null
+          jq -e '.mergeStateStatus == "CLEAN"' /tmp/pr.json >/dev/null
+          jq -e '(.reviewDecision // "") != "CHANGES_REQUESTED"' /tmp/pr.json >/dev/null
+          test "$(jq '.statusCheckRollup | length' /tmp/pr.json)" -gt 0
+          jq -e '
+            all(.statusCheckRollup[];
+              if has("status") then
+                (.status == "COMPLETED" and ((.conclusion // "") | IN("SUCCESS", "NEUTRAL", "SKIPPED")))
+              else
+                ((.state // "") == "SUCCESS")
+              end
+            )
+          ' /tmp/pr.json >/dev/null
+          echo "head_sha=$(jq -r .headRefOid /tmp/pr.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Re-read head to prevent races
+        shell: bash
+        run: |
+          set -euo pipefail
+          current="$(gh pr view "$TARGET_PR" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq .headRefOid)"
+          test "$current" = "${{ steps.gate.outputs.head_sha }}"
+
+      - name: Merge the exact tested head without bypassing protections
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr merge "$TARGET_PR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --squash \
+            --delete-branch \
+            --match-head-commit "${{ steps.gate.outputs.head_sha }}"
+
+      - name: Record successful exact-head merge
+        if: success()
+        shell: bash
+        run: |
+          gh pr comment "$TARGET_PR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Exact-head audit passed and this PR was squash-merged at \`${{ steps.gate.outputs.head_sha }}\`. The gate required a nonempty all-green check rollup, no requested changes, no conflict, and a clean merge state."
+
+      - name: Record blocking evidence
+        if: failure()
+        shell: bash
+        run: |
+          summary="$(jq -c '{state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefOid,checks:[.statusCheckRollup[]? | {name:(.name // .context // "unknown"),status:(.status // null),conclusion:(.conclusion // .state // null)}]}' /tmp/pr.json 2>/dev/null || printf '{}')"
+          gh pr comment "$TARGET_PR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Exact-head audit did not merge this PR. Fail-closed state: \`$summary\`. Resolve the reported checks, review state, or conflict and rerun the audit."
