@@ -192,7 +192,6 @@ gh_as_owner api --method PATCH "repos/$target" \
   -F allow_auto_merge=false \
   -F delete_branch_on_merge=true >/dev/null
 
-repo_json="$(gh_as_owner api "repos/$target")"
 [[ "$(gh_as_owner api "repos/$target" --jq .full_name)" == "$target" ]]
 [[ "$(gh_as_owner api "repos/$target" --jq .owner.login)" == ORESoftware ]]
 [[ "$(gh_as_owner api "repos/$target" --jq .private)" == true ]]
@@ -243,7 +242,7 @@ TypeSpec and JSON Schema/OpenAPI are independent, human-authored top-level autho
 
 ## Initial consumers
 
-Adopt through separate tested PRs in `sonus-auris-lib-core`, `daedalus-lib-core`, `cliptown-lib-core`, `ap-lib-core`, `fanwaave-lib-core`, `athleto-lib-core`, `claritas-lib-core`, `claimgraph-lib-core`, `cp-lib-core`, and `ecmad-lib-core`. Each consumer must preserve its own `*-interfaces` authority, use zed-pkg, and keep backend-only lock credentials out of client/isomorphic exports.
+Adopt through separate tested PRs in `sonus-auris/sonus-auris-lib-core`, `daedalus-fab/daedalus-lib-core`, `cliptown/cliptown-lib-core`, `agent-pontifex/ap-lib-core`, `fanwaave/fanwaave-lib-core`, `athlet-o-/athleto-lib-core`, `claritas-viz/claritas-lib-core`, `claimgraph/claimgraph-lib-core`, `chapter-publishing/cp-lib-core`, `ecma-d/ecmad-lib-core`, and `embedded-alerts/eal-lib-core`. Each consumer must preserve its own `*-interfaces` authority, import that authority explicitly, use zed-pkg, and keep backend-only lock credentials out of client/isomorphic exports.
 
 ## Tracking
 
