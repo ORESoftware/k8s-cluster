@@ -70,9 +70,42 @@ resolve_gitdir() {
 
 resolve_url() {
     local path="$1" gd="$2" url
-    url="$(git --git-dir="$gd" config --get remote.origin.url 2>/dev/null)"
+    if [ -n "$gd" ]; then
+        url="$(git --git-dir="$gd" config --get remote.origin.url 2>/dev/null)"
+        [ -n "$url" ] && { printf '%s\n' "$url"; return 0; }
+    fi
+    url="$(git config -f "$repo_root/.gitmodules" --get "submodule.$path.url" 2>/dev/null)"
     [ -n "$url" ] && { printf '%s\n' "$url"; return 0; }
-    git config -f "$repo_root/.gitmodules" --get "submodule.$path.url" 2>/dev/null
+    # The worktree's .gitmodules describes the CHECKED-OUT branch, which need not
+    # contain a submodule that the pushed branch adds. Fall back to .gitmodules as
+    # recorded in each commit being pushed.
+    local sha
+    for sha in $push_shas; do
+        url="$(git show "$sha:.gitmodules" 2>/dev/null \
+            | git config -f /dev/stdin --get "submodule.$path.url" 2>/dev/null)"
+        [ -n "$url" ] && { printf '%s\n' "$url"; return 0; }
+    done
+    return 1
+}
+
+# Fallback check for a submodule with no local object store: ask the remote
+# directly whether it will serve the commit. A successful fetch of an explicit
+# sha is exactly the invariant this guard protects — that every clone can fetch
+# the gitlink — so it is a stronger signal than "cannot verify", not a weaker one.
+# Runs in a throwaway gitdir so nothing is written to any real repository.
+gitlink_fetchable() {
+    local sha="$1" url="$2" tmp rc
+    [ -n "$url" ] || return 2
+    tmp="$(mktemp -d "${TMPDIR:-/tmp}/pushguard.XXXXXX")" || return 2
+    git init -q --bare "$tmp" 2>/dev/null || { rm -rf "$tmp"; return 2; }
+    if env -u GIT_DIR -u GIT_WORK_TREE -u GIT_COMMON_DIR -u GIT_INDEX_FILE \
+        git --git-dir="$tmp" fetch -q --depth=1 --no-tags "$url" "$sha" 2>/dev/null; then
+        rc=0
+    else
+        rc=1
+    fi
+    rm -rf "$tmp"
+    return "$rc"
 }
 
 # Is commit $2 reachable from a branch/tag on the submodule remote $3 (gitdir $1)?
@@ -101,14 +134,31 @@ gitlink_on_remote() {
     return "$rc"
 }
 
+# Git feeds the ref list on stdin, which can only be consumed once; hold it so
+# both the gitlink scan and the .gitmodules lookup below can read it.
+push_input="$(cat)"
+
+push_shas="$(
+    printf '%s\n' "$push_input" \
+        | while read -r _localref localsha _remoteref _remotesha; do
+            [ -n "${localsha:-}" ] || continue
+            is_zero "$localsha" && continue
+            printf '%s ' "$localsha"
+          done
+)"
+
 # Collect "path<TAB>sha" for every gitlink that this push would introduce/move,
 # de-duplicated across all refs being pushed.
 changed_gitlinks="$(
-    while read -r _localref localsha _remoteref remotesha; do
+    printf '%s\n' "$push_input" \
+        | while read -r _localref localsha _remoteref remotesha; do
         [ -n "${localsha:-}" ] || continue
         is_zero "$localsha" && continue   # branch deletion — nothing to vet
         if is_zero "${remotesha:-0}"; then base="$EMPTY_TREE"; else base="$remotesha"; fi
-        git diff --raw --no-renames "$base" "$localsha" 2>/dev/null \
+        # --no-abbrev: raw output abbreviates object names by default. Local
+        # ancestry checks tolerate a short sha, but a remote will not serve one,
+        # so keep the full 40 characters.
+        git diff --raw --no-renames --no-abbrev "$base" "$localsha" 2>/dev/null \
             | while IFS="$(printf '\t')" read -r meta path; do
                 # meta = ":<srcmode> <dstmode> <srcsha> <dstsha> <status>"
                 set -- $meta
@@ -124,13 +174,19 @@ changed_gitlinks="$(
 problems=""
 while IFS="$(printf '\t')" read -r path sha; do
     [ -n "$path" ] || continue
-    gd="$(resolve_gitdir "$path")" || {
-        problems+="  ✗ $path @ ${sha:0:12}  — submodule not initialized; cannot verify (run: git submodule update --init '$path')"$'\n'
-        continue
-    }
-    url="$(resolve_url "$path" "$gd")"
-    gitlink_on_remote "$gd" "$sha" "$url"
-    case $? in
+    gd="$(resolve_gitdir "$path")" || gd=""
+    url="$(resolve_url "$path" "$gd")" || url=""
+    if [ -n "$gd" ]; then
+        gitlink_on_remote "$gd" "$sha" "$url"
+        rc=$?
+    else
+        # No local object store for this submodule — normal when the pushed branch
+        # adds a submodule that the checked-out branch does not have. Ask the
+        # remote directly rather than refusing a push that is in fact safe.
+        gitlink_fetchable "$sha" "$url"
+        rc=$?
+    fi
+    case $rc in
         0) : ;;  # reachable on remote — fine
         2) problems+="  ⚠ $path @ ${sha:0:12}  — no remote url resolved; cannot verify"$'\n' ;;
         *) problems+="  ✗ $path @ ${sha:0:12}  — commit is NOT on its remote ($url). Push the submodule first:"$'\n'"        ( cd '$path' && git push origin HEAD )"$'\n' ;;
