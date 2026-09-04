@@ -1,0 +1,144 @@
+name: Create HHaus standard repositories directly
+run-name: Create eight hhaus-org repositories directly @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-hhaus-repositories-direct-20260904.yml
+      - scripts/ops/create_hhaus_repositories_direct_20260904.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-hhaus-repositories-direct-20260904.yml
+      - scripts/ops/create_hhaus_repositories_direct_20260904.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: create-hhaus-standard-repositories-direct-20260904
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-create-hhaus-repositories-direct-20260904.yml
+
+      - name: Compile and test the exact allowlist and fail-closed policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/create_hhaus_repositories_direct_20260904.py
+          python3 scripts/ops/create_hhaus_repositories_direct_20260904.py --self-test
+
+      - name: Reject credential literals and unsafe repository policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            .github/workflows/ops-create-hhaus-repositories-direct-20260904.yml
+            scripts/ops/create_hhaus_repositories_direct_20260904.py
+          )
+          credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
+          unsafe_pattern='--visibility[ =]+public|"visibility"[[:space:]]*:[[:space:]]*"public"|"private"[[:space:]]*:[[:space:]]*false'
+          if grep -nE "$credential_pattern" "${targets[@]}"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          if grep -nE "$unsafe_pattern" "${targets[@]}"; then
+            echo 'unsafe repository policy detected' >&2
+            exit 1
+          fi
+          test "$(grep -c '^        "hhaus-' scripts/ops/create_hhaus_repositories_direct_20260904.py)" -ge 8
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      EVIDENCE_PATH: ops/evidence/hhaus-standard-repositories/direct-publication.json
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Verify and mask the protected repository-administration credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$GH_TOKEN"
+          test "$(gh api user --jq .login)" = ORESoftware
+          membership="$(gh api user/memberships/orgs/hhaus-org)"
+          test "$(jq -er .role <<<"$membership")" = admin
+          test "$(jq -er .state <<<"$membership")" = active
+          unset membership
+
+      - name: Create and verify the exact private HHaus repository fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/create_hhaus_repositories_direct_20260904.py \
+            --evidence "$EVIDENCE_PATH"
+
+      - name: Verify bounded non-secret evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema_version == 1 and
+            .organization == "hhaus-org" and
+            .actor == "ORESoftware" and
+            .repository_count == 8 and
+            (.credential_persisted == false) and
+            (.credential_revoked == false) and
+            (([.repositories[].full_name] | sort) == ([
+              "hhaus-org/hhaus-clients",
+              "hhaus-org/hhaus-sync",
+              "hhaus-org/hhaus-lib-core",
+              "hhaus-org/hhaus-orm-core",
+              "hhaus-org/hhaus-flutter",
+              "hhaus-org/hhaus-desktop-app.rs",
+              "hhaus-org/hhaus-lambdas",
+              "hhaus-org/hhaus-interfaces"
+            ] | sort)) and
+            (all(.repositories[];
+              .visibility == "private" and
+              .default_branch == "main" and
+              (.repository_id | type == "number" and . > 0) and
+              (.main_sha | test("^[0-9a-f]{40}$"))))
+          ' "$EVIDENCE_PATH" >/dev/null
+          echo 'VERIFIED_HHAUS_STANDARD_REPOSITORIES 8/8'
+
+      - name: Upload bounded publication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hhaus-standard-repositories-${{ github.run_id }}
+          path: ops/evidence/hhaus-standard-repositories/direct-publication.json
+          if-no-files-found: error
+          retention-days: 30
