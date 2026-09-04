@@ -3,7 +3,7 @@
 # - Copies executables from scripts/ into /usr/local/sbin (mode 0755).
 # - Copies systemd units from units/ into /etc/systemd/system.
 # - Reloads systemd, then enables and starts every *.timer in units/.
-# - Runs the checksum-pinned HHaus repository publisher once on the protected host.
+# - Runs checksum-pinned one-time repository publishers on the protected host.
 #
 # Designed to be invoked from .github/workflows/remote-k8s-maintenance.yml
 # during reconcile-runtime, and from an operator shell on the EC2 host.
@@ -103,4 +103,39 @@ PY
     "$trusted_sha" "$publisher_revision" > "$hhaus_ready"
   chmod 0600 "$hhaus_ready"
   echo "HHaus standard repository fleet provisioned"
+fi
+
+# Create and normalize the shared locks-and-leases repository through the same
+# reviewed OAuth profile and protected-host boundary. The publisher also opens
+# one idempotent implementation issue so repository creation cannot be mistaken
+# for completion of the polyglot coordination library itself.
+ores_locks_state_dir=/var/lib/dd-host-cron
+ores_locks_ready="$ores_locks_state_dir/ores-locks-and-leases-v1.ready"
+if [ -f "$ores_locks_ready" ]; then
+  echo "--- ORES locks-and-leases repository already provisioned ---"
+  cat "$ores_locks_ready"
+else
+  echo "--- provisioning ORES locks-and-leases repository ---"
+  for command in bash git install; do
+    command -v "$command" >/dev/null || {
+      echo "missing command required by ORES locks publisher: $command" >&2
+      exit 70
+    }
+  done
+
+  install -d -m 0700 -o root -g root "$ores_locks_state_dir"
+  trusted_sha="$(git -C "$repo_root" rev-parse HEAD)"
+  [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+  ores_locks_publisher="$repo_root/scripts/ops/create_ores_locks_and_leases_repository_20260904.sh"
+  [ -f "$ores_locks_publisher" ] || {
+    echo "missing ORES locks-and-leases publisher" >&2
+    exit 71
+  }
+  bash "$ores_locks_publisher" "$trusted_sha"
+
+  printf 'status=ready trusted_k8s_cluster_sha=%s publisher_path=%s\n' \
+    "$trusted_sha" 'scripts/ops/create_ores_locks_and_leases_repository_20260904.sh' \
+    > "$ores_locks_ready"
+  chmod 0600 "$ores_locks_ready"
+  echo "ORES locks-and-leases repository provisioned"
 fi
