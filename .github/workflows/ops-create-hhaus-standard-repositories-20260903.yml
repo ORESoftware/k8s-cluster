@@ -109,16 +109,73 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
-          persist-crdentials: false
+          persist-credentials: false
 
-      - name: Configure short-lived AWS credentials
+      - name: Try primary short-lived AWS role
+        id: aws_primary
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: hhaus-standard-repository-fleet
+          role-session-name: hhaus-standard-repository-fleet-primary
           retry-max-attempts: 2
           mask-aws-account-id: true
+
+      - name: Try remote-development short-lived AWS role
+        id: aws_remote_dev
+        if: steps.aws_primary.outcome != 'success'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: hhaus-standard-repository-fleet-remote-dev
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Try generic OIDC short-lived AWS role
+        id: aws_oidc
+        if: steps.aws_primary.outcome != 'success' && steps.aws_remote_dev.outcome != 'success'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: hhaus-standard-repository-fleet-oidc
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Try ECR-compatible short-lived AWS role
+        id: aws_ecr
+        if: steps.aws_primary.outcome != 'success' && steps.aws_remote_dev.outcome != 'success' && steps.aws_oidc.outcome != 'success'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: hhaus-standard-repository-fleet-ecr
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Verify a short-lived AWS role was selected
+        shell: bash
+        env:
+          PRIMARY_OUTCOME: ${{ steps.aws_primary.outcome }}
+          REMOTE_DEV_OUTCOME: ${{ steps.aws_remote_dev.outcome }}
+          OIDC_OUTCOME: ${{ steps.aws_oidc.outcome }}
+          ECR_OUTCOME: ${{ steps.aws_ecr.outcome }}
+        run: |
+          set -euo pipefail
+          successful=0
+          for outcome in "$PRIMARY_OUTCOME" "$REMOTE_DEV_OUTCOME" "$OIDC_OUTCOME" "$ECR_OUTCOME"; do
+            if test "$outcome" = success; then
+              successful=$((successful + 1))
+            fi
+          done
+          test "$successful" -eq 1
+          aws sts get-caller-identity --query Arn --output text >/dev/null
+          printf 'aws_role_selected=true\n'
 
       - name: Provision repositories on protected administration host
         shell: bash
