@@ -1,0 +1,198 @@
+# INERT TEMPLATE. Do not add this file to an active cloud root until every
+# activation gate in README.md has independent evidence.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-rust-ssr-e2e-ci-runner-prereqs-template
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+    dd.dev/activation-state: template-only
+    dd.dev/linear-issue: DEN-1074
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/ci-runners/rust-ssr-demos/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-rust-ssr
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-rust-ssr-e2e-ci-arc-controller-template
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    dd.dev/activation-state: controller-and-crd-audit-gated
+    dd.dev/linear-issue: DEN-1074
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set-controller
+    targetRevision: 0.14.2
+    helm:
+      releaseName: rust-ssr-e2e-ci-arc
+      skipTests: true
+      values: |
+        replicaCount: 1
+        flags:
+          watchSingleNamespace: arc-runners-rust-ssr
+        securityContext:
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+          seccompProfile:
+            type: RuntimeDefault
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-systems
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-rust-ssr-e2e-ci-runner-set-template
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    dd.dev/activation-state: app-image-secret-and-smoke-gated
+    dd.dev/linear-issue: DEN-1074
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set
+    targetRevision: 0.14.2
+    helm:
+      releaseName: rust-ssr-e2e-ci
+      skipTests: true
+      values: |
+        githubConfigUrl: https://github.com/rust-ssr-demos/rust-ssr-e2e
+        githubConfigSecret: rust-ssr-e2e-arc-github
+        runnerScaleSetName: rust-ssr-e2e-ci
+        minRunners: 0
+        maxRunners: 1
+
+        controllerServiceAccount:
+          namespace: arc-systems
+          name: rust-ssr-e2e-ci-arc-gha-rs-controller
+
+        containerMode:
+          type: ""
+
+        listenerTemplate:
+          spec:
+            containers:
+              - name: listener
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                securityContext:
+                  runAsNonRoot: true
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+
+        template:
+          metadata:
+            labels:
+              dd.dev/ci-runner: rust-ssr-e2e-ci
+          spec:
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            terminationGracePeriodSeconds: 30
+            securityContext:
+              fsGroup: 1001
+              runAsNonRoot: true
+              runAsUser: 1001
+              runAsGroup: 1001
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: runner
+                image: ghcr.io/oresoftware/rust-ssr-e2e-ci-runner@sha256:REPLACE_IMAGE_DIGEST
+                imagePullPolicy: IfNotPresent
+                command: ["/home/runner/run.sh"]
+                env:
+                  - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+                    value: "false"
+                  - name: CHROME_BIN
+                    value: /usr/local/bin/chromium
+                  - name: PLAYWRIGHT_CHROMIUM
+                    value: /usr/local/bin/chromium
+                  - name: CHROME_PATH
+                    value: /usr/local/bin/chromium
+                  - name: PUPPETEER_EXECUTABLE_PATH
+                    value: /usr/local/bin/chromium
+                  - name: PUPPETEER_SKIP_DOWNLOAD
+                    value: "1"
+                  - name: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+                    value: "1"
+                resources:
+                  requests:
+                    cpu: "2"
+                    memory: 4Gi
+                    ephemeral-storage: 16Gi
+                  limits:
+                    cpu: "6"
+                    memory: 12Gi
+                    ephemeral-storage: 32Gi
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: false
+                  capabilities:
+                    drop: ["ALL"]
+                  seccompProfile:
+                    type: RuntimeDefault
+                volumeMounts:
+                  - name: work
+                    mountPath: /home/runner/_work
+                  - name: tool-cache
+                    mountPath: /opt/hostedtoolcache
+                  - name: tmp
+                    mountPath: /tmp
+            volumes:
+              - name: work
+                emptyDir:
+                  sizeLimit: 20Gi
+              - name: tool-cache
+                emptyDir:
+                  sizeLimit: 8Gi
+              - name: tmp
+                emptyDir:
+                  sizeLimit: 4Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-rust-ssr
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
