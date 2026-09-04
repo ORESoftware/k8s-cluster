@@ -110,13 +110,17 @@ jobs:
             }
           done
 
-          forbidden=('git checkout' 'git reset' 'git stash' $'\nrm ' $'\nsed ')
-          for marker in "${forbidden[@]}"; do
+          forbidden_literals=('git checkout' 'git reset' 'git stash')
+          for marker in "${forbidden_literals[@]}"; do
             if grep -Fq -- "$marker" "$publisher"; then
               printf 'blacklisted command found in publisher: %q\n' "$marker" >&2
               exit 1
             fi
           done
+          if grep -nE '^[[:space:]]*(sudo[[:space:]]+)?(rm|sed)([[:space:]]|$)' "$publisher"; then
+            echo 'blacklisted mutating command found in publisher' >&2
+            exit 1
+          fi
 
           credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
           if grep -nE "$credential_pattern" \
