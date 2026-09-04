@@ -13,7 +13,7 @@ LEDGER_PATH = REPOSITORY_ROOT / "docs/org-project-delivery-ledger-2026-08-05.md"
 
 
 class OrganizationProjectDeliveryLedgerTests(unittest.TestCase):
-    def test_ledger_uses_the_canonical_exact_64_registry_contract(self) -> None:
+    def test_ledger_preserves_the_historical_exact_64_campaign(self) -> None:
         completed = subprocess.run(
             ["node", str(REGISTRY_VALIDATOR)],
             cwd=REPOSITORY_ROOT,
@@ -22,7 +22,7 @@ class OrganizationProjectDeliveryLedgerTests(unittest.TestCase):
             text=True,
         )
         report = json.loads(completed.stdout)
-        self.assertEqual(report["organizationCount"], 64)
+        self.assertEqual(report["organizationCount"], 71)
 
         ledger = LEDGER_PATH.read_text(encoding="utf-8")
         self.assertIn(
@@ -30,6 +30,7 @@ class OrganizationProjectDeliveryLedgerTests(unittest.TestCase):
             ledger,
         )
         self.assertIn("current 64-organization registry", ledger)
+        self.assertIn("64-organization fleet status", ledger)
         self.assertNotIn("41-row registry", ledger)
         self.assertNotIn("Daily 41-organization", ledger)
 

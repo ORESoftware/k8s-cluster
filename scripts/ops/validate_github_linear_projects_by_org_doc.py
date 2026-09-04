@@ -19,6 +19,17 @@ ORG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 CREDENTIAL_RE = re.compile(
     r"(?i)(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|(?:token|password|secret)=)"
 )
+LINEAR_PROJECT_SHARE_EXCEPTIONS: dict[str, frozenset[str]] = {
+    "https://linear.app/denman/project/githubcomflags-2-env-05db5133a267": frozenset(
+        {"flags-2-env", "flags-2-env-test"}
+    ),
+    "https://linear.app/denman/project/githubcomnetworking-components-0099b19507ec": frozenset(
+        {"networking-components", "networking-components-test"}
+    ),
+    "https://linear.app/denman/project/githubcomores-otel-85e70d77275a": frozenset(
+        {"ores-otel", "ores-otel-test"}
+    ),
+}
 
 
 class DirectoryError(ValueError):
@@ -66,6 +77,30 @@ def _validate_url(url: str, *, host: str, label: str) -> None:
         raise DirectoryError(f"{label} is not a canonical credential-free HTTPS URL")
 
 
+def _validate_linear_project_sharing(rows: list[OrganizationLink]) -> None:
+    owners_by_url: dict[str, set[str]] = {}
+    for row in rows:
+        owners_by_url.setdefault(row.linear_url, set()).add(
+            row.organization.casefold()
+        )
+
+    for linear_url, observed_owners in owners_by_url.items():
+        expected_owners = LINEAR_PROJECT_SHARE_EXCEPTIONS.get(linear_url)
+        if len(observed_owners) == 1 and expected_owners is None:
+            continue
+        if expected_owners is None:
+            raise DirectoryError(
+                "registry contains a Linear project URL shared without an "
+                f"explicit production/test exception: {linear_url}"
+            )
+        if frozenset(observed_owners) != expected_owners:
+            raise DirectoryError(
+                "registry Linear project share exception mismatch for "
+                f"{linear_url}: expected {sorted(expected_owners)}, "
+                f"found {sorted(observed_owners)}"
+            )
+
+
 def load_registry(path: Path) -> list[OrganizationLink]:
     try:
         with path.open(newline="", encoding="utf-8") as handle:
@@ -85,8 +120,6 @@ def load_registry(path: Path) -> list[OrganizationLink]:
         raise DirectoryError("registry organizations must be case-insensitively sorted")
     if len({value.casefold() for value in organizations}) != len(organizations):
         raise DirectoryError("registry contains duplicate organization ownership")
-    if len({row.linear_url for row in rows}) != len(rows):
-        raise DirectoryError("registry contains duplicate Linear project URLs")
 
     for row in rows:
         if not ORG_RE.fullmatch(row.organization):
@@ -110,21 +143,17 @@ def load_registry(path: Path) -> list[OrganizationLink]:
             raise DirectoryError(
                 f"Linear project URL for {row.organization} has the wrong workspace path"
             )
+
+    _validate_linear_project_sharing(rows)
     return rows
 
 
 def render_directory(rows: list[OrganizationLink]) -> str:
-    lines = [
-        BEGIN_MARKER,
-        "",
-        "| GitHub organization | Canonical GitHub Project | Linear project |",
-        "| --- | --- | --- |",
-    ]
+    lines = [BEGIN_MARKER, ""]
     for row in rows:
         lines.append(
-            f"| [`{row.organization}`]({row.organization_url}) "
-            f"| [`{row.project_title}` #{row.project_number}]({row.project_url}) "
-            f"| [Linear project]({row.linear_url}) |"
+            f"- `{row.organization}`: [P{row.project_number}]({row.project_url}) "
+            f"· [L]({row.linear_url})"
         )
     lines.extend(["", END_MARKER])
     return "\n".join(lines)
@@ -163,7 +192,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    args = _parser().parse_args(arv)
     try:
         rows = load_registry(args.registry)
         if args.write:
