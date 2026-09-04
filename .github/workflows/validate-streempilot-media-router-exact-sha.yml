@@ -1,0 +1,223 @@
+name: Validate StreemPilot media-router exact SHA on sonus-ci
+run-name: Validate StreemPilot media router 850a82a on sonus-ci
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/validate-streempilot-media-router-exact-sha.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/validate-streempilot-media-router-exact-sha.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-streempilot-media-router-850a82afa51b3ee3f9581aa077bcc54aa489ff34
+  cancel-in-progress: false
+
+jobs:
+  validate-exact-private-sha:
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 30
+    env:
+      TARGET_REPOSITORY: StreemPilot/streempilot-monorepo
+      TARGET_SHA: 850a82afa51b3ee3f9581aa077bcc54aa489ff34
+      TARGET_PR: '16'
+      TARGET_ROOT: ${{ runner.temp }}/streempilot-monorepo
+      ARTIFACT_ROOT: ${{ runner.temp }}/streempilot-media-router-evidence
+
+    steps:
+      - name: Check out trusted ORESoftware control revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22.16.0
+
+      - name: Fetch exact private target with a short-lived GitHub App token
+        shell: bash
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          : "${K8S_SUBMODULE_APP_ID:?K8S_SUBMODULE_APP_ID is required}"
+          : "${K8S_SUBMODULE_APP_PRIVATE_KEY:?K8S_SUBMODULE_APP_PRIVATE_KEY is required}"
+          [[ "$K8S_SUBMODULE_APP_ID" =~ ^[0-9]+$ ]]
+          [[ -z "${GH_PAT:-}" ]]
+          [[ -z "${GITHUB_REPOSITORY_ADMIN_TOKEN:-}" ]]
+
+          auth_root="$RUNNER_TEMP/streempilot-media-router-auth"
+          mkdir -p "$auth_root"
+          key_file="$auth_root/app-private-key.pem"
+          printf '%s' "$K8S_SUBMODULE_APP_PRIVATE_KEY" > "$key_file"
+          chmod 600 "$key_file"
+          grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$key_file"
+
+          base64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+          now="$(date +%s)"
+          header='{"alg":"RS256","typ":"JWT"}'
+          payload="$(printf '{"iat":%s,"exp":%s,"iss":%s}' "$((now - 60))" "$((now + 540))" "$K8S_SUBMODULE_APP_ID")"
+          unsigned="$(printf '%s' "$header" | base64url).$(printf '%s' "$payload" | base64url)"
+          signature="$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key_file" -binary | base64url)"
+          app_jwt="${unsigned}.${signature}"
+          echo "::add-mask::$app_jwt"
+
+          installation_json="$auth_root/installation.json"
+          status="$(curl --silent --show-error --output "$installation_json" --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${app_jwt}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            'https://api.github.com/orgs/StreemPilot/installation')"
+          [[ "$status" == 200 ]]
+          jq -e '.repository_selection == "all"' "$installation_json" >/dev/null
+          installation_id="$(jq -er '.id | select(type == "number" and . > 0)' "$installation_json")"
+          app_slug="$(jq -er '.app_slug | select(type == "string" and length > 0)' "$installation_json")"
+
+          token_json="$auth_root/token.json"
+          status="$(curl --silent --show-error --request POST --output "$token_json" --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${app_jwt}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --header 'Content-Type: application/json' --data '{}' \
+            "https://api.github.com/app/installations/${installation_id}/access_tokens")"
+          [[ "$status" == 201 ]]
+          jq -e '.permissions.contents == "write" and .permissions.pull_requests == "write" and .permissions.metadata == "read"' "$token_json" >/dev/null
+          installation_token="$(jq -er '.token | select(type == "string" and length > 0)' "$token_json")"
+          echo "::add-mask::$installation_token"
+
+          askpass="$auth_root/askpass.sh"
+          cat > "$askpass" <<'SH'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "${INSTALLATION_TOKEN:?}" ;;
+            *) exit 1 ;;
+          esac
+          SH
+          chmod 700 "$askpass"
+          export INSTALLATION_TOKEN="$installation_token"
+          export GIT_ASKPASS="$askpass"
+          export GIT_TERMINAL_PROMPT=0
+
+          rm -rf "$TARGET_ROOT"
+          git init "$TARGET_ROOT"
+          git -C "$TARGET_ROOT" remote add origin "https://github.com/${TARGET_REPOSITORY}.git"
+          git -C "$TARGET_ROOT" fetch --depth=1 origin "$TARGET_SHA"
+          git -C "$TARGET_ROOT" checkout --detach FETCH_HEAD
+          test "$(git -C "$TARGET_ROOT" rev-parse HEAD)" = "$TARGET_SHA"
+          test -z "$(git -C "$TARGET_ROOT" status --porcelain)"
+
+          mkdir -p "$ARTIFACT_ROOT"
+          jq -n \
+            --arg repository "$TARGET_REPOSITORY" \
+            --arg sha "$TARGET_SHA" \
+            --arg pr "$TARGET_PR" \
+            --arg app_slug "$app_slug" \
+            --argjson installation_id "$installation_id" \
+            '{schema_version:1,target_repository:$repository,target_sha:$sha,target_pr:($pr|tonumber),credential:"github_app_installation_token",pat_used:false,app_slug:$app_slug,installation_id:$installation_id}' \
+            > "$ARTIFACT_ROOT/fetch-provenance.json"
+
+          curl --silent --show-error --request DELETE \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${installation_token}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            'https://api.github.com/installation/token' >/dev/null
+          unset INSTALLATION_TOKEN installation_token app_jwt K8S_SUBMODULE_APP_PRIVATE_KEY K8S_SUBMODULE_APP_ID GIT_ASKPASS
+          shred -u "$key_file" 2>/dev/null || rm -f "$key_file"
+          rm -f "$askpass" "$token_json" "$installation_json"
+
+      - name: Compile and run the exact target's adversarial tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TARGET_ROOT"
+          python3 -m py_compile \
+            scripts/render-media-router-starter.py \
+            scripts/render-formatted-media-router-starter.py
+          python3 -m unittest tests.test_media_router_starter -v
+          node --check scripts/validate-fleet.mjs
+          node --check tests/fleet-contract.test.mjs
+          node scripts/validate-fleet.mjs
+          node --test tests/fleet-contract.test.mjs
+
+      - name: Render two independent canonical media-router starters
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TARGET_ROOT"
+          python3 scripts/render-formatted-media-router-starter.py \
+            --output "$RUNNER_TEMP/media-router-tree-a" \
+            --archive "$ARTIFACT_ROOT/streempilot-media-router.rs.tar.gz"
+          sleep 1
+          python3 scripts/render-formatted-media-router-starter.py \
+            --output "$RUNNER_TEMP/media-router-tree-b" \
+            --archive "$RUNNER_TEMP/streempilot-media-router-second.tar.gz"
+          diff -qr "$RUNNER_TEMP/media-router-tree-a" "$RUNNER_TEMP/media-router-tree-b"
+          cmp "$ARTIFACT_ROOT/streempilot-media-router.rs.tar.gz" "$RUNNER_TEMP/streempilot-media-router-second.tar.gz"
+
+      - name: Validate the generated Rust repository completely offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/media-router-tree-a"
+          test -f Cargo.lock
+          cargo metadata --locked --offline --no-deps --format-version 1 >/dev/null
+          cargo fmt --all -- --check
+          cargo clippy --locked --offline --all-targets -- -D warnings
+          cargo test --locked --offline --all-targets
+          STREEMPILOT_MEDIA_ROUTER_MAX_DESTINATIONS=2 \
+            cargo run --locked --offline --bin streempilot-media-router
+
+      - name: Write non-secret exact-head validation evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$ARTIFACT_ROOT/streempilot-media-router.rs.tar.gz"
+          checksum="$(sha256sum "$archive" | awk '{print $1}')"
+          printf '%s  %s\n' "$checksum" "$(basename "$archive")" \
+            > "$ARTIFACT_ROOT/SHA256SUMS"
+          jq -n \
+            --arg repository "$TARGET_REPOSITORY" \
+            --arg sha "$TARGET_SHA" \
+            --arg pr "$TARGET_PR" \
+            --arg archive_sha256 "$checksum" \
+            --arg runner_labels 'self-hosted,linux,sonus-ci' \
+            '{schema_version:1,success:true,target_repository:$repository,target_sha:$sha,target_pr:($pr|tonumber),archive_sha256:$archive_sha256,runner_labels:($runner_labels|split(",")),tests:["python-adversarial","fleet-contract","deterministic-dual-render","cargo-metadata-offline-locked","rustfmt","strict-clippy","all-target-tests","bounded-startup-probe"],pat_used:false}' \
+            > "$ARTIFACT_ROOT/validation.json"
+          cat "$ARTIFACT_ROOT/validation.json"
+
+      - name: Upload exact-SHA media-router evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: streempilot-media-router-850a82afa51b3ee3f9581aa077bcc54aa489ff34
+          path: |
+            ${{ env.ARTIFACT_ROOT }}/fetch-provenance.json
+            ${{ env.ARTIFACT_ROOT }}/validation.json
+            ${{ env.ARTIFACT_ROOT }}/SHA256SUMS
+            ${{ env.ARTIFACT_ROOT }}/streempilot-media-router.rs.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Destroy target and transient evidence on runner
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$TARGET_ROOT" \
+            "$RUNNER_TEMP/media-router-tree-a" \
+            "$RUNNER_TEMP/media-router-tree-b" \
+            "$RUNNER_TEMP/streempilot-media-router-second.tar.gz" \
+            "$RUNNER_TEMP/streempilot-media-router-auth"
