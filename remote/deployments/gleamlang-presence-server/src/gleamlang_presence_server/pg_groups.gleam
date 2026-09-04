@@ -16,6 +16,7 @@
 
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid}
+import gleam/list
 import gleam/otp/actor
 import gleam/otp/supervision
 
@@ -25,14 +26,14 @@ pub fn scope() -> Atom {
   atom.create("presence")
 }
 
-@external(erlang, "pg", "start_link")
-fn pg_start_link(scope: Atom) -> Result(Pid, anything)
+@external(erlang, "gleamlang_presence_server_ffi", "pg_start_or_whereis")
+fn pg_start_or_whereis(scope: Atom) -> Result(Pid, String)
 
 @external(erlang, "pg", "join")
-fn pg_join_raw(scope: Atom, group: group, pid: Pid) -> ok
+fn pg_join_raw(scope: Atom, group: group, pid: Pid) -> Atom
 
 @external(erlang, "pg", "leave")
-fn pg_leave_raw(scope: Atom, group: group, pid: Pid) -> ok_or_error
+fn pg_leave_raw(scope: Atom, group: group, pid: Pid) -> Atom
 
 @external(erlang, "pg", "get_members")
 fn pg_get_members_raw(scope: Atom, group: group) -> List(Pid)
@@ -45,16 +46,12 @@ fn pg_get_local_members_raw(scope: Atom, group: group) -> List(Pid)
 /// `join` / `leave` / `get_members`.
 ///
 /// Idempotent if the scope is already running on the node (returns
-/// `{:already_started, Pid}` which we treat as success).
+/// `{:already_started, Pid}` which we treat as success *using that Pid*,
+/// never the supervisor's own pid).
 pub fn supervised() -> supervision.ChildSpecification(Pid) {
   supervision.worker(fn() {
-    case pg_start_link(scope()) {
-      Ok(pid) -> Ok(actor.Started(pid:, data: pid))
-      Error(_already_started) -> {
-        let pid = process.self()
-        Ok(actor.Started(pid:, data: pid))
-      }
-    }
+    let assert Ok(pid) = pg_start_or_whereis(scope())
+    Ok(actor.Started(pid:, data: pid))
   })
 }
 
@@ -63,17 +60,28 @@ pub fn supervised() -> supervision.ChildSpecification(Pid) {
 /// doesn't have a supervisor handy). Safe to call multiple times — `pg`
 /// itself returns `{:already_started, Pid}` on subsequent calls.
 pub fn ensure_started() -> Nil {
-  let _ = pg_start_link(scope())
+  let _ = pg_start_or_whereis(scope())
   Nil
 }
 
+/// Join `process.self()` to `group` in the presence `pg` scope.
 pub fn join(group group: group) -> Nil {
-  let _ = pg_join_raw(scope(), group, process.self())
+  join_pid(group:, pid: process.self())
+}
+
+/// Join an explicit pid (the fanout relay joins itself; tests join
+/// helper processes).
+pub fn join_pid(group group: group, pid pid: Pid) -> Nil {
+  let _ = pg_join_raw(scope(), group, pid)
   Nil
 }
 
 pub fn leave(group group: group) -> Nil {
-  let _ = pg_leave_raw(scope(), group, process.self())
+  leave_pid(group:, pid: process.self())
+}
+
+pub fn leave_pid(group group: group, pid pid: Pid) -> Nil {
+  let _ = pg_leave_raw(scope(), group, pid)
   Nil
 }
 
@@ -92,29 +100,11 @@ pub fn local_members(group group: group) -> List(Pid) {
 /// fanout: send to remote relays, since locals are already covered by the
 /// node-local ETS registry.
 pub fn remote_members(group group: group) -> List(Pid) {
-  let locals = local_members(group)
-  members(group)
-  |> filter_out(locals)
+  subtract_pids(members(group), local_members(group))
 }
 
-fn filter_out(xs: List(Pid), excluded: List(Pid)) -> List(Pid) {
-  case xs {
-    [] -> []
-    [x, ..rest] ->
-      case list_contains(excluded, x) {
-        True -> filter_out(rest, excluded)
-        False -> [x, ..filter_out(rest, excluded)]
-      }
-  }
-}
-
-fn list_contains(xs: List(Pid), target: Pid) -> Bool {
-  case xs {
-    [] -> False
-    [x, ..rest] ->
-      case x == target {
-        True -> True
-        False -> list_contains(rest, target)
-      }
-  }
+/// Pure set-difference on pid lists. Exported so unit tests can pin the
+/// fanout "skip locals" behaviour without starting `pg`.
+pub fn subtract_pids(xs: List(Pid), excluded: List(Pid)) -> List(Pid) {
+  list.filter(xs, fn(x) { !list.contains(excluded, x) })
 }

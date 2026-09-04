@@ -40,7 +40,6 @@
 import dd_cli_config_client
 import dd_otel_client
 import dd_runtime_config_client
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/int
 import gleam/io
@@ -71,9 +70,6 @@ const broadcaster_tick_interval_ms = 2000
 @external(erlang, "gleamlang_ws_server_ffi", "env")
 fn env(name: String) -> Result(String, Nil)
 
-@external(erlang, "pg", "start_link")
-fn pg_start_link_raw(scope: atom.Atom) -> Result(process.Pid, anything)
-
 pub fn main() {
   let _ = dd_cli_config_client.load_once()
   // Start the OpenTelemetry SDK + OTLP exporter before the HTTP supervisor.
@@ -89,10 +85,7 @@ pub fn main() {
 
   let _ = pg_contract.app_config_table()
 
-  let _ = case pg_start_link_raw(pg_groups.scope()) {
-    Ok(_) -> Nil
-    Error(_) -> Nil
-  }
+  pg_groups.ensure_started()
   io.println("ws-server: pg scope ready")
 
   let reg_name: process.Name(registry.Message(groups.ConnMsg, groups.ConnGroup)) =

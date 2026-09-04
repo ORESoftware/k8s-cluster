@@ -120,6 +120,8 @@ service-account*.json
 # temp folders
 tmp
 temp
+tmp/worktrees
+temp/worktrees
 .cache/
 
 # Local cluster-test runtime artifacts (Gleam presence server etc.)
