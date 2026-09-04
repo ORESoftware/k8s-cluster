@@ -1,4 +1,4 @@
-name: one-shot regenerate namespace manifest without carrier
+name: one-shot regenerate namespace inventory closure
 
 on:
   push:
@@ -26,8 +26,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -- .github/workflows/one-shot-regenerate-namespace-manifest-v2.yml
-          test ! -e .github/workflows/one-shot-regenerate-namespace-manifest-v2.yml
+          carrier=.github/workflows/one-shot-regenerate-namespace-manifest-v2.yml
+          cp -- "$carrier" "$RUNNER_TEMP/namespace-manifest-carrier.yml"
+          rm -- "$carrier"
+          test ! -e "$carrier"
 
       - name: Generate canonical inventory and manifest
         shell: bash
@@ -79,30 +81,35 @@ jobs:
               ).stdout.splitlines()
           )
           carrier = ".github/workflows/one-shot-regenerate-namespace-manifest-v2.yml"
+          inventory = "artifacts/namespace-inventory.json"
           manifest = "catalog/namespaces/migration-manifest.json"
-          allowed = {
-              carrier,
-              "artifacts/namespace-inventory.json",
-              manifest,
-          }
+          allowed = {carrier, inventory, manifest}
           unexpected = sorted(changed - allowed)
           if unexpected:
               raise SystemExit(f"unexpected generator changes: {unexpected}")
           if carrier not in changed:
-              raise SystemExit("temporary carrier deletion is not represented in the final diff")
-          if manifest not in changed:
-              raise SystemExit("canonical migration manifest did not change")
+              raise SystemExit("temporary carrier removal is not represented during verification")
+          if inventory not in changed:
+              raise SystemExit("canonical namespace inventory did not change")
           PY
           git diff --check
 
-      - name: Commit only canonical manifest and carrier removal
+      - name: Restore carrier and commit the complete generated closure
         shell: bash
         run: |
           set -euo pipefail
+          carrier=.github/workflows/one-shot-regenerate-namespace-manifest-v2.yml
+          cp -- "$RUNNER_TEMP/namespace-manifest-carrier.yml" "$carrier"
+          git diff --exit-code -- "$carrier"
           git config user.name 'ORESoftware'
           git config user.email 'alex@oresoftware.com'
-          git add -- catalog/namespaces/migration-manifest.json
-          git add -u -- .github/workflows/one-shot-regenerate-namespace-manifest-v2.yml
+          git add -- \
+            artifacts/namespace-inventory.json \
+            catalog/namespaces/migration-manifest.json
           git diff --cached --check
-          git commit -m 'fix(namespace): regenerate manifest from carrier-free inventory'
+          git diff --cached --quiet && {
+            echo 'namespace inventory closure was already current' >&2
+            exit 1
+          }
+          git commit -m 'fix(namespace): regenerate inventory and manifest closure'
           git push origin HEAD:fix/namespace-manifest-current-main-20260903
