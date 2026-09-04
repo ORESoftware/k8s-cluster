@@ -1,0 +1,178 @@
+name: Create HHaus standard repository fleet
+run-name: Provision the eight missing hhaus-org repositories at ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-hhaus-standard-repositories-20260903.yml
+      - scripts/ops/create_hhaus_standard_repositories_20260903.sh
+      - scripts/ops/install_pinned_github_cli.sh
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-hhaus-standard-repositories-20260903.yml
+      - scripts/ops/create_hhaus_standard_repositories_20260903.sh
+      - scripts/ops/install_pinned_github_cli.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: hhaus-standard-repository-fleet-20260903
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-create-hhaus-standard-repositories-20260903.yml
+
+      - name: Validate repository publisher contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          script=scripts/ops/create_hhaus_standard_repositories_20260903.sh
+          installer=scripts/ops/install_pinned_github_cli.sh
+          bash -n "$script"
+          bash -n "$installer"
+          python3 - "$script" <<'PY'
+          from pathlib import Path
+          import sys
+
+          text = Path(sys.argv[1]).read_text()
+          repositories = (
+              'hhaus-clients',
+              'hhaus-sync',
+              'hhaus-lib-core',
+              'hhaus-orm-core',
+              'hhaus-flutter',
+              'hhaus-desktop-app.rs',
+              'hhaus-lambdas',
+              'hhaus-interfaces',
+          )
+          for repository in repositories:
+              marker = f"'{repository}'"
+              if text.count(marker) < 2:
+                  raise SystemExit(f'missing repository or description entry: {repository}')
+          required = (
+              "org='hhaus-org'",
+              'expected_count=8',
+              'install_pinned_github_cli.sh',
+              'candidate-personal-access-token-rejected',
+              "identity\" != 'ORESoftware'",
+              "membership\" != $'admin\\tactive'",
+              '--private',
+              '--add-readme',
+              'default branch must be main',
+              'allow_rebase_merge=false',
+              'HHAUS_STANDARD_REPOSITORIES_READY',
+          )
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit(f'missing publisher invariant: {marker}')
+          forbidden = ('git checkout', 'git reset', 'git stash', '\nrm ', '\nsed ')
+          for marker in forbidden:
+              if marker in text:
+                  raise SystemExit(f'blacklisted command found: {marker!r}')
+          PY
+          credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
+          if grep -nE "$credential_pattern" \
+            .github/workflows/ops-create-hhaus-standard-repositories-20260903.yml "$script"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-crdentials: false
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: hhaus-standard-repository-fleet
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Provision repositories on protected administration host
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -Eeuo pipefail
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          source_script=scripts/ops/create_hhaus_standard_repositories_20260903.sh
+          bash -n "$source_script"
+          encoded="$(base64 --wrap=0 < "$source_script")"
+          remote_command="remote_script=/tmp/create-hhaus-standard-repositories.sh; printf '%s' '$encoded' | base64 --decode > \"\$remote_script\"; chmod 700 \"\$remote_script\"; status=0; bash \"\$remote_script\" '$trusted_sha' > /tmp/create-hhaus-standard-repositories.log 2>&1 || status=\$?; tail -c 40000 /tmp/create-hhaus-standard-repositories.log; python3 -c 'from pathlib import Path; [p.unlink(missing_ok=True) for p in (Path(\"/tmp/create-hhaus-standard-repositories.sh\"), Path(\"/tmp/create-hhaus-standard-repositories.log\"))]'; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "HHaus repository fleet ${trusted_sha:0:12}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 480); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$RUNNER_TEMP/ssm-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json > "$invocation"
+          jq '{Status, Stderr}' "$invocation"
+          stdout="$(jq -r '.Stdout // empty' < "$invocation")"
+          printf '%s\n' "$stdout"
+          test "$(jq -r .Status < "$invocation")" = Success
+          test "$(grep -Ec '^HHAUS_REPOSITORY_READY repository=hhaus-org/(hhaus-clients|hhaus-sync|hhaus-lib-core|hhaus-orm-core|hhaus-flutter|hhaus-desktop-app\.rs|hhaus-lambdas|hhaus-interfaces) created=(true|false) main=[0-9a-f]{40}$' <<< "$stdout")" -eq 8
+          grep -Eq '^HHAUS_STANDARD_REPOSITORIES_READY total=8 created=[0-8] existing=[0-8] trusted_k8s_cluster_sha=[0-9a-f]{40}$' <<< "$stdout"
+          grep '^HHAUS_STANDARD_REPOSITORIES_READY ' <<< "$stdout"
