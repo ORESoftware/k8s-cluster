@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rate-limit-ingress-nginx-catalog
+  labels:
+    app.kubernetes.io/name: rate-limit-ingress-catalog
+    app.kubernetes.io/component: ingress-nginx
+    rate-limit.ores.io/policy-id: public-anonymous-ingress
+    rate-limit.ores.io/activation: disabled-template
+    rate-limit.ores.io/scope: per-replica
+data:
+  purpose: >-
+    Render-only marker for the disabled ingress-nginx rate-limit component.
+    This object does not select an ingress or enable enforcement.
