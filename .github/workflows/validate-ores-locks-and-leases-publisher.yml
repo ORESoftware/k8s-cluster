@@ -1,0 +1,132 @@
+name: Validate ORES locks-and-leases publisher
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/validate-ores-locks-and-leases-publisher.yml
+      - scripts/ops/create_ores_locks_and_leases_repository_20260904.sh
+      - scripts/ops/install_pinned_github_cli.sh
+      - remote/deployments/host-cron/install.sh
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/validate-ores-locks-and-leases-publisher.yml
+      - scripts/ops/create_ores_locks_and_leases_repository_20260904.sh
+      - scripts/ops/install_pinned_github_cli.sh
+      - remote/deployments/host-cron/install.sh
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-ores-locks-and-leases-publisher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/validate-ores-locks-and-leases-publisher.yml
+
+      - name: Validate publisher and host-reconcile contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          publisher=scripts/ops/create_ores_locks_and_leases_repository_20260904.sh
+          installer=scripts/ops/install_pinned_github_cli.sh
+          host_installer=remote/deployments/host-cron/install.sh
+
+          bash -n "$publisher"
+          bash -n "$installer"
+          bash -n "$host_installer"
+
+          required_markers=(
+            "readonly target='ORESoftware/ores-locks-and-leases'"
+            "readonly issue_title='Bootstrap polyglot locks-and-leases contract and first release'"
+            'install_pinned_github_cli.sh'
+            'candidate-personal-access-token-rejected'
+            'candidate-token-class-rejected'
+            'candidate-identity-rejected'
+            'gh_as_owner repo create'
+            '--private'
+            '--add-readme'
+            'allow_rebase_merge=false'
+            'delete_branch_on_merge=true'
+            'TypeSpec and JSON Schema/OpenAPI are independent'
+            'zed-pkg/zed-lock'
+            'monotonic fencing tokens'
+            'transaction-scoped and session-scoped advisory locks'
+            'Root `.zpkg.toml`'
+            'ORES_LOCKS_REPOSITORY_READY'
+            'ORES_LOCKS_BOOTSTRAP_ISSUE_READY'
+          )
+          for marker in "${required_markers[@]}"; do
+            grep -Fq -- "$marker" "$publisher" || {
+              printf 'missing publisher invariant: %s\n' "$marker" >&2
+              exit 1
+            }
+          done
+
+          consumers=(
+            sonus-auris-lib-core
+            daedalus-lib-core
+            cliptown-lib-core
+            ap-lib-core
+            fanwaave-lib-core
+            athleto-lib-core
+            claritas-lib-core
+            claimgraph-lib-core
+            cp-lib-core
+            ecmad-lib-core
+            eal-lib-core
+          )
+          for consumer in "${consumers[@]}"; do
+            grep -Fq -- "$consumer" "$publisher" || {
+              printf 'missing initial consumer: %s\n' "$consumer" >&2
+              exit 1
+            }
+          done
+
+          host_markers=(
+            'ores-locks-and-leases-v1.ready'
+            'create_ores_locks_and_leases_repository_20260904.sh'
+            'bash "$ores_locks_publisher" "$trusted_sha"'
+          )
+          for marker in "${host_markers[@]}"; do
+            grep -Fq -- "$marker" "$host_installer" || {
+              printf 'missing host-reconcile invariant: %s\n' "$marker" >&2
+              exit 1
+            }
+          done
+
+          forbidden=('git checkout' 'git reset' 'git stash' $'\nrm ' $'\nsed ')
+          for marker in "${forbidden[@]}"; do
+            if grep -Fq -- "$marker" "$publisher"; then
+              printf 'blacklisted command found in publisher: %q\n' "$marker" >&2
+              exit 1
+            fi
+          done
+
+          credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
+          if grep -nE "$credential_pattern" \
+            .github/workflows/validate-ores-locks-and-leases-publisher.yml \
+            "$publisher" "$host_installer"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+
+          test "$(grep -Fc 'gh_as_owner repo create' "$publisher")" -eq 1
+          test "$(grep -Fc 'gh_as_owner issue create' "$publisher")" -eq 1
+          test "$(grep -Fc 'candidate-personal-access-token-rejected' "$publisher")" -eq 1
+          git diff --check HEAD^ HEAD
