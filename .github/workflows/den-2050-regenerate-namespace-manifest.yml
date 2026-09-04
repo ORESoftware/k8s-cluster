@@ -1,0 +1,90 @@
+name: DEN-2050 regenerate namespace manifest
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/den-2050-regenerate-namespace-manifest.yml
+      - .github/workflows/namespace-migration-contract.yml
+      - scripts/ops/publish_canonical_core_repositories_20260805.py
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-2050-regenerate-namespace-manifest
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    if: >-
+      github.event.pull_request.number == 1449 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'DEN-2050/canonical-lib-core-publication-admission'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      GITHUB_TOKEN_VALUE: ${{ github.token }}
+    steps:
+      - name: Check out exact feature branch without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+
+      - name: Generate and push only the deterministic manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$HEAD_REF" = DEN-2050/canonical-lib-core-publication-admission
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          remote_head="$(git ls-remote origin "refs/heads/${HEAD_REF}" | awk '{print $1}')"
+          test "$remote_head" = "$PR_HEAD_SHA"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/namespace-migration-contract.yml')
+          text = path.read_text(encoding='utf-8')
+          start = '  # DEN-2050 ONE-SHOT START\n'
+          end = '  # DEN-2050 ONE-SHOT END\n'
+          if text.count(start) != 1 or text.count(end) != 1:
+              raise SystemExit('one-shot workflow markers are not unique')
+          before, remainder = text.split(start, 1)
+          _, after = remainder.split(end, 1)
+          path.write_text(before.rstrip() + '\n' + after, encoding='utf-8')
+          PY
+
+          mkdir -p artifacts
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py generate \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-generation.json
+          python3 tools/namespace_manifest.py check \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-report.json
+          python3 tools/test_namespace_migration.py
+          python3 tools/test_namespace_manifest.py
+          git diff --check
+
+          test -n "$(git status --short catalog/namespaces/migration-manifest.json)"
+          test -z "$(git status --short --untracked-files=no | grep -v '^ M catalog/namespaces/migration-manifest.json$' || true)"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add catalog/namespaces/migration-manifest.json
+          git commit -m 'chore(DEN-2050): regenerate namespace migration manifest'
+
+          basic="$(printf 'x-access-token:%s' "$GITHUB_TOKEN_VALUE" | base64 -w0)"
+          echo "::add-mask::$basic"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic}" \
+            push origin "HEAD:refs/heads/${HEAD_REF}"
