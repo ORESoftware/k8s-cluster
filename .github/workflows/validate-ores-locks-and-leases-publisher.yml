@@ -67,7 +67,7 @@ jobs:
             'zed-pkg/zed-lock'
             'monotonic fencing tokens'
             'transaction-scoped and session-scoped advisory locks'
-            'Root `.zpkg.toml`'
+            "Root \`.zpkg.toml\`"
             'ORES_LOCKS_REPOSITORY_READY'
             'ORES_LOCKS_BOOTSTRAP_ISSUE_READY'
           )
@@ -101,7 +101,7 @@ jobs:
           host_markers=(
             'ores-locks-and-leases-v1.ready'
             'create_ores_locks_and_leases_repository_20260904.sh'
-            'bash "$ores_locks_publisher" "$trusted_sha"'
+            "bash \"\$ores_locks_publisher\" \"\$trusted_sha\""
           )
           for marker in "${host_markers[@]}"; do
             grep -Fq -- "$marker" "$host_installer" || {
