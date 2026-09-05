@@ -1,0 +1,156 @@
+name: Create ORE manifestos repositories
+run-name: Create the public ORE manifestos repository pair @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-ores-manifestos-repositories-20260905.yml
+      - scripts/ops/create_ores_manifestos_repositories_20260905.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-ores-manifestos-repositories-20260905.yml
+      - scripts/ops/create_ores_manifestos_repositories_20260905.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: create-ores-manifestos-repositories-20260905
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-create-ores-manifestos-repositories-20260905.yml
+
+      - name: Compile and test the exact allowlist and fail-closed policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          script=scripts/ops/create_ores_manifestos_repositories_20260905.py
+          python3 -m py_compile "$script"
+          python3 "$script" --self-test
+          python3 - "$script" <<'PY'
+          from pathlib import Path
+          import sys
+
+          text = Path(sys.argv[1]).read_text(encoding="utf-8")
+          required = (
+              'ORG = "ores-manifestos"',
+              '"ores-manifestos-docs"',
+              'SITE_REPOSITORY = "ores-manifestos.github.io"',
+              'SITE_URL = "https://ores-manifestos.github.io/"',
+              '"visibility": "public"',
+              '"private": False',
+              '"build_type": "workflow"',
+              'allow_rebase_merge',
+              'delete_branch_on_merge',
+              'ORES_MANIFESTOS_REPOSITORIES_READY',
+          )
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit(f"missing publisher invariant: {marker}")
+          PY
+
+      - name: Reject credential literals and unexpected files
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            .github/workflows/ops-create-ores-manifestos-repositories-20260905.yml
+            scripts/ops/create_ores_manifestos_repositories_20260905.py
+          )
+          credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
+          if grep -nE "$credential_pattern" "${targets[@]}"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      EVIDENCE_PATH: ops/evidence/ores-manifestos/repository-publication.json
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - name: Verify and mask the protected repository-administration credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$GH_TOKEN"
+          test "$(gh api user --jq .login)" = ORESoftware
+          membership="$(gh api user/memberships/orgs/ores-manifestos)"
+          test "$(jq -er .role <<<"$membership")" = admin
+          test "$(jq -er .state <<<"$membership")" = active
+          unset membership
+
+      - name: Create and verify the exact public repository pair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/create_ores_manifestos_repositories_20260905.py \
+            --evidence "$EVIDENCE_PATH"
+
+      - name: Verify bounded non-secret evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '
+            .schema_version == 1 and
+            .organization == "ores-manifestos" and
+            .actor == "ORESoftware" and
+            .repository_count == 2 and
+            .pages.build_type == "workflow" and
+            .pages.html_url == "https://ores-manifestos.github.io/" and
+            (.credential_persisted == false) and
+            (.credential_revoked == false) and
+            (([.repositories[].full_name] | sort) == ([
+              "ores-manifestos/ores-manifestos-docs",
+              "ores-manifestos/ores-manifestos.github.io"
+            ] | sort)) and
+            (all(.repositories[];
+              .visibility == "public" and
+              .default_branch == "main" and
+              (.repository_id | type == "number" and . > 0) and
+              (.main_sha | test("^[0-9a-f]{40}$"))))
+          ' "$EVIDENCE_PATH" >/dev/null
+          echo 'VERIFIED_ORES_MANIFESTOS_REPOSITORIES 2/2'
+
+      - name: Upload bounded publication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ores-manifestos-repositories-${{ github.run_id }}
+          path: ops/evidence/ores-manifestos/repository-publication.json
+          if-no-files-found: error
+          retention-days: 30
