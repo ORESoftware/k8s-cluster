@@ -7,11 +7,15 @@ on:
     paths:
       - .github/workflows/ops-create-ores-manifestos-repositories-20260905.yml
       - scripts/ops/create_ores_manifestos_repositories_20260905.py
+      - scripts/ops/run_ores_manifestos_repository_publisher_protected_20260905.sh
+      - scripts/ops/run_with_protected_github_token.sh
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-create-ores-manifestos-repositories-20260905.yml
       - scripts/ops/create_ores_manifestos_repositories_20260905.py
+      - scripts/ops/run_ores_manifestos_repository_publisher_protected_20260905.sh
+      - scripts/ops/run_with_protected_github_token.sh
   workflow_dispatch:
 
 permissions:
@@ -23,6 +27,8 @@ concurrency:
 
 jobs:
   validate:
+    permissions:
+      contents: read
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -41,15 +47,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          script=scripts/ops/create_ores_manifestos_repositories_20260905.py
-          python3 -m py_compile "$script"
-          python3 "$script" --self-test
-          python3 - "$script" <<'PY'
+          publisher=scripts/ops/create_ores_manifestos_repositories_20260905.py
+          protected_runner=scripts/ops/run_ores_manifestos_repository_publisher_protected_20260905.sh
+          python3 -m py_compile "$publisher"
+          python3 "$publisher" --self-test
+          bash -n "$protected_runner"
+          python3 - "$publisher" "$protected_runner" <<'PY'
           from pathlib import Path
           import sys
 
-          text = Path(sys.argv[1]).read_text(encoding="utf-8")
-          required = (
+          publisher = Path(sys.argv[1]).read_text(encoding="utf-8")
+          protected_runner = Path(sys.argv[2]).read_text(encoding="utf-8")
+          required_publisher = (
               'ORG = "ores-manifestos"',
               '"ores-manifestos-docs"',
               'SITE_REPOSITORY = "ores-manifestos.github.io"',
@@ -61,9 +70,19 @@ jobs:
               'delete_branch_on_merge',
               'ORES_MANIFESTOS_REPOSITORIES_READY',
           )
-          for marker in required:
-              if marker not in text:
+          for marker in required_publisher:
+              if marker not in publisher:
                   raise SystemExit(f"missing publisher invariant: {marker}")
+          required_runner = (
+              'PROTECTED_GITHUB_TOKEN',
+              'protected-ssm-host',
+              'ORES_MANIFESTOS_EVIDENCE_BASE64=',
+              'base64 --wrap=0',
+              'trusted_sha',
+          )
+          for marker in required_runner:
+              if marker not in protected_runner:
+                  raise SystemExit(f"missing protected-runner invariant: {marker}")
           PY
 
       - name: Reject credential literals and unexpected files
@@ -73,6 +92,7 @@ jobs:
           targets=(
             .github/workflows/ops-create-ores-manifestos-repositories-20260905.yml
             scripts/ops/create_ores_manifestos_repositories_20260905.py
+            scripts/ops/run_ores_manifestos_repository_publisher_protected_20260905.sh
           )
           credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
           if grep -nE "$credential_pattern" "${targets[@]}"; then
@@ -84,11 +104,13 @@ jobs:
   publish:
     if: github.event_name != 'pull_request'
     needs: validate
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
-      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      DIRECT_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
       EVIDENCE_PATH: ops/evidence/ores-manifestos/repository-publication.json
     steps:
       - name: Check out trusted main without persisted credentials
@@ -100,27 +122,119 @@ jobs:
           clean: true
           show-progress: false
 
-      - name: Verify and mask the protected repository-administration credential
+      - name: Select protected publication route
+        id: route
         shell: bash
         run: |
           set -euo pipefail
-          test -n "${GH_TOKEN:-}" || {
-            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
-            exit 1
-          }
+          if test -n "${DIRECT_TOKEN:-}"; then
+            echo 'mode=direct-actions-secret' >> "$GITHUB_OUTPUT"
+          else
+            echo 'mode=protected-ssm-host' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish with direct protected Actions secret
+        if: steps.route.outputs.mode == 'direct-actions-secret'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ env.DIRECT_TOKEN }}
+          GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ env.DIRECT_TOKEN }}
+        run: |
+          set -euo pipefail
           printf '::add-mask::%s\n' "$GH_TOKEN"
           test "$(gh api user --jq .login)" = ORESoftware
           membership="$(gh api user/memberships/orgs/ores-manifestos)"
           test "$(jq -er .role <<<"$membership")" = admin
           test "$(jq -er .state <<<"$membership")" = active
           unset membership
-
-      - name: Create and verify the exact public repository pair
-        shell: bash
-        run: |
-          set -euo pipefail
           python3 scripts/ops/create_ores_manifestos_repositories_20260905.py \
             --evidence "$EVIDENCE_PATH"
+
+      - name: Configure AWS OIDC credentials for protected-host fallback
+        if: steps.route.outputs.mode == 'protected-ssm-host'
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: ores-manifestos-repository-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Publish on the protected SSM host
+        if: steps.route.outputs.mode == 'protected-ssm-host'
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}" || {
+            echo 'AWS_SSM_INSTANCE_ID is not configured.' >&2
+            exit 1
+          }
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          target_region="${AWS_REGION:?configured AWS region is required}"
+          [[ "$target_region" =~ ^[a-z]{2}(-gov)?-[a-z0-9-]+-[0-9]$ ]]
+
+          remote_command="set -Eeuo pipefail; work=\$(mktemp -d /tmp/ores-manifestos-repository-launcher.XXXXXX); trap 'rm -rf \"\$work\"' EXIT; git init \"\$work/k8s-cluster\"; git -C \"\$work/k8s-cluster\" remote add origin https://github.com/ORESoftware/k8s-cluster.git; git -C \"\$work/k8s-cluster\" fetch --depth=1 origin '$trusted_sha'; git -C \"\$work/k8s-cluster\" checkout --detach FETCH_HEAD; test \"\$(git -C \"\$work/k8s-cluster\" rev-parse HEAD)\" = '$trusted_sha'; token_runner=\"\$work/k8s-cluster/scripts/ops/run_with_protected_github_token.sh\"; publisher=\"\$work/k8s-cluster/scripts/ops/run_ores_manifestos_repository_publisher_protected_20260905.sh\"; AWS_REGION='$target_region' AWS_DEFAULT_REGION='$target_region' bash \"\$token_runner\" \"\$publisher\" '$trusted_sha'"
+          parameters="$RUNNER_TEMP/ores-manifestos-ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Publish ORES manifestos repositories from $trusted_sha" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 600); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling)
+                break
+                ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$RUNNER_TEMP/ores-manifestos-ssm-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json > "$invocation"
+
+          jq -r '.Stdout // ""' "$invocation" \
+            | grep -E '^(protected-github-token-runner|ORES_MANIFESTOS_)' \
+            | grep -v '^ORES_MANIFESTOS_EVIDENCE_BASE64=' || true
+          if test "$status" != Success; then
+            jq -r '.Stderr // ""' "$invocation" | tail -n 50 >&2
+            exit 1
+          fi
+
+          evidence_line="$(
+            jq -r '.Stdout // ""' "$invocation" \
+              | grep '^ORES_MANIFESTOS_EVIDENCE_BASE64=' \
+              | tail -n 1
+          )"
+          test -n "$evidence_line"
+          evidence_payload="${evidence_line#ORES_MANIFESTOS_EVIDENCE_BASE64=}"
+          test -n "$evidence_payload"
+          mkdir -p "$(dirname "$EVIDENCE_PATH")"
+          printf '%s' "$evidence_payload" | base64 --decode > "$EVIDENCE_PATH"
+          chmod 600 "$EVIDENCE_PATH"
+          unset evidence_payload evidence_line
 
       - name: Verify bounded non-secret evidence
         shell: bash
@@ -133,6 +247,8 @@ jobs:
             .repository_count == 2 and
             .pages.build_type == "workflow" and
             .pages.html_url == "https://ores-manifestos.github.io/" and
+            (.credential_source == "protected-actions-secret" or
+             .credential_source == "protected-ssm-host") and
             (.credential_persisted == false) and
             (.credential_revoked == false) and
             (([.repositories[].full_name] | sort) == ([
