@@ -87,11 +87,13 @@ jobs:
               exit 1
             }
           done
-          if grep -F 'secrets.GITHUB_REPOSITORY_ADMIN_TOKEN' "$workflow" >/dev/null; then
+          repository_secret_marker='secrets.GITHUB_''REPOSITORY_ADMIN_TOKEN'
+          organization_secret_marker='secrets.ORG_''GITOPS_TOKEN'
+          if grep -F "$repository_secret_marker" "$workflow" >/dev/null; then
             echo 'direct Actions repository-administration secret reference is forbidden' >&2
             exit 1
           fi
-          if grep -F 'secrets.ORG_GITOPS_TOKEN' "$workflow" >/dev/null; then
+          if grep -F "$organization_secret_marker" "$workflow" >/dev/null; then
             echo 'direct Actions organization token reference is forbidden' >&2
             exit 1
           fi
