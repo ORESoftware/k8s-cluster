@@ -87,8 +87,14 @@ jobs:
               exit 1
             }
           done
-          ! grep -F 'secrets.GITHUB_REPOSITORY_ADMIN_TOKEN' "$workflow"
-          ! grep -F 'secrets.ORG_GITOPS_TOKEN' "$workflow"
+          if grep -F 'secrets.GITHUB_REPOSITORY_ADMIN_TOKEN' "$workflow" >/dev/null; then
+            echo 'direct Actions repository-administration secret reference is forbidden' >&2
+            exit 1
+          fi
+          if grep -F 'secrets.ORG_GITOPS_TOKEN' "$workflow" >/dev/null; then
+            echo 'direct Actions organization token reference is forbidden' >&2
+            exit 1
+          fi
 
       - name: Reject credential literals and unexpected files
         shell: bash
