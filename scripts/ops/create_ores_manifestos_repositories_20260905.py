@@ -27,6 +27,7 @@ USER_AGENT = "ores-manifestos-repository-publisher/1"
 SITE_REPOSITORY = "ores-manifestos.github.io"
 SITE_URL = "https://ores-manifestos.github.io/"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+CREDENTIAL_SOURCES = frozenset({"protected-actions-secret", "protected-gh-profile"})
 
 REPOSITORIES: tuple[tuple[str, str], ...] = (
     (
@@ -59,6 +60,15 @@ def token_from_environment() -> str:
     if not token or any(character.isspace() for character in token):
         raise RuntimeError("protected repository-administration credential is missing or malformed")
     return token
+
+
+def credential_source_from_environment() -> str:
+    source = os.environ.get(
+        "ORES_MANIFESTOS_CREDENTIAL_SOURCE", "protected-actions-secret"
+    ).strip()
+    if source not in CREDENTIAL_SOURCES:
+        raise RuntimeError("credential source is not an approved bounded provenance label")
+    return source
 
 
 def api_request(
@@ -251,6 +261,7 @@ def ensure_repository(token: str, name: str, description: str) -> dict[str, obje
 
 def publish(evidence_path: Path) -> int:
     token = token_from_environment()
+    credential_source = credential_source_from_environment()
     preflight(token)
     records: list[dict[str, object]] = []
     for name, description in REPOSITORIES:
@@ -274,7 +285,7 @@ def publish(evidence_path: Path) -> int:
         "repository_count": len(records),
         "repositories": records,
         "pages": pages,
-        "credential_source": "protected-actions-secret",
+        "credential_source": credential_source,
         "credential_persisted": False,
         "credential_revoked": False,
     }
@@ -290,6 +301,8 @@ def self_test() -> int:
     expected = {"ores-manifestos-docs", SITE_REPOSITORY}
     if len(names) != 2 or len(set(names)) != 2 or set(names) != expected:
         raise RuntimeError("repository allowlist must contain exactly the approved public pair")
+    if CREDENTIAL_SOURCES != frozenset({"protected-actions-secret", "protected-gh-profile"}):
+        raise RuntimeError("credential source allowlist changed unexpectedly")
 
     for name, description in REPOSITORIES:
         created = create_payload(name, description)
