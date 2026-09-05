@@ -61,6 +61,7 @@ jobs:
               'allow_rebase_merge',
               'delete_branch_on_merge',
               'ORES_MANIFESTOS_REPOSITORIES_READY',
+              'protected-gh-profile',
           )
           for marker in required:
               if marker not in text:
@@ -75,8 +76,8 @@ jobs:
           required=(
             'Configure trusted main-ref AWS OIDC credentials'
             'AWS_SSM_INSTANCE_ID'
-            'protected-gh-profile-credential'
-            'github-identity-and-ownership'
+            'gh auth token'
+            'ORES_MANIFESTOS_CREDENTIAL_SOURCE=protected-gh-profile'
             'EVIDENCE_BASE64='
             'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN'
           )
@@ -112,10 +113,10 @@ jobs:
     env:
       EVIDENCE_PATH: ops/evidence/ores-manifestos/repository-publication.json
     steps:
-      - name: Check out trusted main without persisted credentials
+      - name: Check out exact trusted main revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 1
           persist-credentials: false
           clean: true
@@ -164,9 +165,9 @@ jobs:
           work="$(mktemp -d /tmp/ores-manifestos-gh-profile.XXXXXX)"
 
           cleanup() {
-            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
-            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
-            unset gh_hosts evidence encoded_evidence
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset ORES_MANIFESTOS_CREDENTIAL_SOURCE GIT_ASKPASS GIT_TERMINAL_PROMPT
+            unset evidence encoded_evidence
             rm -rf "$work"
           }
           report_failure() {
@@ -187,87 +188,15 @@ jobs:
           done
 
           stage=protected-gh-profile-credential
-          gh_hosts="${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml"
-          test -r "$gh_hosts" || {
-            echo 'protected gh profile is not readable' >&2
-            exit 66
-          }
-          GH_TOKEN="$(
-            GH_HOSTS="$gh_hosts" python3 - <<'PY'
-          import ast
-          import os
-          import re
-          import sys
-          from pathlib import Path
-
-          path = Path(os.environ["GH_HOSTS"])
-          current_host = None
-          for raw in path.read_text(encoding="utf-8").splitlines():
-              stripped = raw.strip()
-              if not stripped or stripped.startswith("#"):
-                  continue
-              indent = len(raw) - len(raw.lstrip())
-              if indent == 0 and stripped.endswith(":"):
-                  current_host = stripped[:-1]
-                  continue
-              if current_host != "github.com":
-                  continue
-              match = re.match(r"^\s+oauth_token:\s*(.*?)\s*$", raw)
-              if match is None:
-                  continue
-              value = match.group(1)
-              if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-                  try:
-                      value = ast.literal_eval(value)
-                  except (SyntaxError, ValueError):
-                      raise SystemExit(65)
-              if not isinstance(value, str) or not value or any(ch.isspace() for ch in value):
-                  raise SystemExit(65)
-              sys.stdout.write(value)
-              raise SystemExit(0)
-          raise SystemExit(65)
-          PY
-          )"
+          GH_TOKEN="$(gh auth token)"
           test -n "$GH_TOKEN"
           case "$GH_TOKEN" in
-            *$'\n'*|*$'\r'*) exit 65 ;;
+            *[[:space:]]*) exit 65 ;;
           esac
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          export ORES_MANIFESTOS_CREDENTIAL_SOURCE=protected-gh-profile
           printf 'ores-manifestos-stage=%s status=ready source=protected-gh-profile\n' "$stage"
-
-          stage=github-identity-and-ownership
-          python3 - <<'PY'
-          import json
-          import os
-          import urllib.error
-          import urllib.request
-
-          headers = {
-              "Accept": "application/vnd.github+json",
-              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "ores-manifestos-protected-profile-preflight/1",
-          }
-
-          def get(path: str) -> dict:
-              request = urllib.request.Request("https://api.github.com" + path, headers=headers)
-              try:
-                  with urllib.request.urlopen(request, timeout=30) as response:
-                      return json.load(response)
-              except urllib.error.HTTPError as error:
-                  error.read(4096)
-                  raise SystemExit(f"GitHub preflight failed for {path}: HTTP {error.code}") from error
-
-          identity = get("/user")
-          if identity.get("login") != "ORESoftware":
-              raise SystemExit("protected profile is not authenticated as ORESoftware")
-          membership = get("/user/memberships/orgs/ores-manifestos")
-          if (membership.get("role"), membership.get("state")) != ("admin", "active"):
-              raise SystemExit("protected profile is not an active ores-manifestos administrator")
-          print("ores-manifestos owner membership verified")
-          PY
-          printf 'ores-manifestos-stage=%s status=passed\n' "$stage"
 
           stage=trusted-publisher-source
           git clone --filter=blob:none --no-checkout \
@@ -291,6 +220,7 @@ jobs:
             .organization == "ores-manifestos" and
             .actor == "ORESoftware" and
             .repository_count == 2 and
+            .credential_source == "protected-gh-profile" and
             .pages.build_type == "workflow" and
             .pages.html_url == "https://ores-manifestos.github.io/" and
             (.credential_persisted == false) and
@@ -315,7 +245,7 @@ jobs:
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="remote_log=/tmp/ores-manifestos-gh-profile.log; printf '%s' '$encoded' | base64 --decode > /tmp/ores-manifestos-gh-profile.sh && chown ec2-user:ec2-user /tmp/ores-manifestos-gh-profile.sh && chmod 700 /tmp/ores-manifestos-gh-profile.sh; status=0; sudo -u ec2-user -H bash -lc 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/ores-manifestos-gh-profile.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1 || status=\$?; tail -c 24000 \"\$remote_log\"; rm -f /tmp/ores-manifestos-gh-profile.sh \"\$remote_log\"; exit \$status"
+          remote_command="remote_log=/tmp/ores-manifestos-gh-profile.log; printf '%s' '$encoded' | base64 --decode > /tmp/ores-manifestos-gh-profile.sh && chown ec2-user:ec2-user /tmp/ores-manifestos-gh-profile.sh && chmod 700 /tmp/ores-manifestos-gh-profile.sh; status=0; sudo -u ec2-user -H bash -lc 'unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS; exec bash /tmp/ores-manifestos-gh-profile.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1 || status=\$?; tail -c 24000 \"\$remote_log\"; rm -f /tmp/ores-manifestos-gh-profile.sh \"\$remote_log\"; exit \$status"
           parameters="$RUNNER_TEMP/ores-manifestos-ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' >"$parameters"
 
@@ -355,6 +285,7 @@ jobs:
           stdout="$(jq -er .Stdout <<<"$invocation")"
           evidence_line="$(grep '^EVIDENCE_BASE64=' <<<"$stdout" | tail -n 1)"
           test -n "$evidence_line"
+          mkdir -p "$(dirname "$EVIDENCE_PATH")"
           printf '%s' "${evidence_line#EVIDENCE_BASE64=}" | base64 --decode >"$EVIDENCE_PATH"
           chmod 600 "$EVIDENCE_PATH"
           grep -F 'ores-manifestos-stage=complete status=success' <<<"$stdout" >/dev/null
@@ -368,9 +299,9 @@ jobs:
             .organization == "ores-manifestos" and
             .actor == "ORESoftware" and
             .repository_count == 2 and
+            .credential_source == "protected-gh-profile" and
             .pages.build_type == "workflow" and
             .pages.html_url == "https://ores-manifestos.github.io/" and
-            (.credential_source == "protected-actions-secret") and
             (.credential_persisted == false) and
             (.credential_revoked == false) and
             (([.repositories[].full_name] | sort) == ([
