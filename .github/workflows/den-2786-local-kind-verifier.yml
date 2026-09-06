@@ -1,18 +1,27 @@
 name: DEN-2786 local kind verifier
 
 on:
-  push:
-    branches:
-      - den-2786-refresh-dev-namespace-artifacts
+  pull_request:
+    branches: [dev]
     paths:
       - '.github/workflows/den-2786-local-kind-verifier.yml'
+      - '.github/workflows/cluster-e2e.yml'
+      - 'scripts/ci/local-kind-smoke.sh'
+      - 'tools/namespace_*.py'
+      - 'catalog/namespaces/**'
+      - 'artifacts/namespace-inventory.json'
+      - 'docs/operations/local-kind-namespace-smoke.md'
+      - 'remote/argocd/observability/**'
+      - 'remote/deployments/benefactor-orchestrator/**'
+      - 'remote/tools/check-observability-coverage.mjs'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: den-2786-local-kind-verifier-${{ github.sha }}
-  cancel-in-progress: false
+  group: den-2786-local-kind-verifier-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
@@ -20,25 +29,49 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      KIND_CLUSTER_NAME: ores-k8s-verifier-${{ github.run_id }}
-      KIND_EVIDENCE_DIR: ${{ runner.temp }}/den-2786-kind-${{ github.run_id }}
+      KIND_CLUSTER_NAME: ores-k8s-verifier-${{ github.run_id }}-${{ github.run_attempt }}
       KIND_KEEP_CLUSTER: "0"
       KIND_WORKERS: "1"
       KIND_NODE_IMAGE: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
     steps:
-      - name: Check out exact push commit
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ steps.source-ref.outputs.ref }}
           fetch-depth: 1
           persist-credentials: false
           show-progress: false
           submodules: false
 
-      - name: Assert exact source
+      - name: Initialize isolated evidence path
+        id: evidence
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          evidence_dir="$RUNNER_TEMP/den-2786-kind-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf 'KIND_EVIDENCE_DIR=%s\n' "$evidence_dir" >> "$GITHUB_ENV"
+          printf 'path=%s\n' "$evidence_dir" >> "$GITHUB_OUTPUT"
+          mkdir -p "$evidence_dir"
+          printf '%s\n' "$EXPECTED_SHA" > "$evidence_dir/workflow-expected-source-sha.txt"
 
       - name: Set up pinned kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
@@ -113,8 +146,8 @@ jobs:
         if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: den-2786-local-kind-${{ github.run_id }}
-          path: ${{ env.KIND_EVIDENCE_DIR }}
+          name: den-2786-local-kind-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.evidence.outputs.path }}
           if-no-files-found: warn
           retention-days: 14
 
