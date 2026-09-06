@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-shared-auth-nats-bridge
+  namespace: shared-auth
+  labels:
+    app: dd-shared-auth-nats-bridge
+    app.kubernetes.io/part-of: shared-auth
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-shared-auth-nats-bridge
+  ports:
+    - name: http
+      port: 8121
+      targetPort: http

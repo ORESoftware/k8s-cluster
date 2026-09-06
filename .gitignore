@@ -139,3 +139,8 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-99ca74ddffcb-merge-remote-agent-zed-graph-repair-into ---
+/target
+temp/worktrees
+tmp/worktrees
