@@ -53,7 +53,7 @@ export function validateApplication(text, expected) {
   requires(/CreateNamespace=false/, "Application must not create the platform-owned namespace");
   requires(/ServerSideApply=true/, "Application must use server-side apply");
   requires(/PruneLast=true/, "Application must prune only after apply");
-  forbids(/\nautomated\s*:/, "Application must not enable automated sync before activation evidence");
+  forbids(/\n\s*automated\s*:/, "Application must not enable automated sync before activation evidence");
   forbids(/(?:token|password|secret|privateKey)\s*:\s*[^#\s][^\n]*/i, "Application must not embed credential values");
   return errors;
 }
