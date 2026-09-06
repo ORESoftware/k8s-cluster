@@ -8,32 +8,37 @@ on:
       - '.github/workflows/den-2786-local-kind-verifier.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: den-2786-local-kind-verifier
+  group: den-2786-local-kind-verifier-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
   verify:
     if: github.repository == 'ORESoftware/k8s-cluster'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER_NAME: ores-k8s-verifier-${{ github.run_id }}
+      KIND_EVIDENCE_DIR: ${{ runner.temp }}/den-2786-kind-${{ github.run_id }}
+      KIND_KEEP_CLUSTER: "0"
+      KIND_WORKERS: "1"
+      KIND_NODE_IMAGE: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
     steps:
-      - name: Check out guarded branch
+      - name: Check out exact push commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: den-2786-refresh-dev-namespace-artifacts
-          fetch-depth: 2
-          persist-credentials: true
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
           submodules: false
 
-      - name: Verify exact parent
-        env:
-          EXPECTED_PARENT: 97d9a2011ce8f57d83ad7550770e823e7b37afef
+      - name: Assert exact source
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Set up pinned kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
@@ -47,20 +52,22 @@ jobs:
           KIND_LINUX_AMD64_SHA256: 517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889
         run: |
           set -euo pipefail
-          curl -fsSLo "$RUNNER_TEMP/kind" \
+          install -d "$RUNNER_TEMP/kind-bin"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$RUNNER_TEMP/kind-bin/kind" \
             "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           printf '%s  %s\n' \
             "$KIND_LINUX_AMD64_SHA256" \
-            "$RUNNER_TEMP/kind" \
-            | sha256sum --check -
-          chmod +x "$RUNNER_TEMP/kind"
-          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+            "$RUNNER_TEMP/kind-bin/kind" \
+            | sha256sum --check --strict -
+          chmod +x "$RUNNER_TEMP/kind-bin/kind"
+          printf '%s\n' "$RUNNER_TEMP/kind-bin" >> "$GITHUB_PATH"
 
-      - name: Run ownership-aware migration and Kubernetes API smoke
-        env:
-          KIND_CLUSTER_NAME: ores-k8s-verifier
-          KIND_NODE_IMAGE: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
-        run: bash scripts/ci/local-kind-smoke.sh
+      - name: Run exact-tree ownership and two-node Kubernetes smoke
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/local-kind-smoke.sh
+          bash scripts/ci/local-kind-smoke.sh
 
       - name: Set up Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -93,7 +100,7 @@ jobs:
           npm run check
           npm test
 
-      - name: Verify observability policy and repository hygiene
+      - name: Verify observability policy and temporary-file hygiene
         run: |
           set -euo pipefail
           node remote/tools/check-observability-coverage.mjs
@@ -102,36 +109,26 @@ jobs:
           test ! -e .github/workflows/den-2786-hardening-carrier.yml
           git diff --check
 
+      - name: Upload local evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-2786-local-kind-${{ github.run_id }}
+          path: ${{ env.KIND_EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Record verification summary
+        if: success()
         run: |
           {
-            echo '## DEN-2786 local verifier'
+            echo '## DEN-2786 exact-head verifier'
             echo
-            echo '- kind v0.30.0 with Kubernetes v1.32.8: passed'
-            echo '- ownership-aware namespace migration and manifest contracts: passed'
-            echo '- observability Kubernetes API server-side validation and RBAC authorization: passed'
+            echo '- kind v0.30.0 with Kubernetes v1.32.8, one control-plane and one worker: passed'
+            echo '- exact-tree namespace inventory/manifest parity and migration contracts: passed'
+            echo '- Kubernetes admission plus positive/negative RBAC authorization: passed'
             echo '- benefactor runtime tests on Node 22 and Node 24: passed'
             echo '- hardened benefactor Docker image build: passed'
             echo '- observability no-global-wrapper policy: passed'
             echo '- AWS and Hetzner calls: none'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Remove verifier and push clean tree
-        env:
-          BRANCH: den-2786-refresh-dev-namespace-artifacts
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('.github/workflows/den-2786-local-kind-verifier.yml')
-          if not path.is_file():
-              raise SystemExit('verifier workflow is absent')
-          path.unlink()
-          PY
-          git config user.name "oresoftware-ci"
-          git config user.email "oresoftware-ci@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "DEN-2786: record successful local kind verification"
-          git push origin "HEAD:${BRANCH}"
