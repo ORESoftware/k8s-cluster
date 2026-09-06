@@ -1,5 +1,5 @@
 name: Publish missing organization repositories from trusted comment
-run-name: Publish missing organization repositories for PR #${{ github.event.issue.number }}
+run-name: Publish ORE manifestos repositories for PR #${{ github.event.issue.number }}
 
 on:
   issue_comment:
@@ -16,15 +16,15 @@ jobs:
   validate:
     if: >-
       github.event.issue.pull_request &&
-      github.actor == 'chatgpt' &&
-      startsWith(github.event.comment.body, 'ops-publish-missing-org-repositories:')
+      github.actor == 'ORESoftware' &&
+      startsWith(github.event.comment.body, 'ops-publish-ores-manifestos:')
     runs-on: ubuntu-latest
     outputs:
       request_id: ${{ steps.contract.outputs.request_id }}
       pr_number: ${{ steps.contract.outputs.pr_number }}
       target_sha: ${{ steps.contract.outputs.target_sha }}
     steps:
-      - name: Validate the exact one-file same-repository carrier
+      - name: Validate the exact one-file same-repository ORE manifestos carrier
         id: contract
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
@@ -36,7 +36,7 @@ jobs:
           set -euo pipefail
 
           IFS=: read -r command pr_number target_sha trailing <<<"$COMMENT_BODY"
-          test "$command" = ops-publish-missing-org-repositories
+          test "$command" = ops-publish-ores-manifestos
           test -z "${trailing:-}"
           [[ "$pr_number" =~ ^[0-9]+$ ]]
           [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
@@ -46,14 +46,14 @@ jobs:
           test "$(jq -r '.state' <<<"$pr")" = open
           test "$(jq -r '.draft' <<<"$pr")" = true
           test "$(jq -r '.title' <<<"$pr")" = \
-            'DO NOT MERGE: supervised trusted repository publication'
+            'DO NOT MERGE: supervised ORE manifestos repository publication'
           test "$(jq -r '.user.login' <<<"$pr")" = ORESoftware
           test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$REPOSITORY"
           test "$(jq -r '.head.sha' <<<"$pr")" = "$target_sha"
           test "$(jq -r '.base.ref' <<<"$pr")" = main
           test "$(jq -r '.commits' <<<"$pr")" = 1
           head_ref="$(jq -r '.head.ref' <<<"$pr")"
-          [[ "$head_ref" == agent/critical-org-publish-trigger-main-* ]]
+          [[ "$head_ref" == agent/ores-manifestos-publish-trigger-main-* ]]
 
           trusted_main="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           [[ "$trusted_main" =~ ^[0-9a-f]{40}$ ]]
@@ -69,24 +69,24 @@ jobs:
               --jq '.[].filename'
           )
           test "${#changed_files[@]}" -eq 1
-          test "${changed_files[0]}" = .github/critical-org-publish-trigger-main
+          test "${changed_files[0]}" = .github/ores-manifestos-publish-trigger-main
 
           marker="$(
             gh api \
-              "repos/${REPOSITORY}/contents/.github/critical-org-publish-trigger-main?ref=${target_sha}" \
+              "repos/${REPOSITORY}/contents/.github/ores-manifestos-publish-trigger-main?ref=${target_sha}" \
               --jq '.content' \
               | tr -d '\n' \
               | base64 --decode
           )"
-          test "$marker" = "trusted-main:${trusted_main}"
+          test "$marker" = "ores-manifestos:${trusted_main}"
 
           {
-            printf 'request_id=pr-%s-%s\n' "$pr_number" "$target_sha"
+            printf 'request_id=ores-manifestos-pr-%s-%s\n' "$pr_number" "$target_sha"
             printf 'pr_number=%s\n' "$pr_number"
             printf 'target_sha=%s\n' "$target_sha"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Mark the exact carrier pending
+      - name: Mark the exact ORE manifestos carrier pending
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.contract.outputs.pr_number }}
@@ -98,11 +98,11 @@ jobs:
           run_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           gh api --method POST "repos/${REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=pending \
-            -f context='ops/missing-repository-publication' \
-            -f description="trusted-main publisher run ${GITHUB_RUN_ID} is executing" \
+            -f context='ops/ores-manifestos-repository-publication' \
+            -f description="supervised ORE manifestos publisher run ${GITHUB_RUN_ID} is executing" \
             -f target_url="$run_url" >/dev/null
           gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
-            --body "Trusted-main publisher started: ${run_url}" >/dev/null
+            --body "Supervised ORE manifestos publisher started: ${run_url}" >/dev/null
 
   publish:
     needs: validate
@@ -116,7 +116,7 @@ jobs:
     needs: [validate, publish]
     runs-on: ubuntu-latest
     steps:
-      - name: Report exact publication result
+      - name: Report exact ORE manifestos publication result
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ needs.validate.outputs.pr_number }}
@@ -129,16 +129,16 @@ jobs:
           run_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           if [[ "$PUBLISH_RESULT" == success ]]; then
             state=success
-            description='all 34 canonical repositories published and verified'
+            description='two ORE manifestos repositories published and verified'
           else
             state=failure
-            description='trusted publisher failed; inspect the linked Actions run'
+            description='supervised ORE manifestos publisher failed; inspect the linked run'
           fi
           gh api --method POST "repos/${REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state="$state" \
-            -f context='ops/missing-repository-publication' \
+            -f context='ops/ores-manifestos-repository-publication' \
             -f description="$description" \
             -f target_url="$run_url" >/dev/null
           gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
-            --body "Trusted-main publisher completed with **${PUBLISH_RESULT}**: ${run_url}" >/dev/null
+            --body "Supervised ORE manifestos publisher completed with **${PUBLISH_RESULT}**: ${run_url}" >/dev/null
           test "$PUBLISH_RESULT" = success
