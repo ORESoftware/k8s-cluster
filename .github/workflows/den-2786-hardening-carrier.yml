@@ -35,266 +35,32 @@ jobs:
 
       - name: Verify exact parent
         env:
-          EXPECTED_PARENT: ab532056cc57fd23d19c58feb6b9f6fa9e921b27
+          EXPECTED_PARENT: bff7a35dfaa59562d5e0333aeba59812355133c3
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
 
-      - name: Apply explicit-runtime and local-kind hardening
+      - name: Apply guarded source hardening
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from __future__ import annotations
-
-          import base64
-          import json
-          import re
-          from pathlib import Path
-
-          ROOT = Path.cwd()
-          CARRIER = ROOT / ".github/workflows/den-2786-hardening-carrier.yml"
-
-
-          def read(path: str) -> str:
-              return (ROOT / path).read_text(encoding="utf-8")
-
-
-          def write(path: str, content: str, *, executable: bool = False) -> None:
-              target = ROOT / path
-              target.parent.mkdir(parents=True, exist_ok=True)
-              target.write_text(content, encoding="utf-8")
-              if executable:
-                  target.chmod(0o755)
-
-
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected one exact match, found {count}")
-              return text.replace(old, new, 1)
-
-
-          provider_path = "remote/deployments/benefactor-orchestrator/provider-diagnostics-bridge.mjs"
-          provider = read(provider_path)
-          provider = replace_once(
-              provider,
-              """const PROVIDER_DIAGNOSTICS_VERSION = 'benefactor.provider-diagnostics.v1';
-          const INSTALL_MARKER = Symbol.for('benefactor.providerDiagnostics.installed');
-          const STATE_MARKER = Symbol.for('benefactor.providerDiagnostics.state');
-          """,
-              """const PROVIDER_DIAGNOSTICS_VERSION = 'benefactor.provider-diagnostics.v1';
-          """,
-              "provider diagnostics marker removal",
-          )
-          provider = replace_once(
-              provider,
-              "function createProviderState() {",
-              "export function createProviderState() {",
-              "provider diagnostics state export",
-          )
-          provider, count = re.subn(
-              r"\nexport function installProviderDiagnostics\([\s\S]*\n\}\s*$",
-              lambda _: "\n" + base64.b64decode("ZXhwb3J0IGZ1bmN0aW9uIGZvcm1hdFByb3ZpZGVyRGlhZ25vc3RpY3NMaW5lKHN0YXRlID0gY3JlYXRlUHJvdmlkZXJTdGF0ZSgpKSB7CiAgcmV0dXJuIGBCRU5FRkFDVE9SX1BST1ZJREVSX0RJQUdOT1NUSUNTICR7SlNPTi5zdHJpbmdpZnkoYnVpbGRQcm92aWRlckRpYWdub3N0aWNzKHN0YXRlKSl9YDsKfQo=").decode("utf-8"),
-              provider,
-          )
-          if count != 1:
-              raise SystemExit(f"provider diagnostics installer removal: expected one match, found {count}")
-          write(provider_path, provider)
-
-          scraper_path = "remote/deployments/benefactor-orchestrator/scraper-contact-bridge.mjs"
-          scraper = read(scraper_path)
-          scraper = replace_once(
-              scraper,
-              "const BRIDGE_INSTALLED = Symbol.for('benefactor.scraperContactBridge.installed');\n",
-              "",
-              "scraper bridge marker removal",
-          )
-          scraper, count = re.subn(
-              r"\nexport function installScraperContactBridge\([\s\S]*\n\}\s*$",
-              "\n",
-              scraper,
-          )
-          if count != 1:
-              raise SystemExit(f"scraper bridge installer removal: expected one match, found {count}")
-          write(scraper_path, scraper)
-
-          write(
-              "remote/deployments/benefactor-orchestrator/orchestrator-runtime.mjs",
-              base64.b64decode("aW1wb3J0IHsKICBjcmVhdGVQcm92aWRlckRpYWdub3N0aWNzRmV0Y2gsCiAgY3JlYXRlUHJvdmlkZXJTdGF0ZSwKICBmb3JtYXRQcm92aWRlckRpYWdub3N0aWNzTGluZSwKICByZWNvcmRQcm92aWRlcldhcm5pbmcsCn0gZnJvbSAnLi9wcm92aWRlci1kaWFnbm9zdGljcy1icmlkZ2UubWpzJzsKaW1wb3J0IHsgY3JlYXRlU2NyYXBlckNvbnRhY3RGZXRjaCB9IGZyb20gJy4vc2NyYXBlci1jb250YWN0LWJyaWRnZS5tanMnOwoKZnVuY3Rpb24gb3B0aW9uYWxTY3JhcGVyVXJsKHZhbHVlKSB7CiAgaWYgKHZhbHVlIGluc3RhbmNlb2YgVVJMKSCByZXR1cm4gdmFsdWU7CiAgaWYgKHR5cGVvZiB2YWx1ZSA9PT0gJ3N0cmluZycgJiYgdmFsdWUudHJpbSgpKSByZXR1cm4gbmV3IFVSTCh2YWx1ZSk7CiAgcmV0dXJuIHVuZGVmaW5lZDsKfQoKZXhwb3J0IGZ1bmN0aW9uIGNyZWF0ZUJlbmVmYWN0b3JSdW50aW1lKHsKICBmZXRjaEltcGwgPSBnbG9iYWxUaGlzLmZldGNoPy5iaW5kKGdsb2JhbFRoaXMpLAogIHNjcmFwZXJVcmwsCiAgcmVxdWlyZVJvbGVFbWFpbCwKfSA9IHt9KSB7CiAgaWYgKHR5cGVvZiBmZXRjaEltcGwgIT09ICdmdW5jdGlvbicpIHRocm93IG5ldyBUeXBlRXJyb3IoJ2ZldGNoSW1wbCBtdXN0IGJlIGEgZnVuY3Rpb24nKTsKCiAgY29uc3QgcHJvdmlkZXJTdGF0ZSA9IGNyZWF0ZVByb3ZpZGVyU3RhdGUoKTsKICBjb25zdCBwcm92aWRlckZldGNoID0gY3JlYXRlUHJvdmlkZXJEaWFnbm9zdGljc0ZldGNoKGZldGNoSW1wbCwgcHJvdmlkZXJTdGF0ZSk7CiAgY29uc3QgY29udGFjdE9wdGlvbnMgPSB7fTsKICBjb25zdCBwYXJzZWRTY3JhcGVyVXJsID0gb3B0aW9uYWxTY3JhcGVyVXJsKHNjcmFwZXJVcmwpOwogIGlmIChwYXJzZWRTY3JhcGVyVXJsKSBjb250YWN0T3B0aW9ucy5zY3JhcGVyVXJsID0gcGFyc2VkU2NyYXBlclVybDsKICBpZiAodHlwZW9mIHJlcXVpcmVSb2xlRW1haWwgPT09ICdib29sZWFuJykgY29udGFjdE9wdGlvbnMucmVxdWlyZVJvbGVFbWFpbCA9IHJlcXVpcmVSb2xlRW1haWw7CgogIGNvbnN0IGZldGNoID0gY3JlYXRlU2NyYXBlckNvbnRhY3RGZXRjaChwcm92aWRlckZldGNoLCBjb250YWN0T3B0aW9ucyk7CiAgcmV0dXJuIE9iamVjdC5mcmVlemUoewogICAgZmV0Y2gsCiAgICByZWNvcmRQcm92aWRlcldhcm5pbmcobWVzc2FnZSkgewogICAgICByZXR1cm4gcmVjb3JkUHJvdmlkZXJXYXJuaW5nKHByb3ZpZGVyU3RhdGUsIG1lc3NhZ2UpOwogICAgfSwKICAgIHByb3ZpZGVyRGlhZ25vc3RpY3NMaW5lKCkgewogICAgICByZXR1cm4gZm9ybWF0UHJvdmlkZXJEaWFnbm9zdGljc0xpbmUocHJvdmlkZXJTdGF0ZSk7CiAgICB9LAogIH0pOwp9Cg==").decode("utf-8"),
-          )
-          write(
-              "remote/deployments/benefactor-orchestrator/orchestrator-runtime.test.mjs",
-              base64.b64decode("aW1wb3J0IGFzc2VydCBmcm9tICdub2RlOmFzc2VydC9zdHJpY3QnOwppbXBvcnQgdGVzdCBmcm9tICdub2RlOnRlc3QnOwoKaW1wb3J0IHsgY3JlYXRlQmVuZWZhY3RvclJ1bnRpbWUgfSBmcm9tICcuL29yY2hlc3RyYXRvci1ydW50aW1lLm1qcyc7CgpmdW5jdGlvbiBqc29uUmVzcG9uc2UoYm9keSwgc3RhdHVzID0gMjAwKSB7CiAgcmV0dXJuIG5ldyBSZXNwb25zZShKU09OLnN0cmluZ2lmeShib2R5KSwgewogICAgc3RhdHVzLAogICAgaGVhZGVyczogeyAnY29udGVudC10eXBlJzogJ2FwcGxpY2F0aW9uL2pzb24nIH0sCiAgfSk7Cn0KCnRlc3QoJ2V4cGxpY2l0IHJ1bnRpbWUgY29tcG9zZXMgcHJvdmlkZXIgZGlhZ25vc3RpY3MgYW5kIHNjcmFwZXIgY29udGFjdHMgd2l0aG91dCBnbG9iYWwgbXV0YXRpb24nLCBhc3luYyAoKSA9PiB7CiAgY29uc3Qgb3JpZ2luYWxHbG9iYWxGZXRjaCA9IGdsb2JhbFRoaXMuZmV0Y2g7CiAgY29uc3Qgb3JpZ2luYWxDb25zb2xlTG9nID0gY29uc29sZS5sb2c7CiAgY29uc3Qgb3JpZ2luYWxDb25zb2xlV2FybiA9IGNvbnNvbGUud2FybjsKICBjb25zdCBzY3JhcGVyVXJsID0gbmV3IFVSTCgnaHR0cDovL2RkLXdlYi1zY3JhcGVyLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWw6ODA5NycpOwogIGNvbnN0IHNjcmFwZXJSZXF1ZXN0cyA9IFtdOwoKICBjb25zdCBydW50aW1lID0gY3JlYXRlQmVuZWZhY3RvclJ1bnRpbWUoewogICAgc2NyYXBlclVybCwKICAgIHJlcXVpcmVSb2xlRW1haWw6IHRydWUsCiAgICBmZXRjaEltcGw6IGFzeW5jIChpbnB1dCwgaW5pdCA9IHt9KSA9PiB7CiAgICAgIGNvbnN0IHVybCA9IG5ldyBVUkwoU3RyaW5nKGlucHV0KSk7CiAgICAgIGlmICh1cmwub3JpZ2luID09PSBzY3JhcGVyVXJsLm9yaWdpbikgewogICAgICAgIGNvbnN0IHBheWxvYWQgPSBKU09OLnBhcnNlKGluaXQuYm9keSk7CiAgICAgICAgc2NyYXBlclJlcXVlc3RzLnB1c2gocGF5bG9hZCk7CiAgICAgICAgcmV0dXJuIGpzb25SZXNwb25zZSh7CiAgICAgICAgICBvazogdHJ1ZSwKICAgICAgICAgIHN0cmF0ZWd5OiBwYXlsb2FkLnN0cmF0ZWd5LAogICAgICAgICAgZXh0cmFjdGlvbjogewogICAgICAgICAgICBodG1sOiAnPGh0bWw+PGJvZHk+QWNtZSBCdWlsZGVyczwvYm9keT48L2h0bWw+JywKICAgICAgICAgICAgdGV4dDogJ0FjbWUgQnVpbGRlcnMnLAogICAgICAgICAgICBjb250YWN0czogewogICAgICAgICAgICAgIGVtYWlsczogW3sgYWRkcmVzczogJ2luZm9AYWNtZWJ1aWxkZXJzLmNvbScgfV0sCiAgICAgICAgICAgICAgcGhvbmVzOiBbeyBlMTY0OiAnKzE0MTU1NTUxMjEyJyB9XSwKICAgICAgICAgICAgfSwKICAgICAgICAgIH0sCiAgICAgICAgfSk7CiAgICAgIH0KICAgICAgaWYgKHVybC5vcmlnaW4gPT09ICdodHRwczovL2dvb2dsZS5zZXJwZXIuZGV2JykgcmV0dXJuIGpzb25SZXNwb25zZSh7IG9yZ2FuaWM6IFtdIH0pOwogICAgICByZXR1cm4gbmV3IFJlc3BvbnNlKCdvaycpOwogICAgfSwKICB9KTsKCiAgY29uc3Qgc2NyYXBlclJlc3BvbnNlID0gYXdhaXQgcnVudGltZS5mZXRjaChuZXcgVVJMKCcvc2NyYXBlJywgc2NyYXBlclVybCksIHsKICAgIG1ldGhvZDogJ1BPU1QnLAogICAgYm9keTogSlNPTi5zdHJpbmdpZnkoewogICAgICB1cmw6ICdodHRwczovL2FjbWVidWlsZGVycy5jb20nLAogICAgICBzdHJhdGVneTogJ2NoZWVyaW8nLAogICAgfSksCiAgfSk7CiAgY29uc3Qgc2NyYXBlckJvZHkgPSBhd2FpdCBzY3JhcGVyUmVzcG9uc2UuanNvbigpOwoKICBhc3NlcnQuZXF1YWwoc2NyYXBlclJlcXVlc3RzLmxlbmd0aCwgMSk7CiAgYXNzZXJ0LmVxdWFsKHNjcmFwZXJSZXF1ZXN0c1swXS5pbmNsdWRlQ29udGFjdHMsIHRydWUpOwogIGFzc2VydC5lcXVhbChzY3JhcGVyUmVxdWVzdHNbMF0ubWF4RW1haWxzLCA1MCk7CiAgYXNzZXJ0Lm1hdGNoKHNjcmFwZXJCb2R5LmV4dHJhY3Rpb24uaHRtbCwgL21haWx0bzppbmZvQGFjbWVidWlsZGVyc1wuY29tLyk7CiAgYXNzZXJ0Lm1hdGNoKHNjcmFwZXJCb2R5LmV4dHJhY3Rpb24udGV4dCwgL2luZm9AYWNtZWJ1aWxkZXJzXC5jb20vKTsKCiAgYXdhaXQgcnVudGltZS5mZXRjaCgnaHR0cHM6Ly9nb29nbGUuc2VycGVyLmRldi9zZWFyY2gnKTsKICBhc3NlcnQuZXF1YWwoCiAgICBydW50aW1lLnJlY29yZFByb3ZpZGVyV2FybmluZygKICAgICAgJ1tiZW5lZmFjdG9yLXBpcGVsaW5lXSBwcm92aWRlcj1zZXJwZXIgc2VhcmNoX2ZhaWxlZCBSZXNwb25zZUxpbWl0RXJyb3InLAogICAgKSwKICAgIHRydWUsCiAgKTsKCiAgY29uc3QgcHJlZml4ID0gJ0JFTkVGQUNUT1JfUFJPVklERVJfRElBR05PU1RJQ1MgJzsKICBjb25zdCBsaW5lID0gcnVudGltZS5wcm92aWRlckRpYWdub3N0aWNzTGluZSgpOwogIGFzc2VydC5vayhsaW5lLnN0YXJ0c1dpdGgocHJlZml4KSk7CiAgY29uc3QgZGlhZ25vc3RpY3MgPSBKU09OLnBhcnNlKGxpbmUuc2xpY2UocHJlZml4Lmxlbmd0aCkpOwogIGFzc2VydC5kZWVwRXF1YWwoZGlhZ25vc3RpY3MucHJvdmlkZXJzLmZpbmQoKGl0ZW0pID0+IGl0ZW0ucHJvdmlkZXIgPT09ICdzZXJwZXInKSwgewogICAgcHJvdmlkZXI6ICdzZXJwZXInLAogICAgcmVxdWVzdHM6IDEsCiAgICBzdWNjZXNzZXM6IDAsCiAgICBmYWlsdXJlczogMSwKICAgIGZhaWx1cmVDb2RlczogeyByZXNwb25zZV9saW1pdDogMSB9LAogIH0pOwogIGFzc2VydC5kb2VzTm90TWF0Y2goSlNPTi5zdHJpbmdpZnkoZGlhZ25vc3RpY3MpLCAvYWNtZWJ1aWxkZXJzfHF1ZXJ5fHVybHxzZW5zaXRpdmUvaSk7CgogIGFzc2VydC5lcXVhbChnbG9iYWxUaGlzLmZldGNoLCBvcmlnaW5hbEdsb2JhbEZldGNoKTsKICBhc3NlcnQuZXF1YWwoY29uc29sZS5sb2csIG9yaWdpbmFsQ29uc29sZUxvZyk7CiAgYXNzZXJ0LmVxdWFsKGNvbnNvbGUud2Fybiwgb3JpZ2luYWxDb25zb2xlV2Fybik7Cn0pOwo=").decode("utf-8"),
-          )
-
-          provider_test_path = "remote/deployments/benefactor-orchestrator/provider-diagnostics-bridge.test.mjs"
-          provider_test = read(provider_test_path)
-          provider_test = replace_once(
-              provider_test,
-              """  buildProviderDiagnostics,
-            createProviderDiagnosticsFetch,
-            installProviderDiagnostics,
-            providerFailureCode,
-          """,
-              """  buildProviderDiagnostics,
-            createProviderDiagnosticsFetch,
-            createProviderState,
-            formatProviderDiagnosticsLine,
-            providerFailureCode,
-          """,
-              "provider diagnostics test imports",
-          )
-          provider_test = replace_once(
-              provider_test,
-              """function state() {
-            return {
-              brave: { requests: 0, failures: 0, failureCodes: {}, pendingFailureWarnings: 0 },
-              serper: { requests: 0, failures: 0, failureCodes: {}, pendingFailureWarnings: 0 },
-            };
-          }
-          """,
-              """function state() {
-            return createProviderState();
-          }
-          """,
-              "provider diagnostics test state factory",
-          )
-          provider_test, count = re.subn(
-              r"\ntest\('installed bridge emits diagnostics only after a pipeline report',[\s\S]*\Z",
-              lambda _: "\n" + base64.b64decode("dGVzdCgnZXhwbGljaXQgZGlhZ25vc3RpY3MgZm9ybWF0dGluZyBlbWl0cyBhIGJvdW5kZWQgbGluZSB3aXRob3V0IHJlcGxhY2luZyBnbG9iYWxzJywgYXN5bmMgKCkgPT4gewogIGNvbnN0IGRpYWdub3N0aWNzID0gY3JlYXRlUHJvdmlkZXJTdGF0ZSgpOwogIGNvbnN0IG9yaWdpbmFsR2xvYmFsRmV0Y2ggPSBnbG9iYWxUaGlzLmZldGNoOwogIGNvbnN0IG9yaWdpbmFsQ29uc29sZUxvZyA9IGNvbnNvbGUubG9nOwogIGNvbnN0IG9yaWdpbmFsQ29uc29sZVdhcm4gPSBjb25zb2xlLndhcm47CiAgY29uc3Qgd3JhcHBlZCA9IGNyZWF0ZVByb3ZpZGVyRGlhZ25vc3RpY3NGZXRjaCgKICAgIGFzeW5jICgpID0+IG5ldyBSZXNwb25zZSgne30nLCB7IHN0YXR1czogMjAwIH0pLAogICAgZGlhZ25vc3RpY3MsCiAgKTsKCiAgYXdhaXQgd3JhcHBlZCgnaHR0cHM6Ly9nb29nbGUuc2VycGVyLmRldi9zZWFyY2gnKTsKICBhc3NlcnQuZXF1YWwoCiAgICByZWNvcmRQcm92aWRlcldhcm5pbmcoCiAgICAgIGRpYWdub3N0aWNzLAogICAgICAnW2JlbmVmYWN0b3ItcGlwZWxpbmVdIHByb3ZpZGVyPXNlcnBlciBzZWFyY2hfZmFpbGVkIFJlc3BvbnNlTGltaXRFcnJvcicsCiAgICApLAogICAgdHJ1ZSwKICApOwoKICBjb25zdCBwcmVmaXggPSAnQkVORUZBQ1RPUl9QUk9WSURFUl9ESUFHTk9TVElDUyAnOwogIGNvbnN0IGxpbmUgPSBmb3JtYXRQcm92aWRlckRpYWdub3N0aWNzTGluZShkaWFnbm9zdGljcyk7CiAgYXNzZXJ0Lm9rKGxpbmUuc3RhcnRzV2l0aChwcmVmaXgpKTsKICBjb25zdCBkaWFnbm9zdGljID0gSlNPTi5wYXJzZShsaW5lLnNsaWNlKHByZWZpeC5sZW5ndGgpKTsKICBhc3NlcnQuZGVlcEVxdWFsKGRpYWdub3N0aWMucHJvdmlkZXJzLmZpbmQoKGl0ZW0pID0+IGl0ZW0ucHJvdmlkZXIgPT09ICdzZXJwZXInKSwgewogICAgcHJvdmlkZXI6ICdzZXJwZXInLAogICAgcmVxdWVzdHM6IDEsCiAgICBzdWNjZXNzZXM6IDAsCiAgICBmYWlsdXJlczogMSwKICAgIGZhaWx1cmVDb2RlczogeyByZXNwb25zZV9saW1pdDogMSB9LAogIH0pOwogIGFzc2VydC5kb2VzTm90TWF0Y2goSlNPTi5zdHJpbmdpZnkoZGlhZ25vc3RpYyksIC9zZW5zaXRpdmV8cXVvdGF8cXVlcnl8dXJsL2kpOwogIGFzc2VydC5lcXVhbChnbG9iYWxUaGlzLmZldGNoLCBvcmlnaW5hbEdsb2JhbEZldGNoKTsKICBhc3NlcnQuZXF1YWwoY29uc29sZS5sb2csIG9yaWdpbmFsQ29uc29sZUxvZyk7CiAgYXNzZXJ0LmVxdWFsKGNvbnNvbGUud2Fybiwgb3JpZ2luYWxDb25zb2xlV2Fybik7Cn0pOwo=").decode("utf-8"),
-              provider_test,
-          )
-          if count != 1:
-              raise SystemExit(f"provider diagnostics test replacement: expected one match, found {count}")
-          write(provider_test_path, provider_test)
-
-          scraper_test_path = "remote/deployments/benefactor-orchestrator/scraper-contact-bridge.test.mjs"
-          scraper_test = read(scraper_test_path)
-          scraper_test, count = re.subn(
-              r"\ntest\('container startup preloads only the contact compatibility bridge',[\s\S]*\Z",
-              lambda _: "\n" + base64.b64decode("dGVzdCgncnVudGltZSBpbnRlZ3JhdGlvbiBpcyBleHBsaWNpdCBhbmQgY29udGFpbmVyIHN0YXJ0dXAgaGFzIG5vIHByZWxvYWQgaG9vaycsICgpID0+IHsKICBjb25zdCBkb2NrZXJmaWxlID0gcmVhZEZpbGVTeW5jKG5ldyBVUkwoJy4vRG9ja2VyZmlsZScsIGltcG9ydC5tZXRhLnVybCksICd1dGY4Jyk7CiAgY29uc3QgcnVudGltZSA9IHJlYWRGaWxlU3luYyhuZXcgVVJMKCcuL29yY2hlc3RyYXRvci1ydW50aW1lLm1qcycsIGltcG9ydC5tZXRhLnVybCksICd1dGY4Jyk7CiAgY29uc3Qgb3JjaGVzdHJhdG9yID0gcmVhZEZpbGVTeW5jKG5ldyBVUkwoJy4vb3JjaGVzdHJhdGUubWpzJywgaW1wb3J0Lm1ldGEudXJsKSwgJ3V0ZjgnKTsKCiAgYXNzZXJ0LmRvZXNOb3RNYXRjaChkb2NrZXJmaWxlLCAvTk9ERV9PUFRJT05TfHNjcmFwZXItY29udGFjdC1wcmVsb2FkLyk7CiAgYXNzZXJ0Lm1hdGNoKHJ1bnRpbWUsIC9jcmVhdGVTY3JhcGVyQ29udGFjdEZldGNoLyk7CiAgYXNzZXJ0Lm1hdGNoKHJ1bnRpbWUsIC9jcmVhdGVQcm92aWRlckRpYWdub3N0aWNzRmV0Y2gvKTsKICBhc3NlcnQubWF0Y2gob3JjaGVzdHJhdG9yLCAvY3JlYXRlQmVuZWZhY3RvclJ1bnRpbWUvKTsKICBhc3NlcnQubWF0Y2gob3JjaGVzdHJhdG9yLCAvcnVudGltZVwuZmV0Y2gvKTsKfSk7Cg==").decode("utf-8"),
-              scraper_test,
-          )
-          if count != 1:
-              raise SystemExit(f"scraper bridge test replacement: expected one match, found {count}")
-          write(scraper_test_path, scraper_test)
-
-          orchestrate_path = "remote/deployments/benefactor-orchestrator/orchestrate.mjs"
-          orchestrate = read(orchestrate_path)
-          orchestrate = replace_once(
-              orchestrate,
-              "import { createSearchProviders } from './providers/index.mjs';\n",
-              """import { createSearchProviders } from './providers/index.mjs';
-          import { createBenefactorRuntime } from './orchestrator-runtime.mjs';
-          """,
-              "orchestrator runtime import",
-          )
-          orchestrate = replace_once(
-              orchestrate,
-              """if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(config.scrapeRequestType)) {
-            throw new Error('SCRAPE_REQUEST_TYPE contains unsupported characters');
-          }
-          const statuses = providerStatuses(config);
-          """,
-              """if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(config.scrapeRequestType)) {
-            throw new Error('SCRAPE_REQUEST_TYPE contains unsupported characters');
-          }
-          const runtime = createBenefactorRuntime({
-            scraperUrl: config.scraperUrl,
-            requireRoleEmail: config.requireRoleEmail,
-          });
-          const statuses = providerStatuses(config);
-          """,
-              "orchestrator runtime construction",
-          )
-          orchestrate = replace_once(
-              orchestrate,
-              """function providerLog(provider, message) {
-            console.warn(`[benefactor-pipeline] provider=${provider} ${sanitizeLogValue(message)}`);
-          }
-          """,
-              """function providerLog(provider, message) {
-            const line = `[benefactor-pipeline] provider=${provider} ${sanitizeLogValue(message)}`;
-            console.warn(line);
-            runtime.recordProviderWarning(line);
-          }
-          """,
-              "provider warning instrumentation",
-          )
-          orchestrate = replace_once(
-              orchestrate,
-              "    const response = await fetch(url, { ...init, signal: controller.signal });",
-              "    const response = await runtime.fetch(url, { ...init, signal: controller.signal });",
-              "explicit runtime fetch",
-          )
-          orchestrate = replace_once(
-              orchestrate,
-              """  console.log(`BENEFACTOR_PIPELINE_REPORT ${canonicalJson(report)}`);
-            console.log(`[benefactor-pipeline] done category=${config.category} mode=${config.dryRun ? 'dry-run' : 'persist'} contacts=${collected.size} inserted=${counters.leadsInserted} report=${report.reportDigest}`);
-          """,
-              """  console.log(`BENEFACTOR_PIPELINE_REPORT ${canonicalJson(report)}`);
-            console.log(runtime.providerDiagnosticsLine());
-            console.log(`[benefactor-pipeline] done category=${config.category} mode=${config.dryRun ? 'dry-run' : 'persist'} contacts=${collected.size} inserted=${counters.leadsInserted} report=${report.reportDigest}`);
-          """,
-              "explicit provider diagnostics emission",
-          )
-          write(orchestrate_path, orchestrate)
-
-          dockerfile_path = "remote/deployments/benefactor-orchestrator/Dockerfile"
-          dockerfile = read(dockerfile_path)
-          dockerfile = replace_once(
-              dockerfile,
-              "\nENV NODE_OPTIONS=--import=/work/scraper-contact-preload.mjs\n",
-              "\n",
-              "Docker preload removal",
-          )
-          write(dockerfile_path, dockerfile)
-
-          package_path = ROOT / "remote/deployments/benefactor-orchestrator/package.json"
-          package = json.loads(package_path.read_text(encoding="utf-8"))
-          package["scripts"]["check"] = "node --check pipeline-lib.mjs && node --check providers/serper.mjs && node --check providers/brave.mjs && node --check providers/index.mjs && node --check provider-diagnostics-bridge.mjs && node --check scraper-contact-bridge.mjs && node --check orchestrator-runtime.mjs && node --check orchestrate.mjs && node --check contact-batch-lib.mjs && node --check contact-batch.mjs && node --check hubspot-sync-lib.mjs && node --check hubspot-sync.mjs && node --check provider-diagnostics-bridge.test.mjs && node --check scraper-contact-bridge.test.mjs && node --check orchestrator-runtime.test.mjs"
-          package["scripts"]["test"] = "node --test orchestrate.test.mjs contact-batch.test.mjs hubspot-sync.test.mjs scraper-contact-bridge.test.mjs provider-diagnostics-bridge.test.mjs orchestrator-runtime.test.mjs"
-          package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
-
-          write(".github/workflows/benefactor-orchestrator.yml", base64.b64decode("bmFtZTogQmVuZWZhY3RvciBsZWFkIHBpcGVsaW5lCgpvbjoKICBwdWxsX3JlcXVlc3Q6CiAgICBwYXRoczoKICAgICAgLSAncmVtb3RlL2RlcGxveW1lbnRzL2JlbmVmYWN0b3Itb3JjaGVzdHJhdG9yLyoqJwogICAgICAtICcuZ2l0aHViL3dvcmtmbG93cy9iZW5lZmFjdG9yLW9yY2hlc3RyYXRvci55bWwnCiAgcHVzaDoKICAgIGJyYW5jaGVzOgogICAgICAtIGRldgogICAgICAtIG1haW4KICAgIHBhdGhzOgogICAgICAtICdyZW1vdGUvZGVwbG95bWVudHMvYmVuZWZhY3Rvci1vcmNoZXN0cmF0b3IvKionCiAgICAgIC0gJy5naXRodWIvd29ya2Zsb3dzL2JlbmVmYWN0b3Itb3JjaGVzdHJhdG9yLnltbCcKCnBlcm1pc3Npb25zOgogIGNvbnRlbnRzOiByZWFkCgpjb25jdXJyZW5jeToKICBncm91cDogYmVuZWZhY3Rvci1vcmNoZXN0cmF0b3ItJHt7IGdpdGh1Yi5yZWYgfX0KICBjYW5jZWwtaW4tcHJvZ3Jlc3M6ICR7eyBnaXRodWIuZXZlbnRfbmFtZSA9PSAncHVsbF9yZXF1ZXN0JyB9fQoKam9iczoKICBjb250cmFjdDoKICAgIG5hbWU6IE5vZGUgJHt7IG1hdHJpeC5ub2RlIH19CiAgICBydW5zLW9uOiB1YnVudHUtMjQuMDQKICAgIHRpbWVvdXQtbWludXRlczogMTAKICAgIHN0cmF0ZWd5OgogICAgICBmYWlsLWZhc3Q6IGZhbHNlCiAgICAgIG1hdHJpeDoKICAgICAgICBub2RlOiBbJzIyJywgJzI0J10KICAgIHN0ZXBzOgogICAgICAtIG5hbWU6IENoZWNrIG91dCByZXBvc2l0b3J5CiAgICAgICAgdXNlczogYWN0aW9ucy9jaGVja291dEAzZDNjNDJlNWFhYzViYTgwNTgyNWRhNzY0MTBjMTgxMjczYmE5MGIxICMgJ3Y3LjAuMScKICAgICAgICB3aXRoOgogICAgICAgICAgcGVyc2lzdC1jcmVkZW50aWFsczogZmFsc2UKICAgICAgICAgIGZldGNoLWRlcHRoOiAxCgogICAgICAtIG5hbWU6IFNldCB1cCBOb2RlCiAgICAgICAgdXNlczogYWN0aW9ucy9zZXR1cC1ub2RlQDgyMDc2Mjc4NjAyNjc0MGM3NmYzNjA4NWIwZWZjNDdhMzFmZTUwMjAgIyB2Ny4wLjAKICAgICAgICB3aXRoOgogICAgICAgICAgbm9kZS12ZXJzaW9uOiAke3sgbWF0cml4Lm5vZGUgfX0KCiAgICAgIC0gbmFtZTogQ2hlY2sgc3ludGF4CiAgICAgICAgd29ya2luZy1kaXJlY3Rvcnk6IHJlbW90ZS9kZXBsb3ltZW50cy9iZW5lZmFjdG9yLW9yY2hlc3RyYXRvcgogICAgICAgIHJ1bjogbnBtIHJ1biBjaGVjawoKICAgICAgLSBuYW1lOiBSdW4gZm9jdXNlZCBwaXBlbGluZSBjb250cmFjdHMKICAgICAgICB3b3JraW5nLWRpcmVjdG9yeTogcmVtb3RlL2RlcGxveW1lbnRzL2JlbmVmYWN0b3Itb3JjaGVzdHJhdG9yCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBub2RlIC0tdGVzdCBcCiAgICAgICAgICAgIG9yY2hlc3RyYXRlLnRlc3QubWpzIFwKICAgICAgICAgICAgc2NyYXBlci1jb250YWN0LWJyaWRnZS50ZXN0Lm1qcyBcCiAgICAgICAgICAgIHByb3ZpZGVyLWRpYWdub3N0aWNzLWJyaWRnZS50ZXN0Lm1qcyBcCiAgICAgICAgICAgIG9yY2hlc3RyYXRvci1ydW50aW1lLnRlc3QubWpzCgogICAgICAtIG5hbWU6IFJlamVjdCB1bnJlc29sdmVkIGNvbmZsaWN0cyBhbmQgYWNjaWRlbnRhbCBjcmVkZW50aWFscwogICAgICAgIHNoZWxsOiBiYXNoCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWV1byBwaXBlZmFpbAogICAgICAgICAgdGVzdCAhIC1lIHJlbW90ZS9kZXBsb3ltZW50cy9iZW5lZmFjdG9yLW9yY2hlc3RyYXRvci9zY3JhcGVyLWNvbnRhY3QtcHJlbG9hZC5tanMKICAgICAgICAgIGlmIGdyZXAgLVJJbkUgJ14oPDw8PDw8PHw9PT09PT09fD4+Pj4+Pj4pJyByZW1vdGUvZGVwbG95bWVudHMvYmVuZWZhY3Rvci1vcmNoZXN0cmF0b3I7IHRoZW4KICAgICAgICAgICAgZWNobyAndW5yZXNvbHZlZCBtZXJnZSBtYXJrZXIgZm91bmQnID4mMgogICAgICAgICAgICBleGl0IDEKICAgICAgICAgIGZpCiAgICAgICAgICBpZiBncmVwIC1SSW5FICcoZ2hwX1tBLVphLXowLTldezIwLH18c2stW0EtWmEtejAtOV17MjAsfXxBSXphW0EtWmEtejAtOV8tXXsyMCx9fHhveFtiYXByc10tW0EtWmEtejAtOS1dezEwLH0pJyByZW1vdGUvZGVwbG95bWVudHMvYmVuZWZhY3Rvci1vcmNoZXN0cmF0b3I7IHRoZW4KICAgICAgICAgICAgZWNobyAnY3JlZGVudGlhbC1zaGFwZWQgbGl0ZXJhbCBmb3VuZCcgPiYyCiAgICAgICAgICAgIGV4aXQgMQogICAgICAgICAgZmkK").decode("utf-8"))
-          write(".github/workflows/cluster-e2e.yml", base64.b64decode("bmFtZTogY2x1c3RlciBlMmUgY29udHJhY3RzCgojIFRoZSBwdWJsaWMgam9iIGlzIGFsd2F5cyBzdWJzdGFudGl2ZSBhbmQgY3JlZGVudGlhbC1mcmVlLiBUaGUgcHJpdmF0ZSBzdWl0ZQojIGlzIGFuIGFkZGl0aXZlIHNpZ25hbCByYXRoZXIgdGhhbiBhIHRva2VuLWdhdGVkIHJlcGxhY2VtZW50IGZvciB2ZXJpZmljYXRpb24uCm9uOgogIHB1bGxfcmVxdWVzdDoKICAgIHBhdGhzOgogICAgICAtICJyZW1vdGUvYXJnb2NkLyoqIgogICAgICAtICJyZW1vdGUvZGVwbG95bWVudHMvKioiCiAgICAgIC0gInNjcmlwdHMvY2kvbG9jYWwta2luZC1zbW9rZS5zaCIKICAgICAgLSAidG9vbHMvbmFtZXNwYWNlXyoucHkiCiAgICAgIC0gImNhdGFsb2cvbmFtZXNwYWNlcy8qKiIKICAgICAgLSAiYXJ0aWZhY3RzL25hbWVzcGFjZS1pbnZlbnRvcnkuanNvbiIKICAgICAgLSAiLmdpdG1vZHVsZXMiCiAgICAgIC0gIi5naXRodWIvd29ya2Zsb3dzL2NsdXN0ZXItZTJlLnltbCIKICBwdXNoOgogICAgYnJhbmNoZXM6IFttYWluLCBkZXZdCiAgICBwYXRoczoKICAgICAgLSAicmVtb3RlL2FyZ29jZC8qKiIKICAgICAgLSAicmVtb3RlL2RlcGxveW1lbnRzLyoqIgogICAgICAtICJzY3JpcHRzL2NpL2xvY2FsLWtpbmQtc21va2Uuc2giCiAgICAgIC0gInRvb2xzL25hbWVzcGFjZV8qLnB5IgogICAgICAtICJjYXRhbG9nL25hbWVzcGFjZXMvKioiCiAgICAgIC0gImFydGlmYWN0cy9uYW1lc3BhY2UtaW52ZW50b3J5Lmpzb24iCiAgICAgIC0gIi5naXRtb2R1bGVzIgogICAgICAtICIuZ2l0aHViL3dvcmtmbG93cy9jbHVzdGVyLWUyZS55bWwiCiAgd29ya2Zsb3dfZGlzcGF0Y2g6CgpwZXJtaXNzaW9uczoKICBjb250ZW50czogcmVhZAoKY29uY3VycmVuY3k6CiAgZ3JvdXA6IGNsdXN0ZXItZTJlLSR7eyBnaXRodWIud29ya2Zsb3cgfX0tJHt7IGdpdGh1Yi5yZWYgfX0KICBjYW5jZWwtaW4tcHJvZ3Jlc3M6ICR7eyBnaXRodWIuZXZlbnRfbmFtZSA9PSAncHVsbF9yZXF1ZXN0JyB9fQoKam9iczoKICBsb2NhbC1raW5kLXNtb2tlOgogICAgbmFtZTogQ3JlZGVudGlhbC1mcmVlIGxvY2FsIGtpbmQgc21va2UKICAgIHJ1bnMtb246IHVidW50dS0yNC4wNAogICAgdGltZW91dC1taW51dGVzOiAyMAogICAgc3RlcHM6CiAgICAgIC0gbmFtZTogQ2hlY2sgb3V0IGV4YWN0IHJlcG9zaXRvcnkgdHJlZQogICAgICAgIHVzZXM6IGFjdGlvbnMvY2hlY2tvdXRAM2QzYzQyZTVhYWM1YmE4MDU4MjVkYTc2NDEwYzE4MTI3M2JhOTBiMSAjIHY3LjAuMQogICAgICAgIHdpdGg6CiAgICAgICAgICBmZXRjaC1kZXB0aDogMQogICAgICAgICAgcGVyc2lzdC1jcmVkZW50aWFsczogZmFsc2UKICAgICAgICAgIHN1Ym1vZHVsZXM6IGZhbHNlCgogICAgICAtIG5hbWU6IFNldCB1cCBwaW5uZWQga3ViZWN0bAogICAgICAgIHVzZXM6IGF6dXJlL3NldHVwLWt1YmVjdGxAODI5MzIzNTAzZDFiZTNkMDBjYTgzNDZlNTM5MWNhMGIwN2E5YWIwZCAjIHY1LjEuMAogICAgICAgIHdpdGg6CiAgICAgICAgICB2ZXJzaW9uOiB2MS4zMi44CgogICAgICAtIG5hbWU6IEluc3RhbGwgcGlubmVkIGtpbmQKICAgICAgICBzaGVsbDogYmFzaAogICAgICAgIGVudjoKICAgICAgICAgIEtJTkRfVkVSU0lPTjogdjAuMzAuMAogICAgICAgICAgS0lORF9MSU5VWF9BTUQ2NF9TSEEyNTY6IDUxN2FiN2ZjODlkZGVlZDVmYTY1YWJmNzE1MzBkOTA2NDhkOTYzOGVmMGM0Y2RlMjJjMmMxMWY4MDk3Yjg4ODkKICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICBjdXJsIC1mc1NMb yAiJFJVTk5FUl9URU1QL2tpbmQiIFwKICAgICAgICAgICAgImh0dHBzOi8vZ2l0aHViLmNvbS9rdWJlcm5ldGVzLXNpZ3Mva2luZC9yZWxlYXNlcy9kb3dubG9hZC8ke0tJTkRfVkVSU0lPTn0va2luZC1saW51eC1hbWQ2NCIKICAgICAgICAgIHByaW50ZiAnJXMgICVzXG4nIFwKICAgICAgICAgICAgIiRLSU5EX0xJTlVYX0FNRDY0X1NIQTI1NiIgXAogICAgICAgICAgICAiJFJVTk5FUl9URU1QL2tpbmQiIFwKICAgICAgICAgICAgfCBzaGEyNTZzdW0gLS1jaGVjayAtCiAgICAgICAgICBjaG1vZCAreCAiJFJVTk5FUl9URU1QL2tpbmQiCiAgICAgICAgICBwcmludGYgJyVzXG4nICIkUlVOTkVSX1RFTVAiID4+ICIkR0lUSFVCX1BBVEgiCgogICAgICAtIG5hbWU6IFJ1biBvd25lcnNoaXAtYXdhcmUgbWlncmF0aW9uIGFuZCBLdWJlcm5ldGVzIEFQSSBzbW9rZQogICAgICAgIGVudjoKICAgICAgICAgIEtJTkRfQ0xVU1RFUl9OQU1FOiBvcmVzLWs4cy1jaQogICAgICAgICAgS0lORF9OT0RFX0lNQUdFOiBraW5kZXN0L25vZGU6djEuMzIuOEBzaGEyNTY6YWJkNDg5ZjA0MmQyYjY0NGUyZDAzM2Y1YzJkOTAwYmM3MDc3OThkMDc1ZTgxODZjYjY1ZTNmMTM2N2E5ZDVhMQogICAgICAgIHJ1bjogc2NyaXB0cy9jaS9sb2NhbC1raW5kLXNtb2tlLnNoCgogIHByaXZhdGUtY29udHJhY3RzOgogICAgbmFtZTogUHJpdmF0ZSBleHRlbmRlZCBjb250cmFjdHMKICAgIHJ1bnMtb246IHVidW50dS0yNC4wNAogICAgdGltZW91dC1taW51dGVzOiAxNQogICAgc3RlcHM6CiAgICAgIC0gbmFtZTogQ2hlY2sgb3V0IHJlcG9zaXRvcnkKICAgICAgICB1c2VzOiBhY3Rpb25zL2NoZWNrb3V0QDNkM2M0MmU1YWFjNWJhODA1ODI1ZGE3NjQxMGMxODEyNzNiYTkwYjEgIyB2Ny4wLjEKICAgICAgICB3aXRoOgogICAgICAgICAgcGF0aDogazhzLWNsdXN0ZXIKICAgICAgICAgIHBlcnNpc3QtY3JlZGVudGlhbHM6IGZhbHNlCiAgICAgICAgICBzdWJtb2R1bGVzOiBmYWxzZQoKICAgICAgLSBuYW1lOiBHYXRlIG9uIHByaXZhdGUgZTJlIHJlcG9zaXRvcnkgdG9rZW4KICAgICAgICBpZDogZ2F0ZQogICAgICAgIGVudjoKICAgICAgICAgIFRPS0VOOiAiJHt7IHNlY3JldHMuSzhTX1NVQk1PRFVMRV9UT0tFTiB9fSIKICAgICAgICBydW46IHwKICAgICAgICAgIHNldCAtZXVvIHBpcGVmYWlsCiAgICAgICAgICBpZiBbWyAteiAiJFRPS0VOIiBdXTsgdGhlbgogICAgICAgICAgICBlY2hvICJza2lwPXRydWUiID4+ICIkR0lUSFVCX09VVFBVVCIKICAgICAgICAgICAgZWNobyAiUHJpdmF0ZSBleHRlbmRlZCBjb250cmFjdHMgd2VyZSBub3QgZXhlY3V0ZWQ6IEs4U19TVUJNT0RVTEVfVE9LRU4gaXMgdW5hdmFpbGFibGUuIiA+PiAiJEdJVEhVQl9TVEVQX1NVTU1BUlkiCiAgICAgICAgICBlbHNlCiAgICAgICAgICAgIGVjaG8gInNraXA9ZmFsc2UiID4+ICIkR0lUSFVCX09VVFBVVCIKICAgICAgICAgIGZpCgogICAgICAtIG5hbWU6IENoZWNrIG91dCBwcml2YXRlIGV4dGVuZGVkIGNvbnRyYWN0cwogICAgICAgIGlmOiBzdGVwcy5nYXRlLm91dHB1dHMuc2tpcCAhPSAndHJ1ZScKICAgICAgICB1c2VzOiBhY3Rpb25zL2NoZWNrb3V0QDNkM2M0MmU1YWFjNWJhODA1ODI1ZGE3NjQxMGMxODEyNzNiYTkwYjEgIyB2Ny4wLjEKICAgICAgICB3aXRoOgogICAgICAgICAgcmVwb3NpdG9yeTogT1JFU29mdHdhcmUvazhzLWNsdXN0ZXItZTJlCiAgICAgICAgICB0b2tlbjogJHt7IHNlY3JldHMuSzhTX1NVQk1PRFVMRV9UT0tFTiB9fQogICAgICAgICAgcGF0aDogazhzLWNsdXN0ZXItZTJlCiAgICAgICAgICBwZXJzaXN0LWNyZWRlbnRpYWxzOiBmYWxzZQoKICAgICAgLSBuYW1lOiBTZXQgdXAgTm9kZQogICAgICAgIGlmOiBzdGVwcy5nYXRlLm91dHB1dHMuc2tpcCAhPSAndHJ1ZScKICAgICAgICB1c2VzOiBhY3Rpb25zL3NldHVwLW5vZGVAODIwNzYyNzg2MDI2NzQwYzc2ZjM2MDg1YjBlZmM0N2EzMWZlNTAyMCAjIHY3LjAuMAogICAgICAgIHdpdGg6CiAgICAgICAgICBub2RlLXZlcnNpb246IDIyCgogICAgICAtIG5hbWU6IFJ1biBwcml2YXRlIGNvbnRyYWN0IHN1aXRlIGFnYWluc3QgdGhpcyB0cmVlCiAgICAgICAgaWY6IHN0ZXBzLmdhdGUub3V0cHV0cy5za2lwICE9ICd0cnVlJwogICAgICAgIHdvcmtpbmctZGlyZWN0b3J5OiBrOHMtY2x1c3Rlci1lMmUKICAgICAgICBlbnY6CiAgICAgICAgICBLOFNfQ0xVU1RFUl9ESVI6ICR7eyBnaXRodWIud29ya3NwYWNlIH19L2s4cy1jbHVzdGVyCiAgICAgICAgcnVuOiB8CiAgICAgICAgICBzZXQgLWV1byBwaXBlZmFpbAogICAgICAgICAgbnBtIGNpCiAgICAgICAgICBucG0gdGVzdAo=").decode("utf-8"))
-          write("scripts/ci/local-kind-smoke.sh", base64.b64decode("IyEvdXNyL2Jpbi9lbnYgYmFzaApzZXQgLWV1byBwaXBlZmFpbAoKcmVwb19yb290PSIkKGNkICIkKGRpcm5hbWUgIiR7QkFTSF9TT1VSQ0VbMF19IikvLi4vLi4iICYmIHB3ZCkiCmNkICIkcmVwb19yb290IgoKZm9yIHRvb2wgaW4gZG9ja2VyIGtpbmQga3ViZWN0bCBweXRob24zOyBkbwogIGlmICEgY29tbWFuZCAtdiAiJHRvb2wiID4vZGV2L251bGwgMj4mMTsgdGhlbgogICAgcHJpbnRmICdyZXF1aXJlZCB0b29sIGlzIHVuYXZhaWxhYmxlOiAlc1xuJyAiJHRvb2wiID4mMgogICAgZXhpdCAxCiAgZmkKZG9uZQoKZG9ja2VyIGluZm8gPi9kZXYvbnVsbAoKY2x1c3Rlcl9uYW1lPSIke0tJTkRfQ0xVU1RFUl9OQU1FOi1vcmVzLWs4cy1sb2NhbH0iCm5vZGVfaW1hZ2U9IiR7S0lORF9OT0RFX0lNQUdFOi1raW5kZXN0L25vZGU6djEuMzIuOEBzaGEyNTY6YWJkNDg5ZjA0MmQyYjY0NGUyZDAzM2Y1YzJkOTAwYmM3MDc3OThkMDc1ZTgxODZjYjY1ZTNmMTM2N2E5ZDVhMX0iCgppZiBraW5kIGdldCBjbHVzdGVycyB8IGdyZXAgLUZ4cSAiJGNsdXN0ZXJfbmFtZSI7IHRoZW4KICBwcmludGYgJ3JldXNpbmcga2luZCBjbHVzdGVyOiAlc1xuJyAiJGNsdXN0ZXJfbmFtZSIKZWxzZQogIGtpbmQgY3JlYXRlIGNsdXN0ZXIgXAogICAgLS1uYW1lICIkY2x1c3Rlcl9uYW1lIiBcCiAgICAtLWltYWdlICIkbm9kZV9pbWFnZSIgXAogICAgLS13YWl0IDE4MHMKZmkKCmt1YmVjdGwgY29uZmlnIHVzZS1jb250ZXh0ICJraW5kLSR7Y2x1c3Rlcl9uYW1lfSIgPi9kZXYvbnVsbAprdWJlY3RsIHdhaXQgLS1mb3I9Y29uZGl0aW9uPVJlYWR5IG5vZGVzIC0tYWxsIC0tdGltZW91dD0xODBzCgpweXRob24zIHRvb2xzL3Rlc3RfbmFtZXNwYWNlX21pZ3JhdGlvbi5weQpweXRob24zIHRvb2xzL3Rlc3RfbmFtZXNwYWNlX21hbmlmZXN0LnB5CgpldmlkZW5jZV9kaXI9IiQobWt0ZW1wIC1kKSIKcHl0aG9uMyB0b29scy9uYW1lc3BhY2VfbWlncmF0aW9uLnB5IGNoZWNrIFwKICAtLXJvb3QgLiBcCiAgLS1mb3JtYXQganNvbiBcCiAgPiAiJGV2aWRlbmNlX2Rpci9uYW1lc3BhY2UtY29udHJhY3QtcmVwb3J0Lmpzb24iCnB5dGhvbjMgdG9vbHMvbmFtZXNwYWNlX21pZ3JhdGlvbi5weSBpbnZlbnRvcnkgXAogIC0tcm9vdCAuIFwKICAtLWZvcm1hdCBqc29uIFwKICA+ICIkZXZpZGVuY2VfZGlyL25hbWVzcGFjZS1pbnZlbnRvcnkuanNvbiIKcHl0aG9uMyB0b29scy9uYW1lc3BhY2VfbWFuaWZlc3QucHkgY2hlY2sgXAogIC0tcm9vdCAuIFwKICAtLWZvcm1hdCBqc29uIFwKICA+ICIkZXZpZGVuY2VfZGlyL25hbWVzcGFjZS1tYW5pZmVzdC1yZXBvcnQuanNvbiIKCkVWSURFTkNFX0RJUj0iJGV2aWRlbmNlX2RpciIgcHl0aG9uMyAtIDw8J1BZJwppbXBvcnQganNvbgppbXBvcnQgb3MKRnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgpyb290ID0gUGF0aChvcy5lbnZpcm9uWyJFVklERU5DRV9ESVIiXSkKY29udHJhY3QgPSBqc29uLmxvYWRzKChyb290IC8gIm5hbWVzcGFjZS1jb250cmFjdC1yZXBvcnQuanNvbiIpLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKbWFuaWZlc3QgPSBqc29uLmxvYWRzKChyb290IC8gIm5hbWVzcGFjZS1tYW5pZmVzdC1yZXBvcnQuanNvbiIpLnJlYWRfdGV4dChlbmNvZGluZz0idXRmLTgiKSkKCmlmIGNvbnRyYWN0LmdldCgidmFsaWQiKSBpcyBub3QgVHJ1ZToKICAgIHJhaXNlIFN5c3RlbUV4aXQoIm5hbWVzcGFjZSBvd25lcnNoaXAgY29udHJhY3QgaXMgaW52YWxpZCIpCmlmIG1hbmlmZXN0LmdldCgidmFsaWQiKSBpcyBub3QgVHJ1ZToKICAgIHJhaXNlIFN5c3RlbUV4aXQoIm5hbWVzcGFjZSBtaWdyYXRpb24gbWFuaWZlc3QgaXMgaW52YWxpZCIpCmlmIG1hbmlmZXN0LmdldCgiZW50cnlDb3VudCIpICE9IG1hbmlmZXN0LmdldCgiaW52ZW50b3J5RW50cnlDb3VudCIpOgogICAgcmFpc2UgU3lzdGVtRXhpdCgibmFtZXNwYWNlIGludmVudG9yeSBhbmQgbWFuaWZlc3QgY291bnRzIGRpZmZlciIpCmlmIG1hbmlmZXN0LmdldCgiZGlhZ25vc3RpY3MiKSAhPSBbXToKICAgIHJhaXNlIFN5c3RlbUV4aXQoIm5hbWVzcGFjZSBtaWdyYXRpb24gbWFuaWZlc3QgaGFzIGRpYWdub3N0aWNzIikKCnByaW50KAogICAgIm5hbWVzcGFjZSBjb250cmFjdCB2YWxpZDsgIgogICAgZiJlbnRyaWVzPXttYW5pZmVzdC5nZXQoJ2VudHJ5Q291bnQnKX0gIgogICAgZiJ1bmNsYXNzaWZpZWQ9e21hbmlmZXN0LmdldCgndW5jbGFzc2lmaWVkRW50cnlDb3VudCcsICdyZXBvcnRlZC1pbi1tYW5pZmVzdCcpfSIKKQpQWQoKa3ViZWN0bCBhcHBseSAtLXNlcnZlci1zaWRlIC1mIHJlbW90ZS9hcmdvY2Qvb2JzZXJ2YWJpbGl0eS9uYW1lc3BhY2UueWFtbCA+L2Rldi9udWxsCgpmb3IgbWFuaWZlc3QgaW4gXAogIHJlbW90ZS9hcmdvY2Qvb2JzZXJ2YWJpbGl0eS9rOHMtcmVzb3VyY2UtZXhwb3J0ZXIucmJhYy55YW1sIFwKICByZW1vdGUvYXJnb2NkL29ic2VydmFiaWxpdHkvazhzLXJlc291cmNlLWV4cG9ydGVyLmNvbmZpZ21hcC55YW1sIFwKICByZW1vdGUvYXJnb2NkL29ic2VydmFiaWxpdHkvazhzLXJlc291cmNlLWV4cG9ydGVyLnNlcnZpY2UueWFtbCBcCiAgcmVtb3RlL2FyZ29jZC9vYnNlcnZhYmlsaXR5L2s4cy1yZXNvdXJjZS1leHBvcnRlci5kZXBsb3ltZW50LnlhbWwKZG8KICBrdWJlY3RsIGFwcGx5IC0tc2VydmVyLXNpZGUgLS1kcnktcnVuPXNlcnZlciAtZiAiJG1hbmlmZXN0IiA+L2Rldi9udWxsCmRvbmUKCmt1YmVjdGwgYXBwbHkgLS1zZXJ2ZXItc2lkZSAtZiByZW1vdGUvYXJnb2NkL29ic2VydmFiaWxpdHkvazhzLXJlc291cmNlLWV4cG9ydGVyLnJiYWMueWFtbCA+L2Rldi9udWxsCnRlc3QgIiQoa3ViZWN0bCBhdXRoIGNhbi1pIGxpc3QgcG9kcyBcCiAgLS1hcz1zeXN0ZW06c2VydmljZWFjY291bnQ6b2JzZXJ2YWJpbGl0eTpkZC1rOHMtcmVzb3VyY2UtZXhwb3J0ZXIpIiA9ICJ5ZXMiCgpjYXQgPDwnWUFNTCcgfCBrdWJlY3RsIGFwcGx5IC0tc2VydmVyLXNpZGUgLWYgLSA+L2Rldi9udWxsCmFwaVZlcnNpb246IHYxCmtpbmQ6IENvbmZpZ01hcAptZXRhZGF0YToKICBuYW1lOiBuYW1lc3BhY2UtY29udHJhY3Qtc21va2UKICBuYW1lc3BhY2U6IG9ic2VydmFiaWxpdHkKICBsYWJlbHM6CiAgICBhcHAua3ViZXJuZXRlcy5pby9tYW5hZ2VkLWJ5OiBrOHMtY2x1c3RlcgogICAgYXBwLmt1YmVybmV0ZXMuaW8vcGFydC1vZjogb3Jlcy1wbGF0Zm9ybQogIGFubm90YXRpb25zOgogICAgbmFtZXNwYWNlcy5vcmVzb2Z0d2FyZS5jb20vY29udHJhY3Q6IG93bmVyc2hpcC1hd2FyZS12MQpkYXRhOgogIG93bmVyOiBvcmVzCiAgbW9kZTogcmVhZC1vbmx5CiAgZXhlY3V0aW9uQXV0aG9yaXplZDogImZhbHNlIgpZQU1MCgpweXRob24zIC0gPDwnUFknCmltcG9ydCBqc29uCmltcG9ydCBzdWJwcm9jZXNzCgpwYXlsb2FkID0ganNvbi5sb2FkcygKICAgIHN1YnByb2Nlc3MuY2hlY2tfb3V0cHV0KAogICAgICAgIFsKICAgICAgICAgICAgImt1YmVjdGwiLAogICAgICAgICAgICAiZ2V0IiwKICAgICAgICAgICAgImNvbmZpZ21hcCIsCiAgICAgICAgICAgICJuYW1lc3BhY2UtY29udHJhY3Qtc21va2UiLAogICAgICAgICAgICAiLS1uYW1lc3BhY2UiLAogICAgICAgICAgICAib2JzZXJ2YWJpbGl0eSIsCiAgICAgICAgICAgICItLW91dHB1dCIsCiAgICAgICAgICAgICJqc29uIiwKICAgICAgICBdLAogICAgICAgIHRleHQ9VHJ1ZSwKICAgICkKKQoKYXNzZXJ0IHBheWxvYWRbIm1ldGFkYXRhIl1bImxhYmVscyJdWyJhcHAua3ViZXJuZXRlcy5pby9wYXJ0LW9mIl0gPT0gIm9yZXMtcGxhdGZvcm0iCmFzc2VydCBwYXlsb2FkWyJtZXRhZGF0YSJdWyJhbm5vdGF0aW9ucyJdWyJuYW1lc3BhY2VzLm9yZXNvZnR3YXJlLmNvbS9jb250cmFjdCJdID09ICJvd25lcnNoaXAtYXdhcmUtdjEiCmFzc2VydCBwYXlsb2FkWyJkYXRhIl0gPT0gewogICAgImV4ZWN1dGlvbkF1dGhvcml6ZWQiOiAiZmFsc2UiLAogICAgIm1vZGUiOiAicmVhZC1vbmx5IiwKICAgICJvd25lciI6ICJvcmVzIiwKfQpQWQoKa3ViZWN0bCBnZXQgbm9kZXMgLW8gd2lkZQprdWJlY3RsIGdldCBuYW1lc3BhY2Ugb2JzZXJ2YWJpbGl0eQpwcmludGYgJ2xvY2FsIGtpbmQgc21va2UgcGFzc2VkOyBjbHVzdGVyIHJldGFpbmVkIGZvciBpbnNwZWN0aW9uOiAlc1xuJyAiJGNsdXN0ZXJfbmFtZSIK").decode("utf-8"), executable=True)
-
-          preload = ROOT / "remote/deployments/benefactor-orchestrator/scraper-contact-preload.mjs"
-          if not preload.is_file():
-              raise SystemExit("expected scraper preload file is absent")
-          preload.unlink()
-
-          if not CARRIER.is_file():
-              raise SystemExit("hardening carrier file is absent")
-          CARRIER.unlink()
-
-          for path in (
-              provider_path,
-              scraper_path,
-              orchestrate_path,
-              "remote/deployments/benefactor-orchestrator/orchestrator-runtime.mjs",
-          ):
-              source = read(path)
-              forbidden = (
-                  "globalThis" + ".fetch =",
-                  "target" + ".fetch =",
-                  "console" + ".warn =",
-                  "console" + ".log =",
-              )
-              present = [token for token in forbidden if token in source]
-              if present:
-                  raise SystemExit(f"{path} retains forbidden global replacement tokens: {present}")
-          PY
+          python3 -m py_compile .github/den-2786-hardening.py
+          python3 .github/den-2786-hardening.py
 
       - name: Verify focused contracts
         run: |
           set -euo pipefail
+          test ! -e .github/den-2786-hardening.py
+          test ! -e .github/workflows/den-2786-hardening-carrier.yml
+          test ! -e remote/deployments/benefactor-orchestrator/scraper-contact-preload.mjs
           node remote/tools/check-observability-coverage.mjs
           (
             cd remote/deployments/benefactor-orchestrator
             npm run check
-            node --test orchestrate.test.mjs scraper-contact-bridge.test.mjs provider-diagnostics-bridge.test.mjs orchestrator-runtime.test.mjs
+            node --test \
+              orchestrate.test.mjs \
+              scraper-contact-bridge.test.mjs \
+              provider-diagnostics-bridge.test.mjs \
+              orchestrator-runtime.test.mjs
           )
           python3 tools/test_namespace_migration.py
           python3 tools/test_namespace_manifest.py
