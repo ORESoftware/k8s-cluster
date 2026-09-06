@@ -2,7 +2,6 @@ import { normalizeEmail, normalizePhone } from './pipeline-lib.mjs';
 
 const DEFAULT_SCRAPER_URL = 'http://dd-web-scraper.default.svc.cluster.local:8097';
 const MAX_BRIDGE_RESPONSE_BYTES = 4 * 1024 * 1024;
-const BRIDGE_INSTALLED = Symbol.for('benefactor.scraperContactBridge.installed');
 
 function asUrl(input) {
   try {
@@ -256,11 +255,4 @@ export function createScraperContactFetch(originalFetch, {
       augmentScraperBody(selectedBody, { requireRoleEmail }),
     );
   };
-}
-
-export function installScraperContactBridge(options = {}) {
-  if (globalThis[BRIDGE_INSTALLED]) return false;
-  globalThis.fetch = createScraperContactFetch(globalThis.fetch, options);
-  globalThis[BRIDGE_INSTALLED] = true;
-  return true;
 }
