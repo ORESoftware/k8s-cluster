@@ -1,0 +1,449 @@
+---
+// The fiducia.cloud marketing landing page: hero, coordination-primitive service
+// cards, AI-agent positioning, how-it-works, and calls to action.
+import Layout from '../layouts/Layout.astro';
+
+const services = [
+  {
+    name: 'Locks & Semaphores',
+    tagline: 'Distributed locks you can trust',
+    desc: 'Fencing-token mutexes with automatic lease expiry — exactly one holder across your whole fleet — plus counting semaphores when you need up to N concurrent holders.',
+    points: [
+      'Mutex (one holder) or semaphore (N holders)',
+      'Fencing tokens to defeat stale holders',
+      'TTL leases with auto-release on crash',
+      'Blocking & try-lock, fair FIFO queues',
+    ],
+    icon: 'lock',
+  },
+  {
+    name: 'Rate Limiting',
+    tagline: 'One global budget, every node',
+    desc: 'Distributed token-bucket and sliding-window limiters that share a single source of truth, so a quota is enforced consistently no matter which replica answers.',
+    points: [
+      'Token-bucket & sliding-window algorithms',
+      'Atomic check-and-decrement',
+      'Per-key, per-tenant quotas',
+      'Sub-millisecond decisions at the edge',
+    ],
+    icon: 'gauge',
+  },
+  {
+    name: 'Cron & Scheduling',
+    tagline: 'Jobs that fire exactly once',
+    desc: 'A replicated scheduler that survives leader failure. Schedule recurring or one-shot jobs and get at-least- or exactly-once delivery with durable history.',
+    points: [
+      'Standard cron expressions & one-shots',
+      'Leader-elected, no duplicate fires',
+      'Durable run history & retries',
+      'Webhook, queue, or gRPC targets',
+    ],
+    icon: 'clock',
+  },
+  {
+    name: 'Config KV & Watches',
+    tagline: 'Live config, one source of truth',
+    desc: 'A linearizable, versioned key/value store for configuration and feature flags. Watch a key or prefix and get changes pushed the instant they commit — no polling, no drift.',
+    points: [
+      'Versioned keys with compare-and-swap',
+      'Watch streams for keys & prefixes',
+      'TTL keys with automatic expiry',
+      'A consistent read, every node',
+    ],
+    icon: 'kv',
+  },
+  {
+    name: 'Leader Election',
+    tagline: 'Exactly one active worker',
+    desc: 'Run your own elections on top of Fiducia. Campaign for a named leadership, hold it with a TTL lease, and step down cleanly — with a fencing token to defeat the stale leader you forgot about.',
+    points: [
+      'Campaign, renew & resign semantics',
+      'Fencing tokens against stale leaders',
+      'Lease auto-release on crash',
+      'Observe & watch leadership changes',
+    ],
+    icon: 'flag',
+  },
+  {
+    name: 'Service Discovery',
+    tagline: 'A registry that tells the truth',
+    desc: 'Register service instances with a heartbeat lease and look up only the ones that are actually alive. Crashed instances drop out on their own — no stale endpoints, no manual cleanup.',
+    points: [
+      'TTL-health register & heartbeat',
+      'Live instance lookup by service',
+      'Watch streams for add/remove events',
+      'Metadata & address per instance',
+    ],
+    icon: 'compass',
+  },
+];
+
+const steps = [
+  {
+    title: 'Sharded log',
+    body: 'The keyspace is split into shards, and each shard is its own Raft group. Every lock, key, or schedule is an entry in its shard’s replicated log.',
+  },
+  {
+    title: 'A leader per shard',
+    body: 'Each shard elects its own leader, so leadership — and write throughput — spreads across the whole cluster instead of funneling through one node.',
+  },
+  {
+    title: 'Quorum commit',
+    body: 'An operation is acknowledged only once a majority of its shard has durably stored it — so a committed lock or job survives node loss.',
+  },
+  {
+    title: 'A brain that scales it',
+    body: 'A control plane watches every node, re-places shards off failed ones, and adds or drains capacity automatically — the cluster heals and grows on its own.',
+  },
+];
+
+// Base URL (e.g. "/fiducia/") for absolute in-app links so they survive the
+// gateway path prefix. Normalized to always end in exactly one slash.
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/';
+
+// Rendered via set:html so the literal { } in the JSON aren't parsed as
+// Astro expressions.
+const terminal = `<span class="tok-cmd">$</span> curl -X POST https://api.fiducia.cloud/v1/locks/acquire \\
+    -d <span class="tok-str">'{"key":"orders/checkout","ttl":"30s"}'</span>
+
+<span class="tok-key">→</span> {
+  <span class="tok-key">"acquired"</span>: <span class="tok-ok">true</span>,
+  <span class="tok-key">"fencing_token"</span>: <span class="tok-str">"00000000-1F4A"</span>,
+  <span class="tok-key">"lease_expires"</span>: <span class="tok-str">"2026-06-26T19:41:12Z"</span>,
+  <span class="tok-key">"quorum"</span>: <span class="tok-str">"3/5 committed"</span>
+}`;
+
+const agentClaimExample = `loop {
+  let claim = fiducia.claim(task_id, worker_id, lease_ttl).await?;
+  while work.is_running() {
+    fiducia.renew(task_id, claim.fencing_token).await?;
+    work.advance_one_safe_step().await?;
+  }
+  durable_store.commit_if_fence_is_current(
+    task_id,
+    claim.fencing_token,
+    work.result(),
+  ).await?;
+}`;
+---
+
+<Layout>
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="nav__inner container">
+      <a class="nav__logo" href={base}>
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#c084fc" />
+              <stop offset="1" stop-color="#6366f1" />
+            </linearGradient>
+          </defs>
+          <circle cx="16" cy="7" r="3.2" fill="url(#lg)" />
+          <circle cx="7" cy="23" r="3.2" fill="url(#lg)" />
+          <circle cx="25" cy="23" r="3.2" fill="url(#lg)" />
+          <path d="M16 7 L7 23 M16 7 L25 23 M7 23 L25 23" stroke="url(#lg)" stroke-width="1.6" opacity="0.65" />
+          <circle cx="16" cy="17.6" r="1.7" fill="#e9d5ff" />
+        </svg>
+        <span class="nav__logo-text">Fiducia<span class="nav__logo-dim">.cloud</span></span>
+      </a>
+      <div class="nav__links">
+        <a class="nav__link" href="#services">Services</a>
+        <a class="nav__link" href="#agents">AI agents</a>
+        <a class="nav__link" href="#how">How it works</a>
+        <a class="nav__link" href="#why">Why Raft</a>
+        <a class="btn btn--primary" href="#start">Get started</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero__orb hero__orb--1"></div>
+      <div class="hero__orb hero__orb--2"></div>
+      <div class="container">
+        <span class="badge reveal"><span class="badge__dot"></span>Raft-based · strongly consistent</span>
+        <h1 class="hero__title reveal d1">
+          Consensus &amp; Coordination<br />
+          <span class="gradient-text">as a Service</span>
+        </h1>
+        <p class="hero__subtitle reveal d2">
+          Fiducia is a Raft-replicated control plane for distributed systems and
+          <strong>AI-agent fleets</strong>. Hand off the hard parts of coordination —
+          <strong>mutual-exclusion locks</strong>, <strong>semaphores</strong>,
+          <strong>rate limiting</strong>, <strong>shared state</strong>,
+          <strong>service discovery</strong>, <strong>elections</strong>, and
+          <strong>cron</strong> — to an API that is consistent, fault-tolerant, and always
+          exactly one source of truth.
+        </p>
+        <div class="hero__actions reveal d3">
+          <a class="btn btn--primary" href="#start">
+            Start building
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </a>
+          <a class="btn btn--ghost" href="#services">Explore services</a>
+        </div>
+
+        <div class="hero__terminal reveal d3">
+          <div class="hero__terminal-bar"><span></span><span></span><span></span></div>
+          <pre><code set:html={terminal}></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- STATS -->
+    <section class="stats">
+      <div class="container">
+        <div class="stats__grid">
+          <div class="stats__item reveal"><span class="stats__num gradient-text">&lt;5ms</span><span class="stats__label">Median commit latency</span></div>
+          <div class="stats__item reveal d1"><span class="stats__num gradient-text">99.99%</span><span class="stats__label">Control-plane availability</span></div>
+          <div class="stats__item reveal d2"><span class="stats__num gradient-text">f / 2f+1</span><span class="stats__label">Tolerates minority node loss</span></div>
+          <div class="stats__item reveal d3"><span class="stats__num gradient-text">1</span><span class="stats__label">Source of truth, always</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SERVICES -->
+    <section class="section" id="services">
+      <div class="container">
+        <div class="section__head">
+          <span class="badge">What Fiducia does</span>
+          <h2>Coordination primitives,<br /><span class="gradient-text">delivered as an API</span></h2>
+          <p>Stop running your own ZooKeeper or etcd cluster. Fiducia gives you the coordination
+            primitives distributed systems fight over most — locks, limits, schedules, config,
+            elections, and discovery — built on a single consistent core.</p>
+        </div>
+
+        <div class="grid-3">
+          {services.map((s, i) => (
+            <article class={`card reveal d${i}`}>
+              <div class="card__icon">
+                {s.icon === 'lock' && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><circle cx="12" cy="15.5" r="1.4" fill="currentColor" stroke="none" /></svg>
+                )}
+                {s.icon === 'gauge' && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 18a8 8 0 1 1 16 0" /><path d="M12 18l4-5" stroke-linecap="round" /><circle cx="12" cy="18" r="1.3" fill="currentColor" stroke="none" /></svg>
+                )}
+                {s.icon === 'clock' && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                )}
+                {s.icon === 'kv' && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><ellipse cx="12" cy="6" rx="7.5" ry="2.8" /><path d="M4.5 6v6c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8V6" /><path d="M4.5 12v6c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8v-6" /></svg>
+                )}
+                {s.icon === 'flag' && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M6 21V4" stroke-linecap="round" /><path d="M6 4.5h10l-2.2 3.5L16 11.5H6" stroke-linejoin="round" /></svg>
+                )}
+                {s.icon === 'compass' && (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8.5" /><path d="M15.5 8.5l-2 5-5 2 2-5z" stroke-linejoin="round" /><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" /></svg>
+                )}
+              </div>
+              <h3>{s.name}</h3>
+              <p>{s.desc}</p>
+              <ul class="card__list">
+                {s.points.map((p) => <li>{p}</li>)}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+
+    <!-- AI AGENTS -->
+    <section class="section" id="agents" style="background: rgba(10,16,36,0.4); border-block: 1px solid rgba(36,48,102,0.5);">
+      <div class="container">
+        <div class="section__head">
+          <span class="badge">AI agent coordination</span>
+          <h2>Give your agent fleet<br /><span class="gradient-text">one source of truth</span></h2>
+          <p>Autonomous agents run in parallel, retry, crash, and fork. The moment two of them
+            touch the same task, budget, tool, or memory, they need the same correctness
+            primitives as distributed databases.</p>
+        </div>
+
+        <div class="grid-3">
+          <article class="card reveal d0">
+            <div class="card__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="4" y="7" width="16" height="12" rx="2" /><path d="M12 7V3.5" stroke-linecap="round" /><circle cx="12" cy="3" r="1.2" fill="currentColor" stroke="none" /><circle cx="9" cy="13" r="1.2" fill="currentColor" stroke="none" /><circle cx="15" cy="13" r="1.2" fill="currentColor" stroke="none" /></svg>
+            </div>
+            <h3>Claim work once</h3>
+            <p>Hand a job to a fleet and exactly one worker claims it. A fencing-token lock with a
+              TTL lease keeps crashed, forked, or retried agents from double-booking work.</p>
+            <ul class="card__list">
+              <li>Idempotent task claims — no duplicate work or actions</li>
+              <li>Leases auto-release when an agent hangs or dies</li>
+              <li>Fencing tokens defeat stale retried workers</li>
+              <li>Exactly one result commits for each logical task</li>
+            </ul>
+          </article>
+          <article class="card reveal d1">
+            <div class="card__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 18a8 8 0 1 1 16 0" /><path d="M12 18l4-5" stroke-linecap="round" /><circle cx="12" cy="18" r="1.3" fill="currentColor" stroke="none" /></svg>
+            </div>
+            <h3>Gate scarce tools</h3>
+            <p>Put browser sessions, GPUs, paid APIs, inboxes, sandboxes, deploy lanes, and model
+              providers behind one global limiter instead of per-replica counters that drift.</p>
+            <ul class="card__list">
+              <li>Fleet-wide token buckets for LLM and tool rate limits</li>
+              <li>Atomic spend and quota checks per tenant</li>
+              <li>Semaphores cap concurrent calls to fragile tools</li>
+              <li>Back-pressure instead of 429 storms and overage bills</li>
+            </ul>
+          </article>
+          <article class="card reveal d2">
+            <div class="card__icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="6" cy="12" r="2.4" /><circle cx="18" cy="6" r="2.4" /><circle cx="18" cy="18" r="2.4" /><path d="M8.1 10.8 15.9 7.2M8.1 13.2 15.9 16.8" stroke-linecap="round" /></svg>
+            </div>
+            <h3>Elect supervisors</h3>
+            <p>Run one planner, reviewer, compactor, or release coordinator at a time, backed by a
+              consistent KV blackboard that pushes watched state changes as soon as they commit.</p>
+            <ul class="card__list">
+              <li>Leader election for a single active supervisor</li>
+              <li>Watch streams for step results and handoffs</li>
+              <li>Compare-and-swap prevents shared-state clobbering</li>
+              <li>Service discovery tracks live agents and tools</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="agent-boundary reveal">
+          <div class="agent-boundary__head">
+            <div>
+              <span class="badge">Coordination, not cognition</span>
+              <h3>Put each responsibility in the right layer</h3>
+              <p>Fiducia coordinates agent processes. It does not plan tasks, choose models,
+                store transcripts, judge semantic correctness, or prevent hallucinations.</p>
+            </div>
+            <a
+              class="btn btn--ghost"
+              href="https://github.com/fiducia-cloud/fiducia-ai-agent-manager.rs/tree/main/tools/reference-fleet"
+              rel="noreferrer"
+            >Run the reference fleet</a>
+          </div>
+
+          <div class="agent-boundary__layers" aria-label="AI agent fleet ownership layers">
+            <article>
+              <span>1 · Durable workflow layer</span>
+              <strong>Postgres · queue · object store · vector DB</strong>
+              <p>Tasks, prompts, transcripts, artifacts, embeddings, and run history.</p>
+            </article>
+            <article class="agent-boundary__fiducia">
+              <span>2 · Fiducia coordination layer</span>
+              <strong>Leases · fencing · elections · quotas · watches</strong>
+              <p>Shared authority, finite capacity, liveness, failover, and no-duplicate scheduling.</p>
+            </article>
+            <article>
+              <span>3 · Agent worker layer</span>
+              <strong>Planner · coder · researcher · reviewer</strong>
+              <p>Reasoning, tool execution, output validation, and human escalation.</p>
+            </article>
+          </div>
+
+          <figure class="agent-boundary__code">
+            <figcaption>Task claim → lease renewal → fenced durable commit</figcaption>
+            <pre><code>{agentClaimExample}</code></pre>
+          </figure>
+          <p class="agent-boundary__note">Exactly-once external effects still require the target
+            system to enforce a fencing token or stable idempotency key.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="section" id="how">
+      <div class="container">
+        <div class="section__head">
+          <span class="badge">Under the hood</span>
+          <h2>Many <span class="gradient-text">Raft</span> groups, one guarantee</h2>
+          <p>Every Fiducia operation is a committed entry in its shard’s replicated log. That is
+            what turns “probably locked” into “provably locked” — and what lets the cluster scale
+            out instead of up.</p>
+        </div>
+
+        <div class="raft">
+          <div class="raft__steps">
+            {steps.map((st, i) => (
+              <div class="raft__step reveal">
+                <div class="raft__step-num">{i + 1}</div>
+                <div>
+                  <h4>{st.title}</h4>
+                  <p>{st.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div class="raft__card reveal d2">
+            <div class="raft__metric"><span>Cluster</span><span>5 nodes · 3 AZ</span></div>
+            <div class="raft__metric"><span>Shards</span><span>256 · RF 3</span></div>
+            <div class="raft__metric"><span>Leadership</span><span>node-2 · 52 shards</span></div>
+            <div class="raft__metric"><span>Commit index</span><span>1,884,209</span></div>
+            <div class="raft__metric"><span>Active locks</span><span>12,704</span></div>
+            <div class="raft__metric"><span>Failover</span><span>&lt; 250ms</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHY RAFT -->
+    <section class="section" id="why">
+      <div class="container">
+        <div class="section__head">
+          <span class="badge">Why it matters</span>
+          <h2>Coordination is easy to get<br /><span class="gradient-text">subtly, dangerously wrong</span></h2>
+          <p>A Redis SETNX lock without fencing, a cron that double-fires after a deploy, a rate
+            limiter that drifts between replicas — these are the bugs you find in production.
+            Fiducia makes correctness the default. It is crash-fault tolerant (CFT), not
+            Byzantine: it assumes your own nodes can crash, never that they lie.</p>
+        </div>
+        <div class="grid-3">
+          <article class="card reveal">
+            <h3>No split brain</h3>
+            <p>A network partition can never elect two leaders. The minority side stops serving
+              writes rather than diverge — so two clients never hold the same lock.</p>
+          </article>
+          <article class="card reveal d1">
+            <h3>Crash-safe by construction</h3>
+            <p>A lock acknowledged by Fiducia is durable on a majority of nodes. Lose a replica —
+              or a whole availability zone’s minority — and committed state stays put.</p>
+          </article>
+          <article class="card reveal d2">
+            <h3>Exactly-once where it counts</h3>
+            <p>Leader-elected scheduling means a cron job fires once, not once per replica, even
+              across rolling deploys and failovers.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="section" id="start">
+      <div class="container">
+        <div class="cta reveal">
+          <h2>Make coordination <span class="gradient-text">someone else’s problem</span></h2>
+          <p>Point your services or agent fleet at one endpoint and get locks, limits, task claims,
+            elections, KV watches, and schedules backed by a consensus you don’t have to operate.</p>
+          <div class="hero__actions" style="margin-top:0;">
+            <a class="btn btn--primary" href={`${base}api/info`}>View the API</a>
+            <a class="btn btn--ghost" href="#services">Read the docs</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="7" r="3.2" fill="url(#lg)" />
+          <circle cx="7" cy="23" r="3.2" fill="url(#lg)" />
+          <circle cx="25" cy="23" r="3.2" fill="url(#lg)" />
+          <path d="M16 7 L7 23 M16 7 L25 23 M7 23 L25 23" stroke="url(#lg)" stroke-width="1.6" opacity="0.65" />
+        </svg>
+        Fiducia<span class="nav__logo-dim">.cloud</span>
+      </div>
+      <small>Consensus &amp; coordination as a service · Built on Raft · © 2026 Fiducia</small>
+    </div>
+  </footer>
+</Layout>

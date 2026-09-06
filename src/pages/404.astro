@@ -1,0 +1,19 @@
+---
+// Custom 404 page: on-brand "no quorum" not-found screen with a link back home.
+import Layout from '../layouts/Layout.astro';
+const base = import.meta.env.BASE_URL;
+---
+
+<Layout title="Not found — Fiducia">
+  <main class="hero" style="min-height: 80vh; display: grid; place-items: center;">
+    <div class="hero__orb hero__orb--1"></div>
+    <div class="container" style="text-align:center;">
+      <span class="badge"><span class="badge__dot"></span>404</span>
+      <h1 class="hero__title">No <span class="gradient-text">quorum</span> on this page</h1>
+      <p class="hero__subtitle">The resource you asked for isn’t in the committed log.</p>
+      <div class="hero__actions">
+        <a class="btn btn--primary" href={base}>Back to safety</a>
+      </div>
+    </div>
+  </main>
+</Layout>

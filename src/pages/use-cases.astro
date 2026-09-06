@@ -1,0 +1,592 @@
+---
+// fiducia.cloud/use-cases — the real jobs a fenced-lease coordination service
+// does, each with a concise, correct code example against the live API surface
+// (POST /v1/locks/acquire, /v1/elections/{name}/campaign, /v1/semaphores/acquire,
+// /v1/rate-limit/{tenant}/{key}/check). The closing section is deliberately
+// honest: long-lived customer holds are NOT a lock — that is the Reservations
+// primitive (RFC 0001), and until it ships a DB row with an expiry is correct.
+import Layout from '../layouts/Layout.astro';
+
+// Base URL (e.g. "/fiducia/") so in-app links survive the gateway path prefix.
+const base = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/';
+
+// Each use case is text + one or more labeled code blocks. Code is rendered via
+// a JSX expression ({ex.code}), so literal { } in the JSON payloads are NOT
+// parsed as Astro expressions and every string is HTML-escaped automatically.
+const useCases = [
+  {
+    id: 'mutex',
+    n: '01',
+    title: 'Distributed mutex / critical section',
+    tagline: 'One holder, and a fencing token that defeats the stale one',
+    body: [
+      'Wrap a critical section — a ledger write, an inventory decrement, a file rewrite — so that exactly one worker across your whole fleet runs it at a time. Acquire returns a monotonic <strong>fencing token</strong>; hand it to the resource you are protecting and have that resource reject any write carrying a token lower than the highest it has seen.',
+      'That token is the part a Redis <code>SETNX</code> lock forgets: a holder can pause (GC, VM freeze) past its lease, a second worker legitimately acquires, and the first wakes up and tries to write. Without fencing, both writes land. With fencing, the resource rejects the stale one.',
+    ],
+    examples: [
+      {
+        label: 'curl — acquire, use, release',
+        code: `# Acquire (try-lock: wait=false returns immediately if held)
+curl -X POST https://api.fiducia.cloud/v1/locks/acquire \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"key":"orders/42","holder":"worker-1","ttl_ms":30000,"wait":false}'
+
+# → 200 — mutations are wrapped in { committed, result: { revision, output } }
+# {
+#   "committed": true,
+#   "result": {
+#     "revision": 8123,
+#     "output": {
+#       "acquired": true,
+#       "keys": ["orders/42"],
+#       "holder": "worker-1",
+#       "fencing_token": 4711,
+#       "lease_expires_ms": 1750960872000
+#     }
+#   }
+# }
+
+# Release by proving you are the holder that owns the token.
+curl -X POST https://api.fiducia.cloud/v1/locks/release \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"holder":"worker-1","fencing_token":4711}'`,
+      },
+      {
+        label: 'TypeScript — the fencing pattern',
+        code: `const api = "https://api.fiducia.cloud";
+const headers = {
+  authorization: \`Bearer \${process.env.FIDUCIA_API_KEY}\`,
+  "content-type": "application/json",
+};
+
+const res = await fetch(\`\${api}/v1/locks/acquire\`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({ key: "orders/42", holder: workerId, ttl_ms: 30_000 }),
+});
+const { result } = await res.json();
+if (!result.output.acquired) throw new Error("held by another worker");
+
+const fencingToken = result.output.fencing_token;
+// The resource MUST reject any write whose token is below the highest it has
+// seen. That, not the lock alone, is what fences a paused/stale holder.
+await writeLedger(entry, { fencingToken });
+
+await fetch(\`\${api}/v1/locks/release\`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({ holder: workerId, fencing_token: fencingToken }),
+});`,
+      },
+    ],
+  },
+  {
+    id: 'singleton',
+    n: '02',
+    title: 'Singleton background job / leader election',
+    tagline: 'One sweeper, one cron worker — even across a rolling deploy',
+    body: [
+      'You have three replicas of a service but the nightly sweeper, the compactor, or the outbox drainer must run on exactly one of them. Each replica campaigns for a named leadership with a short TTL and renews it on a heartbeat; whoever holds it does the work, and if it dies its lease lapses and another replica takes over — no split brain, no duplicate fires.',
+      'The leadership carries a fencing token too, so a leader that was partitioned away and comes back cannot keep acting on stale authority.',
+    ],
+    examples: [
+      {
+        label: 'curl — campaign, renew, resign',
+        code: `# Campaign to lead a named role.
+curl -X POST https://api.fiducia.cloud/v1/elections/nightly-sweeper/campaign \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"candidate":"pod-7","ttl_ms":15000}'
+
+# → output:
+# {
+#   "won": true,
+#   "name": "nightly-sweeper",
+#   "leadership": {
+#     "leader": "pod-7",
+#     "fencing_token": 90,
+#     "lease_expires_ms": 1750960812000
+#   }
+# }
+
+# Renew before the lease expires (must present the token you hold).
+curl -X POST https://api.fiducia.cloud/v1/elections/nightly-sweeper/renew \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"candidate":"pod-7","fencing_token":90}'
+
+# Step down cleanly so the next candidate wins immediately.
+curl -X POST https://api.fiducia.cloud/v1/elections/nightly-sweeper/resign \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"candidate":"pod-7","fencing_token":90}'`,
+      },
+      {
+        label: 'TypeScript — lead, then heartbeat',
+        code: `const api = "https://api.fiducia.cloud";
+const headers = {
+  authorization: \`Bearer \${process.env.FIDUCIA_API_KEY}\`,
+  "content-type": "application/json",
+};
+
+const campaign = await fetch(\`\${api}/v1/elections/nightly-sweeper/campaign\`, {
+  method: "POST",
+  headers,
+  body: JSON.stringify({ candidate: podId, ttl_ms: 15_000 }),
+}).then((r) => r.json());
+
+if (campaign.result.output.won) {
+  const token = campaign.result.output.leadership.fencing_token;
+  // Renew on a heartbeat (well inside the 15s TTL) for as long as we lead.
+  const beat = setInterval(() => {
+    fetch(\`\${api}/v1/elections/nightly-sweeper/renew\`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ candidate: podId, fencing_token: token }),
+    });
+  }, 5_000);
+  await runSweeperUntilShutdown();
+  clearInterval(beat);
+}`,
+      },
+    ],
+  },
+  {
+    id: 'semaphore',
+    n: '03',
+    title: 'Distributed semaphore / admission control',
+    tagline: 'Up to N at once — flash sales, GPU pools, fragile upstreams',
+    body: [
+      'A mutex is a semaphore of one. When you can tolerate <em>N</em> concurrent holders — 100 checkout sessions in a flash sale, 8 GPU slots, 20 concurrent calls to a fragile third-party API — acquire a permit against a keyed semaphore with an explicit <code>limit</code>. The (N+1) th caller is refused (or, with <code>wait:true</code>, joins a FIFO queue) instead of overwhelming the resource.',
+      'Permits carry the same TTL lease and fencing token as locks, so a crashed holder frees its slot automatically.',
+    ],
+    examples: [
+      {
+        label: 'curl — take one of N permits',
+        code: `curl -X POST https://api.fiducia.cloud/v1/semaphores/acquire \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"key":"checkout-flashsale","holder":"req-abc","limit":100,"ttl_ms":5000,"wait":false}'
+
+# → output when a permit is free:
+# { "acquired": true, "fencing_token": 5120, "lease_expires_ms": 1750960847000 }
+# → output when all 100 permits are taken (wait=false):
+# { "acquired": false }
+
+# Return the permit and admit the next waiter.
+curl -X POST https://api.fiducia.cloud/v1/semaphores/release \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"key":"checkout-flashsale","holder":"req-abc","fencing_token":5120}'`,
+      },
+      {
+        label: 'TypeScript — admission gate',
+        code: `async function withPermit<T>(work: () => Promise<T>): Promise<T> {
+  const api = "https://api.fiducia.cloud";
+  const headers = {
+    authorization: \`Bearer \${process.env.FIDUCIA_API_KEY}\`,
+    "content-type": "application/json",
+  };
+  const holder = crypto.randomUUID();
+
+  const acq = await fetch(\`\${api}/v1/semaphores/acquire\`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ key: "checkout-flashsale", holder, limit: 100, ttl_ms: 5_000 }),
+  }).then((r) => r.json());
+
+  if (!acq.result.output.acquired) throw new Error("at capacity — try again shortly");
+  const fencing_token = acq.result.output.fencing_token;
+  try {
+    return await work();
+  } finally {
+    await fetch(\`\${api}/v1/semaphores/release\`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ key: "checkout-flashsale", holder, fencing_token }),
+    });
+  }
+}`,
+      },
+    ],
+  },
+  {
+    id: 'rate-limit',
+    n: '04',
+    title: 'Distributed rate limiting',
+    tagline: 'One global budget every replica shares',
+    body: [
+      'Per-instance counters drift: five replicas each allowing "100/min" is really 500/min. Fiducia gives you one atomic, replicated check-and-decrement per <code>{tenant}/{key}</code> bucket, so a token-bucket or sliding-window quota is enforced consistently no matter which node answers. Use it to protect a login endpoint, meter a paid API per customer, or cap an LLM tool your agents share.',
+    ],
+    examples: [
+      {
+        label: 'curl — atomic check-and-decrement',
+        code: `curl -X POST https://api.fiducia.cloud/v1/rate-limit/acme/login/check \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"algorithm":"token_bucket","limit":100,"window_ms":60000,"refill_per_second":1.5,"cost":1}'
+
+# → output:
+# { "allowed": true, "remaining": 99, "reset_ms": 1750960812000 }
+#
+# algorithm is "token_bucket" or "sliding_window"; cost defaults to 1 so a
+# single expensive call can spend several tokens at once.`,
+      },
+      {
+        label: 'TypeScript — gate a request',
+        code: `async function allowRequest(tenant: string, key: string): Promise<boolean> {
+  const res = await fetch(
+    \`https://api.fiducia.cloud/v1/rate-limit/\${tenant}/\${key}/check\`,
+    {
+      method: "POST",
+      headers: {
+        authorization: \`Bearer \${process.env.FIDUCIA_API_KEY}\`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        algorithm: "token_bucket",
+        limit: 100,
+        window_ms: 60_000,
+        refill_per_second: 1.5,
+      }),
+    },
+  );
+  const { result } = await res.json();
+  return result.output.allowed; // 429 the caller when false
+}`,
+      },
+    ],
+  },
+  {
+    id: 'leases',
+    n: '05',
+    title: 'Short infrastructure leases',
+    tagline: 'Only one migration, one reindex, one cache rebuild at a time',
+    body: [
+      'The everyday operational use of a lock: gate a one-shot infrastructure task so that a deploy, a schema migration, a search reindex, or a cache warm runs once even if three pods start it simultaneously. These are <strong>short</strong> leases — seconds to a few minutes — held by a <em>process</em>, renewed while it works, and released (or auto-expired) the moment it finishes or crashes.',
+      'The lease TTL is the safety net: if the holder dies mid-task, the lock frees itself and the next pod picks it up. Keep the TTL comfortably longer than a heartbeat interval and renew as you go.',
+    ],
+    examples: [
+      {
+        label: 'curl — guard a one-shot task',
+        code: `# First pod wins; the others get acquired:false and skip the work.
+curl -X POST https://api.fiducia.cloud/v1/locks/acquire \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"key":"migrate/2026-07-01","holder":"pod-3","ttl_ms":60000}'
+
+# → { ... "output": { "acquired": true, "fencing_token": 771, "lease_expires_ms": ... } }
+# Run the migration, then release:
+curl -X POST https://api.fiducia.cloud/v1/locks/release \\
+  -H "Authorization: Bearer $FIDUCIA_API_KEY" -H "Content-Type: application/json" \\
+  -d '{"holder":"pod-3","fencing_token":771}'`,
+      },
+    ],
+  },
+];
+---
+
+<Layout
+  title="Use cases — Fiducia · Consensus & Coordination as a Service"
+  description="Real use cases for a fenced-lease coordination service — distributed mutexes, leader election, semaphores, and rate limiting — each with a correct code example against the Fiducia API. Plus an honest note on when a lock is the wrong tool."
+>
+  <!-- NAV -->
+  <nav class="nav">
+    <div class="nav__inner container">
+      <a class="nav__logo" href={base}>
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#c084fc" />
+              <stop offset="1" stop-color="#6366f1" />
+            </linearGradient>
+          </defs>
+          <circle cx="16" cy="7" r="3.2" fill="url(#lg)" />
+          <circle cx="7" cy="23" r="3.2" fill="url(#lg)" />
+          <circle cx="25" cy="23" r="3.2" fill="url(#lg)" />
+          <path d="M16 7 L7 23 M16 7 L25 23 M7 23 L25 23" stroke="url(#lg)" stroke-width="1.6" opacity="0.65" />
+          <circle cx="16" cy="17.6" r="1.7" fill="#e9d5ff" />
+        </svg>
+        <span class="nav__logo-text">Fiducia<span class="nav__logo-dim">.cloud</span></span>
+      </a>
+      <div class="nav__links">
+        <a class="nav__link" href={`${base}#services`}>Services</a>
+        <a class="nav__link" href={`${base}#agents`}>AI agents</a>
+        <a class="nav__link" href={`${base}#how`}>How it works</a>
+        <a class="btn btn--primary" href={`${base}#start`}>Get started</a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    <!-- HEADER -->
+    <section class="section uc-hero">
+      <div class="container">
+        <div class="section__head">
+          <span class="badge reveal"><span class="badge__dot"></span>Use cases</span>
+          <h1 class="reveal d1">What a fenced-lease<br /><span class="gradient-text">coordination service is for</span></h1>
+          <p class="reveal d2">Every example below runs against the live API surface —
+            <code>/v1/locks</code>, <code>/v1/elections</code>, <code>/v1/semaphores</code>, and
+            <code>/v1/rate-limit</code>. Each request is authenticated with a bearer API key and
+            scoped to your org automatically.</p>
+        </div>
+        <nav class="uc-toc reveal d3" aria-label="Use cases">
+          {useCases.map((u) => (
+            <a class="uc-toc__link" href={`#${u.id}`}><span class="uc-toc__n">{u.n}</span>{u.title}</a>
+          ))}
+        </nav>
+      </div>
+    </section>
+
+    <!-- USE CASES -->
+    {useCases.map((u) => (
+      <section class="section uc" id={u.id}>
+        <div class="container uc__grid">
+          <div class="uc__text reveal">
+            <span class="uc__n gradient-text">{u.n}</span>
+            <h3>{u.title}</h3>
+            <p class="uc__tagline">{u.tagline}</p>
+            {u.body.map((para) => <p class="uc__body" set:html={para} />)}
+          </div>
+          <div class="uc__code reveal d1">
+            {u.examples.map((ex) => (
+              <figure class="code">
+                <figcaption class="code__bar">
+                  <span class="code__dots"><span></span><span></span><span></span></span>
+                  <span class="code__label">{ex.label}</span>
+                </figcaption>
+                <pre><code>{ex.code}</code></pre>
+              </figure>
+            ))}
+          </div>
+        </div>
+      </section>
+    ))}
+
+    <!-- HONEST CALLOUT: long holds are NOT a lock -->
+    <section class="section uc-callout" id="not-a-lock">
+      <div class="container">
+        <div class="callout reveal">
+          <span class="badge badge--warn">Use the right tool</span>
+          <h2>A 90-minute hold is <span class="gradient-text">not a lock</span></h2>
+          <p>
+            The single most common misuse is parking a long TTL on a lock to hold something for a
+            <strong> customer</strong> — a shopping cart, a ticket seat, an appointment slot, a GPU
+            booking — for tens of minutes. Locks are the wrong primitive for this, and it will bite
+            you:
+          </p>
+          <ul class="callout__list">
+            <li><strong>Liveness coupling is backwards.</strong> A lock is held by a <em>process</em> and released when that process dies. A customer's 90-minute cart must survive your worker crashing, redeploying, or failing over — the customer still holds it.</li>
+            <li><strong>No capacity semantics.</strong> A lock is one holder per key; it can't answer "141 of 143 seats in section A are held right now."</li>
+            <li><strong>Not listable.</strong> You can't ask a lock "which holds does <code>cart:7f3a</code> own?" — a reservation system must enumerate holds per owner.</li>
+            <li><strong>Hot single shard.</strong> All locks live on one coordinator shard; thousands of long-lived customer holds park load there for the full TTL.</li>
+          </ul>
+          <p class="callout__answer">
+            <strong>The correct pattern today:</strong> keep the hold in the system of record that
+            owns the resource — a row with an <code>expires_at</code> column (a booking / hold table),
+            swept for expiry — and use Fiducia only for the coordination around it: a leader election
+            for the singleton sweeper, or a semaphore/rate limiter for admission. For a single-database
+            app, that <code>held_until</code> column is the whole answer.
+          </p>
+          <div class="callout__soon">
+            <h4><span class="soon-tag">Coming soon</span> A dedicated Reservations primitive</h4>
+            <p>
+              For multi-service and multi-region inventory — where no single database owns
+              availability — Fiducia is adding <strong>Reservations</strong> (RFC 0001): capacity-aware,
+              long-lived, queryable holds owned by an external principal, with linearizable pool
+              capacity and <code>expiring</code> watch events for the "cart expires in 10 minutes" hook.
+              Crash of the claiming process does <em>not</em> release the hold — the exact property a
+              lock can't give you.
+            </p>
+            <figure class="code code--soon">
+              <figcaption class="code__bar">
+                <span class="code__dots"><span></span><span></span><span></span></span>
+                <span class="code__label">Reservations API sketch — RFC 0001 (draft, not yet live)</span>
+              </figcaption>
+              <pre><code>{`POST /v1/reservations
+  { "pool": "event-421/sec-A", "owner": "cart:7f3a", "count": 2, "ttl": "90m" }
+→ { "reservation_id": "rsv_01H...", "expires": "...",
+    "fencing_token": "00000000-2B11", "pool_remaining": 141 }
+
+POST /v1/reservations/{id}/extend    { "ttl": "15m" }   # bounded by pool max_ttl
+POST /v1/reservations/{id}/convert   { "token": "..." } # terminal: held → converted
+GET  /v1/pools/{pool}/reservations?owner=cart:7f3a&state=held   # listing!
+WATCH /v1/pools/{pool}   # reserved | extended | expiring(T-60s) | expired | converted`}</code></pre>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="section" id="start">
+      <div class="container">
+        <div class="cta reveal">
+          <h2>Point one endpoint at <span class="gradient-text">the hard parts</span></h2>
+          <p>Locks, elections, semaphores, and rate limits backed by a Raft consensus you don't have
+            to operate — with fencing tokens and TTL leases built in.</p>
+          <div class="hero__actions" style="margin-top:0;">
+            <a class="btn btn--primary" href={`${base}api/info`}>View the API</a>
+            <a class="btn btn--ghost" href={base}>Back to overview</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="7" r="3.2" fill="url(#lg)" />
+          <circle cx="7" cy="23" r="3.2" fill="url(#lg)" />
+          <circle cx="25" cy="23" r="3.2" fill="url(#lg)" />
+          <path d="M16 7 L7 23 M16 7 L25 23 M7 23 L25 23" stroke="url(#lg)" stroke-width="1.6" opacity="0.65" />
+        </svg>
+        Fiducia<span class="nav__logo-dim">.cloud</span>
+      </div>
+      <small>Consensus &amp; coordination as a service · Built on Raft · © 2026 Fiducia</small>
+    </div>
+  </footer>
+</Layout>
+
+<style>
+  .uc-hero { padding-bottom: 1.5rem; }
+
+  /* Table of contents */
+  .uc-toc {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: .75rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  .uc-toc__link {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    padding: .8rem 1rem;
+    border: 1px solid var(--navy-border);
+    border-radius: var(--radius);
+    background: rgba(255, 255, 255, 0.02);
+    color: var(--text-muted);
+    font-size: .92rem;
+    font-weight: 500;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  .uc-toc__link:hover { border-color: var(--purple-500); color: var(--text); background: rgba(168, 85, 247, 0.07); }
+  .uc-toc__n { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--purple-400); }
+
+  /* Use-case row: prose beside code */
+  .uc { padding-block: 2.5rem; }
+  .uc:nth-child(even) { background: rgba(10, 16, 36, 0.4); border-block: 1px solid rgba(36, 48, 102, 0.5); }
+  .uc__grid { display: grid; grid-template-columns: 5fr 7fr; gap: 2.5rem; align-items: start; }
+  .uc__text { position: sticky; top: 90px; }
+  .uc__n { font-size: 1.05rem; font-weight: 800; letter-spacing: .08em; }
+  .uc__text h3 { font-size: 1.7rem; margin: .35rem 0 .5rem; line-height: 1.2; }
+  .uc__tagline { color: var(--purple-400); font-weight: 600; margin: 0 0 1rem; }
+  .uc__body { color: var(--text-muted); font-size: .96rem; margin: 0 0 .85rem; }
+  .uc__body code, .uc__tagline code, .section__head code, .callout code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    font-size: .85em;
+    background: rgba(168, 85, 247, 0.12);
+    color: #d8c4ff;
+    padding: .08em .38em;
+    border-radius: 5px;
+  }
+
+  /* Code cards */
+  .uc__code { display: grid; gap: 1.1rem; min-width: 0; }
+  .code {
+    margin: 0;
+    border: 1px solid var(--navy-border);
+    border-radius: 12px;
+    background: var(--navy-850);
+    overflow: hidden;
+    box-shadow: 0 18px 40px rgba(3, 6, 20, 0.45);
+  }
+  .code__bar {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    padding: .6rem .9rem;
+    border-bottom: 1px solid var(--navy-border);
+    background: rgba(255, 255, 255, 0.02);
+  }
+  .code__dots { display: inline-flex; gap: .4rem; }
+  .code__dots span { width: 10px; height: 10px; border-radius: 50%; background: var(--navy-600); }
+  .code__dots span:first-child { background: #f87171; }
+  .code__dots span:nth-child(2) { background: #fbbf24; }
+  .code__dots span:nth-child(3) { background: #34d399; }
+  .code__label { color: var(--text-faint); font-size: .8rem; font-weight: 500; }
+  .code pre {
+    margin: 0;
+    padding: 1.1rem 1.2rem;
+    overflow-x: auto;
+    font-size: .82rem;
+    line-height: 1.65;
+  }
+  .code code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    color: #cdd6f5;
+    white-space: pre;
+  }
+  .code--soon { border-style: dashed; opacity: .95; }
+
+  /* Honest callout */
+  .uc-callout { padding-top: 3.5rem; }
+  .callout {
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 2.5rem;
+    border: 1px solid rgba(251, 191, 36, 0.28);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(251, 191, 36, 0.05), rgba(10, 16, 36, 0.35));
+  }
+  .callout h2 { font-size: 2.1rem; margin: 1rem 0 .9rem; line-height: 1.15; }
+  .callout > p { color: var(--text-muted); }
+  .badge--warn { border-color: rgba(251, 191, 36, 0.4); color: #fcd34d; }
+  .badge--warn .badge__dot { background: #fbbf24; }
+  .callout__list { list-style: none; margin: 1.2rem 0; padding: 0; display: grid; gap: .7rem; }
+  .callout__list li { color: var(--text-muted); font-size: .95rem; padding-left: 1.4rem; position: relative; }
+  .callout__list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: .55em;
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    background: #fbbf24;
+  }
+  .callout__answer {
+    margin: 1.2rem 0 0;
+    padding: 1.1rem 1.2rem;
+    border-left: 3px solid var(--purple-500);
+    background: rgba(168, 85, 247, 0.06);
+    border-radius: 0 8px 8px 0;
+    color: var(--text-muted);
+    font-size: .95rem;
+  }
+  .callout__answer strong { color: var(--text); }
+  .callout__soon { margin-top: 2rem; padding-top: 1.6rem; border-top: 1px solid var(--navy-border); }
+  .callout__soon h4 { font-size: 1.2rem; margin: 0 0 .6rem; display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .callout__soon > p { color: var(--text-muted); font-size: .95rem; margin: 0 0 1.2rem; }
+  .soon-tag {
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: .25em .6em;
+    border-radius: 999px;
+    background: var(--grad);
+    color: #0b0716;
+  }
+
+  @media (max-width: 860px) {
+    .uc__grid { grid-template-columns: 1fr; gap: 1.4rem; }
+    .uc__text { position: static; }
+    .callout { padding: 1.6rem; }
+    .callout h2 { font-size: 1.6rem; }
+  }
+</style>
