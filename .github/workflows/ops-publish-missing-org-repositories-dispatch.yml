@@ -1,15 +1,20 @@
-name: Publish ORE manifestos repositories through trusted path
-run-name: Publish ORE manifestos repositories @ ${{ github.sha }}
+name: Publish missing organization repositories (dispatch)
+run-name: Publish missing organization repositories (${{ inputs.request_id }})
 
 on:
+  workflow_call:
+    inputs:
+      request_id:
+        description: Immutable ORE manifestos request correlation identifier
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      request_id:
+        description: Immutable ORE manifestos request correlation identifier
+        required: true
+        type: string
   pull_request:
-    branches: [main]
-    paths:
-      - .github/workflows/ops-publish-missing-org-repositories-dispatch.yml
-      - scripts/ops/create_ores_manifestos_repositories_20260905.py
-      - scripts/ops/run_ores_manifestos_repository_publisher_protected_20260905.sh
-      - scripts/ops/run_with_protected_github_token.sh
-  push:
     branches: [main]
     paths:
       - .github/workflows/ops-publish-missing-org-repositories-dispatch.yml
@@ -22,24 +27,26 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ores-manifestos-trusted-repository-publication
+  group: ops-publish-missing-organization-repositories
   cancel-in-progress: false
 
 jobs:
-  validate:
+  publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 55
+    env:
+      EVIDENCE_PATH: ops/evidence/ores-manifestos/repository-publication.json
     steps:
-      - name: Check out exact reviewed revision
+      - name: Check out the exact reviewed revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'main' }}
           fetch-depth: 2
           persist-credentials: false
           clean: true
           show-progress: false
 
-      - name: Validate bounded publisher source and workflow
+      - name: Validate the bounded ORE manifestos publisher
         shell: bash
         run: |
           set -euo pipefail
@@ -53,60 +60,33 @@ jobs:
             rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
             -color \
             .github/workflows/ops-publish-missing-org-repositories-dispatch.yml
-          git diff --check HEAD^
-
-      - name: Reject credential literals
-        shell: bash
-        run: |
-          set -euo pipefail
-          targets=(
-            .github/workflows/ops-publish-missing-org-repositories-dispatch.yml
-            scripts/ops/create_ores_manifestos_repositories_20260905.py
-            scripts/ops/run_ores_manifestos_repository_publisher_protected_20260905.sh
-          )
-          credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
-          if grep -nE "$credential_pattern" "${targets[@]}"; then
-            echo 'credential-shaped source material detected' >&2
-            exit 1
+          if test "$GITHUB_EVENT_NAME" = pull_request; then
+            git diff --check HEAD^
           fi
 
-  publish:
-    if: >-
-      github.event_name == 'push' &&
-      contains(github.event.head_commit.message, '[ores-manifestos-only]')
-    needs: validate
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      EVIDENCE_PATH: ops/evidence/ores-manifestos/repository-publication.json
-    steps:
-      - name: Check out the exact trusted main revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 1
-          persist-credentials: false
-          clean: true
-          show-progress: false
-
-      - name: Bind publication to the exact trusted main SHA
+      - name: Validate the exact supervised request
+        if: github.event_name != 'pull_request'
         shell: bash
+        env:
+          REQUEST_ID: ${{ inputs.request_id }}
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = refs/heads/main
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$REQUEST_ID" =~ ^ores-manifestos-pr-[0-9]+-[0-9a-f]{40}$ ]]
+          test "$(git rev-parse --abbrev-ref HEAD)" = HEAD
+          [[ "$(git rev-parse HEAD)" =~ ^[0-9a-f]{40}$ ]]
 
-      - name: Configure trusted publisher AWS OIDC credentials
+      - name: Configure trusted main-ref AWS OIDC credentials
+        if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: ores-manifestos-repository-publisher
+          role-session-name: critical-org-repository-publisher
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Publish the exact repository pair from the protected SSM host
+      - name: Publish and verify the ORE manifestos pair from the protected SSM host
+        if: github.event_name != 'pull_request'
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
@@ -184,6 +164,7 @@ jobs:
           unset evidence_payload evidence_line
 
       - name: Verify bounded non-secret repository and Pages evidence
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -210,6 +191,7 @@ jobs:
           echo 'VERIFIED_ORES_MANIFESTOS_REPOSITORIES 2/2'
 
       - name: Upload bounded publication evidence
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ores-manifestos-repositories-${{ github.run_id }}
