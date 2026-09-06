@@ -26,7 +26,7 @@ Every row is keyed by the exact tuple:
 
 The row ID is the SHA-256 of that canonical identity. Validation rejects duplicate IDs, duplicate identities, missing inventory identities, and manifest-only identities.
 
-The initial corrected inventory contains 1,134 rows. The count is an explicit test assertion so an inventory change requires an intentional manifest regeneration and review.
+The current `dev` inventory contains 1,366 rows. The count is an explicit test assertion so an inventory change requires an intentional manifest regeneration and review.
 
 ## Safety state
 
