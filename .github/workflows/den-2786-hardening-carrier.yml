@@ -35,7 +35,7 @@ jobs:
 
       - name: Verify exact parent
         env:
-          EXPECTED_PARENT: bff7a35dfaa59562d5e0333aeba59812355133c3
+          EXPECTED_PARENT: 97d1480db7b3ecca10f5971ee23089ac9f4c5023
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD^)" = "$EXPECTED_PARENT"
@@ -45,6 +45,12 @@ jobs:
           set -euo pipefail
           python3 -m py_compile .github/den-2786-hardening.py
           python3 .github/den-2786-hardening.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/benefactor-orchestrator/scraper-contact-bridge.mjs')
+          path.write_text(path.read_text(encoding='utf-8').rstrip() + '\n', encoding='utf-8')
+          PY
 
       - name: Verify focused contracts
         run: |
