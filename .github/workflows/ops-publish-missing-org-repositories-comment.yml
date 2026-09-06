@@ -8,7 +8,6 @@ on:
 permissions:
   contents: read
   id-token: write
-  issues: write
   pull-requests: read
   statuses: write
 
@@ -21,7 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       request_id: ${{ steps.contract.outputs.request_id }}
-      pr_number: ${{ steps.contract.outputs.pr_number }}
       target_sha: ${{ steps.contract.outputs.target_sha }}
     steps:
       - name: Validate the exact one-file same-repository ORE manifestos carrier
@@ -82,14 +80,12 @@ jobs:
 
           {
             printf 'request_id=ores-manifestos-pr-%s-%s\n' "$pr_number" "$target_sha"
-            printf 'pr_number=%s\n' "$pr_number"
             printf 'target_sha=%s\n' "$target_sha"
           } >> "$GITHUB_OUTPUT"
 
       - name: Mark the exact ORE manifestos carrier pending
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.contract.outputs.pr_number }}
           REPOSITORY: ${{ github.repository }}
           TARGET_SHA: ${{ steps.contract.outputs.target_sha }}
         shell: bash
@@ -101,8 +97,6 @@ jobs:
             -f context='ops/ores-manifestos-repository-publication' \
             -f description="supervised ORE manifestos publisher run ${GITHUB_RUN_ID} is executing" \
             -f target_url="$run_url" >/dev/null
-          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
-            --body "Supervised ORE manifestos publisher started: ${run_url}" >/dev/null
 
   publish:
     needs: validate
@@ -119,7 +113,6 @@ jobs:
       - name: Report exact ORE manifestos publication result
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ needs.validate.outputs.pr_number }}
           PUBLISH_RESULT: ${{ needs.publish.result }}
           REPOSITORY: ${{ github.repository }}
           TARGET_SHA: ${{ needs.validate.outputs.target_sha }}
@@ -139,6 +132,4 @@ jobs:
             -f context='ops/ores-manifestos-repository-publication' \
             -f description="$description" \
             -f target_url="$run_url" >/dev/null
-          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
-            --body "Supervised ORE manifestos publisher completed with **${PUBLISH_RESULT}**: ${run_url}" >/dev/null
           test "$PUBLISH_RESULT" = success
