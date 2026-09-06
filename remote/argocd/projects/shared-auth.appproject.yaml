@@ -1,12 +1,12 @@
-# AppProject for the shared auth server — STRICT. The app repo
-# (shared-auth/shared-auth-server.rs) was authored against the contract (no
-# Namespace/ClusterRole/CRD in deploy/k8s), so this enforces
-# clusterResourceWhitelist: [] from day one.
+# Strict namespace-scoped AppProject for the Shared Auth runtime.
 #
-# sourceRepos is the app repo itself. Argo tracks it DIRECTLY, not the
-# k8s-cluster submodule path (remote/submodules/shared-auth-server.rs), which is
-# inventory/pin only — repo-server has submodule checkout disabled. See
-# docs/app-deploy-contract.md.
+# The four service repositories own their workload manifests under `k8s`.
+# This cluster repository owns only the namespace/quotas, the ArgoCD boundary,
+# direct upstream Application registrations, and shared platform dependencies.
+# Submodule paths are inventory only and are never ArgoCD sources.
+#
+# The legacy monolith and NATS bridge remain allowlisted during the migration;
+# removing either source requires live dependency and rollback evidence.
 #
 #   kubectl apply -f remote/argocd/projects/shared-auth.tenant.yaml
 #   kubectl apply -f remote/argocd/projects/shared-auth.appproject.yaml
@@ -15,9 +15,15 @@ kind: AppProject
 metadata:
   name: shared-auth
   namespace: argocd
+  annotations:
+    oresoftware.com/linear-issue: DEN-606
 spec:
-  description: "Tenant project for the shared auth server — namespace shared-auth, no cluster resources."
+  description: "Namespace-scoped project for the four Shared Auth services and migration dependencies."
   sourceRepos:
+    - "git@github.com:shared-auth/shared-auth-web-server.rs.git"
+    - "git@github.com:shared-auth/shared-auth-api-server.rs.git"
+    - "git@github.com:shared-auth/shared-auth-admin-web-server.rs.git"
+    - "git@github.com:shared-auth/shared-auth-admin-api-server.rs.git"
     - "git@github.com:shared-auth/shared-auth-server.rs.git"
     - "git@github.com:shared-auth/shared-auth-nats-bridge.rs.git"
   destinations:
@@ -25,5 +31,7 @@ spec:
       namespace: shared-auth
   clusterResourceWhitelist: []
   namespaceResourceBlacklist:
+    - { group: "", kind: Namespace }
     - { group: "", kind: ResourceQuota }
     - { group: "", kind: LimitRange }
+    - { group: "rbac.authorization.k8s.io", kind: RoleBinding }
