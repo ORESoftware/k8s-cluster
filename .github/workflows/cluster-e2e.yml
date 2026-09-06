@@ -11,6 +11,7 @@ on:
       - "tools/namespace_*.py"
       - "catalog/namespaces/**"
       - "artifacts/namespace-inventory.json"
+      - "docs/operations/local-kind-namespace-smoke.md"
       - ".gitmodules"
       - ".github/workflows/cluster-e2e.yml"
   push:
@@ -22,6 +23,7 @@ on:
       - "tools/namespace_*.py"
       - "catalog/namespaces/**"
       - "artifacts/namespace-inventory.json"
+      - "docs/operations/local-kind-namespace-smoke.md"
       - ".gitmodules"
       - ".github/workflows/cluster-e2e.yml"
   workflow_dispatch:
@@ -30,21 +32,55 @@ permissions:
   contents: read
 
 concurrency:
-  group: cluster-e2e-${{ github.workflow }}-${{ github.ref }}
+  group: cluster-e2e-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   local-kind-smoke:
-    name: Credential-free local kind smoke
+    name: Credential-free exact-head local kind smoke
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    env:
+      KIND_CLUSTER_NAME: ores-k8s-${{ github.run_id }}-${{ github.run_attempt }}
+      KIND_EVIDENCE_DIR: ${{ runner.temp }}/namespace-kind-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+      KIND_KEEP_CLUSTER: "0"
+      KIND_WORKERS: "0"
+      KIND_NODE_IMAGE: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
     steps:
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check out exact repository tree
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.source-ref.outputs.ref }}
           fetch-depth: 1
           persist-credentials: false
+          show-progress: false
           submodules: false
+
+      - name: Assert exact source checkout
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          mkdir -p "$KIND_EVIDENCE_DIR"
+          printf '%s\n' "$EXPECTED_SHA" > "$KIND_EVIDENCE_DIR/workflow-expected-source-sha.txt"
 
       - name: Set up pinned kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
@@ -58,20 +94,32 @@ jobs:
           KIND_LINUX_AMD64_SHA256: 517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889
         run: |
           set -euo pipefail
-          curl -fsSLo "$RUNNER_TEMP/kind" \
+          install -d "$RUNNER_TEMP/kind-bin"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$RUNNER_TEMP/kind-bin/kind" \
             "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           printf '%s  %s\n' \
             "$KIND_LINUX_AMD64_SHA256" \
-            "$RUNNER_TEMP/kind" \
-            | sha256sum --check -
-          chmod +x "$RUNNER_TEMP/kind"
-          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+            "$RUNNER_TEMP/kind-bin/kind" \
+            | sha256sum --check --strict -
+          chmod +x "$RUNNER_TEMP/kind-bin/kind"
+          printf '%s\n' "$RUNNER_TEMP/kind-bin" >> "$GITHUB_PATH"
 
       - name: Run ownership-aware migration and Kubernetes API smoke
-        env:
-          KIND_CLUSTER_NAME: ores-k8s-ci
-          KIND_NODE_IMAGE: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
-        run: bash scripts/ci/local-kind-smoke.sh
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/local-kind-smoke.sh
+          bash scripts/ci/local-kind-smoke.sh
+
+      - name: Upload exact-head local-cluster evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: namespace-kind-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.KIND_EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
 
   private-contracts:
     name: Private extended contracts
