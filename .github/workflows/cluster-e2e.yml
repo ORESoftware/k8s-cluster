@@ -42,7 +42,6 @@ jobs:
     timeout-minutes: 20
     env:
       KIND_CLUSTER_NAME: ores-k8s-${{ github.run_id }}-${{ github.run_attempt }}
-      KIND_EVIDENCE_DIR: ${{ runner.temp }}/namespace-kind-smoke-${{ github.run_id }}-${{ github.run_attempt }}
       KIND_KEEP_CLUSTER: "0"
       KIND_WORKERS: "0"
       KIND_NODE_IMAGE: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
@@ -72,15 +71,17 @@ jobs:
           show-progress: false
           submodules: false
 
-      - name: Assert exact source checkout
+      - name: Initialize isolated evidence path
         shell: bash
         env:
           EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-          mkdir -p "$KIND_EVIDENCE_DIR"
-          printf '%s\n' "$EXPECTED_SHA" > "$KIND_EVIDENCE_DIR/workflow-expected-source-sha.txt"
+          evidence_dir="$RUNNER_TEMP/namespace-kind-smoke-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf 'KIND_EVIDENCE_DIR=%s\n' "$evidence_dir" >> "$GITHUB_ENV"
+          mkdir -p "$evidence_dir"
+          printf '%s\n' "$EXPECTED_SHA" > "$evidence_dir/workflow-expected-source-sha.txt"
 
       - name: Set up pinned kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
