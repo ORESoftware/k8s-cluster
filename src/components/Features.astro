@@ -1,0 +1,122 @@
+---
+// Features section (#features). Renders a responsive card grid from the
+// `features` data array (rolling buffer, cloud backup, bookmarks, clip export,
+// on-device analysis, etc.) — each card is an icon, title, and description.
+const features = [
+  {
+    icon: "♾️",
+    title: "Always-on rolling buffer",
+    body: "A continuous loop quietly captures everything, keeping the last 100 hours on your device (space permitting) and last 500 hours in the cloud, so the moment is already saved before you knew you wanted it.",
+  },
+  {
+    icon: "☁️",
+    title: "Automatic cloud backup",
+    body: "Encrypted on your phone, then synced to the cloud over Wi-Fi. Lose your phone, keep your memories. Only smart-uploads when you're on power & network.",
+  },
+  {
+    icon: "🔖",
+    title: "One-tap bookmarks",
+    body: "Heard something good? Tap once — or say the word — and Sonus Auris flags that slice of the timeline so it's trivial to find later.",
+  },
+  {
+    icon: "✂️",
+    title: "Clean clip export",
+    body: "Trim any moment to a tidy clip for your DAW, notes, or private review. You decide if and where it is shared. Lossless audio, no re-encoding mush.",
+  },
+  {
+    icon: "🔋",
+    title: "Built to sip battery",
+    body: "Efficient on-device encoding and a battery-aware uploader mean it runs all day without turning your phone into a hand-warmer.",
+  },
+  {
+    icon: "🔑",
+    title: "Keys you control",
+    body: "Recordings are encrypted with keys derived on your device. Not even we can listen. Privacy isn't a setting — it's the architecture.",
+  },
+  {
+    icon: "🎚️",
+    title: "“Day of My Life” on SoundCloud",
+    body: "Opt in and each day quietly becomes a private 24-hour “Day of My Life” track on your SoundCloud — captioned with on-device AI notes like “Band practice” or “Drive”. It keeps a rolling last 100 days and prunes the rest. Private by default, only when you ask.",
+  },
+  {
+    icon: "🎵",
+    title: "Your Spotify memories",
+    body: "Link Spotify and the songs Sonus Auris recognises roll into a private “Sonus Auris Memories” playlist — automatically de-duplicated, so every track you actually lived through shows up once. Opt-in.",
+  },
+  {
+    icon: "🆔",
+    title: "Knows your voice",
+    body: "A quick one-time recording teaches Sonus Auris your voiceprint. After that it can tell your voice from everyone else's — so insights are about you, and your words stay yours.",
+  },
+  {
+    icon: "🌙",
+    title: "Sleep & wellness signals",
+    body: "Listening overnight too, it flags patterns worth a closer look — snoring, breathing pauses that may point to sleep apnea, a cough that lingers. Insights, not diagnoses; bring them to your doctor.",
+  },
+  {
+    icon: "🗣️",
+    title: "Speech & diction coach",
+    body: "FFT-powered frequency analysis of your own speech catches mumbled words, mispronunciations, filler-word habits, and clumsy phrasing — then nudges you toward clearer diction and tighter grammar over time.",
+  },
+];
+---
+
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">🎛️ Everything it does</span>
+      <h2>Small app. Serious memory.</h2>
+      <p>Powerful where it counts, invisible the rest of the time.</p>
+    </div>
+
+    <div class="feat-grid">
+      {features.map((f) => (
+        <article class="feat card">
+          <div class="feat-icon">{f.icon}</div>
+          <h3>{f.title}</h3>
+          <p>{f.body}</p>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .feat-grid {
+    display: grid;
+    gap: 22px;
+    grid-template-columns: 1fr;
+  }
+  .feat {
+    padding: 28px 26px;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
+  }
+  .feat:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+  }
+  .feat-icon {
+    width: 56px;
+    height: 56px;
+    display: grid;
+    place-items: center;
+    font-size: 1.7rem;
+    border-radius: 16px;
+    background: var(--green-50);
+    border: 1px solid var(--green-200);
+    margin-bottom: 16px;
+  }
+  .feat h3 {
+    font-size: 1.22rem;
+  }
+  .feat p {
+    color: var(--ink-soft);
+    margin: 0;
+  }
+  @media (min-width: 700px) {
+    .feat-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 1000px) {
+    .feat-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>

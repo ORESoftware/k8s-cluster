@@ -1,0 +1,163 @@
+---
+// /privacy — the app-store-required privacy policy, rendered in the Legal
+// layout. Explains what Sonus Auris collects, on-device encryption, and user
+// rights.
+import { publisher } from "../data/publisher";
+import Legal from "../layouts/Legal.astro";
+
+const LAST_UPDATED = "2026-07-27";
+---
+
+<Legal
+  title="Privacy Policy"
+  description="How Sonus Auris handles your recordings and data. Privacy-first, end-to-end encrypted."
+>
+  <h1>Sonus Auris — Privacy Policy</h1>
+  <p class="updated">
+    Last updated: {LAST_UPDATED}. Publisher: {publisher.name}, contact:
+    <a href={`mailto:${publisher.contactEmail}`}>{publisher.contactEmail}</a>.
+  </p>
+
+  <h2>Summary</h2>
+  <p>
+    Sonus Auris records audio you choose to capture. Your recordings are
+    <strong>encrypted on your device</strong> before they leave it. If you enable
+    backup, ciphertext can be sent to storage <strong>you</strong> connect (your own
+    S3-compatible bucket, Google Drive, OneDrive, Dropbox, or iCloud) or to Sonus
+    Auris backup storage. We cannot decrypt your clips because their keys stay on
+    your device.
+  </p>
+
+  <h2>What we collect and why</h2>
+  <p>
+    <strong>Audio recordings</strong> — created only after you tap Start. Stored
+    locally as a rolling window and encrypted on-device (AES-256-GCM; keys derived
+    with HKDF/Argon2id and held on your device). Purpose: the core recording feature.
+  </p>
+  <p>
+    <strong>Optional location</strong> — OFF by default. If you enable geotagging,
+    the approximate or precise location at capture time is attached to a clip so you
+    can prove where it was recorded. Purpose: app functionality you opt into.
+  </p>
+  <p>
+    <strong>Optional audio analysis</strong> — OFF by default. Core sleep/snore,
+    music-pattern, speech-pattern, and loud-event detectors run locally on your
+    device. If you separately enable and configure an external speech-to-text,
+    song-recognition, or similar service, the audio excerpt needed for that request
+    is sent to that provider under its terms. Sonus Auris shows that disclosure
+    before the feature is enabled; recognition is not required for recording.
+  </p>
+  <p>
+    <strong>Account / backend data (only if you use an account)</strong> — your
+    email address, a user and device identifier, authentication tokens, and metadata
+    about clips you choose to back up or share (timestamps, sizes, upload status).
+    Purpose: authentication, backup coordination, and optional alert/listening links.
+  </p>
+  <p>
+    <strong>Diagnostics</strong> — after you sign in, sanitized app events, errors,
+    stack traces, platform, and app version can be sent to our Supabase project
+    under your user and device ID so we can operate and fix the app. Secret-shaped
+    fields are redacted; diagnostics do not contain recording audio. We do not
+    include third-party advertising or analytics SDKs.
+  </p>
+
+  <h2>What we do NOT do</h2>
+  <ul>
+    <li>We do not sell your data.</li>
+    <li>We do not use your data for advertising.</li>
+    <li>We do not have access to the contents of your encrypted recordings.</li>
+    <li>We do not record unless you start capture or explicitly arm a recording schedule.</li>
+  </ul>
+
+  <h2>Where your data goes</h2>
+  <ul>
+    <li><strong>On your device</strong> by default (encrypted).</li>
+    <li>
+      <strong>To a destination you explicitly choose for local export</strong>, such
+      as the system share sheet or a user-selected desktop file. That exported copy
+      is controlled by you, is outside Sonus Auris automatic retention, and must be
+      deleted or secured by you in the destination you selected.
+    </li>
+    <li>
+      <strong>To storage you control</strong>, if you connect it (your S3-compatible
+      bucket, Google Drive, OneDrive, Dropbox, or iCloud). Their handling is governed
+      by their terms.
+    </li>
+    <li>
+      <strong>To Supabase and the optional Sonus Auris backend</strong>, only for
+      features you invoke (authentication, settings/consent sync, diagnostics,
+      backup coordination, encrypted backup, and alert links). Recordings remain
+      client-encrypted; the services cannot derive the device-held key.
+    </li>
+    <li>
+      <strong>To an external recognition provider</strong>, only when you explicitly
+      enable and invoke a feature that needs it. The provider receives the bounded
+      audio excerpt required for that request; connected-storage encryption does
+      not apply to an excerpt deliberately sent for recognition.
+    </li>
+  </ul>
+
+  <h2>Retention</h2>
+  <p>
+    App-private local plaintext clips age out automatically based on your rolling-window
+    setting and never later than the approved 100-hour ceiling; you may choose a shorter
+    window. Backup failure, offline operation, disabled backup, or retrying a transfer
+    does not extend that deadline. Backed-up clips persist according to the retention
+    settings for their destination or until you delete them. Backend ciphertext and
+    metadata are removed when their retention expires or on account deletion, subject
+    to limited legal retention.
+  </p>
+  <p>
+    When you deliberately export a local copy, the new copy lives outside Sonus Auris
+    app-private storage and automatic retention. Exporting does not delay deletion of
+    the app-private copy. You are responsible for securing and deleting the exported
+    copy from the destination you selected.
+  </p>
+
+  <h2>Your choices and rights</h2>
+  <ul>
+    <li>Start/stop recording at any time; delete any clip in the app.</li>
+    <li>Choose a local retention window of 100 hours or less.</li>
+    <li>
+      Export an explicit user-controlled local copy without extending the app-private
+      deletion deadline.
+    </li>
+    <li>Turn location, analysis, and backup on or off at any time.</li>
+    <li>
+      <strong>Delete your account and associated data</strong> — see
+      <a href={`${import.meta.env.BASE_URL.replace(/\/$/, "")}/account-deletion/`}>Account &amp; data deletion</a>
+      (also linked in-app). Depending on your region (e.g. GDPR/CCPA), you may also
+      request access to or export of data we hold; contact us below.
+    </li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>
+    Sonus Auris is not directed to children under 13 (or the minimum age in your
+    country) and we do not knowingly collect their data.
+  </p>
+
+  <h2>Security</h2>
+  <p>
+    Recordings are encrypted on-device before storage or upload. Transport uses
+    TLS/HTTPS. Tokens and keys are stored using platform secure storage (iOS Keychain
+    / Android Keystore).
+  </p>
+
+  <h2 id="recording-responsibly">Recording responsibly</h2>
+  <p>
+    You are responsible for complying with the audio-recording and consent laws that
+    apply to you. Sonus Auris is for recording your own environment, not for covertly
+    recording others.
+  </p>
+
+  <h2>Changes</h2>
+  <p>We will update this policy as the app evolves and revise the "Last updated" date.</p>
+
+  <h2>Contact</h2>
+  <address>
+    {publisher.name}<br />
+    {publisher.postalAddress}<br />
+    <a href={`mailto:${publisher.contactEmail}`}>{publisher.contactEmail}</a>
+  </address>
+</Legal>
