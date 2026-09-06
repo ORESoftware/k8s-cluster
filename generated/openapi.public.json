@@ -1,0 +1,238 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "tor-server dashboard API (public)",
+    "description": "Executable dashboard, status, documentation, WebSocket, PAC, and bounded fetch contract. Route registration and OpenAPI collection share the same Axum handlers; sensitive operations use the same classifier as runtime TOR_UI_TOKEN enforcement.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getTorPublicApiReference",
+        "responses": {
+          "200": {
+            "description": "Interactive Scalar reference",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getTorPublicOpenApiDocumentAlias",
+        "responses": {
+          "200": {
+            "description": "Compatibility alias for the public OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {}
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "listTorDocumentation",
+        "responses": {
+          "200": {
+            "description": "Markdown documentation index",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getTorPublicApiReferenceAlias",
+        "responses": {
+          "200": {
+            "description": "Compatibility alias for the Scalar reference",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs/{name}": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getTorDocumentationPage",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "description": "Safe markdown document slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rendered markdown documentation",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid document slug",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Document not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getTorDashboardHealth",
+        "responses": {
+          "200": {
+            "description": "Dashboard process liveness",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getTorPublicOpenApiDocument",
+        "responses": {
+          "200": {
+            "description": "Fail-closed public OpenAPI 3.1 document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {}
+            }
+          }
+        }
+      }
+    },
+    "/proxy.pac": {
+      "get": {
+        "tags": [
+          "proxy"
+        ],
+        "operationId": "getTorProxyAutoConfig",
+        "responses": {
+          "200": {
+            "description": "Browser proxy auto-configuration",
+            "content": {
+              "application/x-ns-proxy-autoconfig": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vendor/{file}": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Serve vendored front-end assets from the binary. A strict allowlist (no path\ncomponent) means this cannot read anything but the files baked in here.",
+        "operationId": "getTorDashboardAsset",
+        "parameters": [
+          {
+            "name": "file",
+            "in": "path",
+            "description": "Allowlisted embedded asset name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Embedded dashboard asset",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Asset not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {},
+  "security": [],
+  "x-dd-contract-scope": "public"
+}

@@ -1,0 +1,24 @@
+# The relay directory the client routes through. Fill in each relay's base64
+# public key (from `tor-server keygen`). In-cluster the relays are reachable at
+# their Service DNS names on port 9001.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tor-directory
+  namespace: anon-proxy
+data:
+  directory.toml: |
+    [[relays]]
+    name = "relay-a"
+    addr = "tor-relay-a.anon-proxy.svc.cluster.local:9001"
+    pubkey = "REPLACE_WITH_BASE64_PUBKEY_A="
+
+    [[relays]]
+    name = "relay-b"
+    addr = "tor-relay-b.anon-proxy.svc.cluster.local:9001"
+    pubkey = "REPLACE_WITH_BASE64_PUBKEY_B="
+
+    [[relays]]
+    name = "relay-c"
+    addr = "tor-relay-c.anon-proxy.svc.cluster.local:9001"
+    pubkey = "REPLACE_WITH_BASE64_PUBKEY_C="
