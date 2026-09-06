@@ -1,0 +1,29 @@
+# DEN-606 — private administrator IAM web tier.
+#
+# INERT BY DEFAULT: this Application has no automated sync policy. Activation
+# requires the separate administrator realm, Cloudflare Access/private gateway,
+# dedicated service account and secret object, read-only database role, exact
+# trusted-network policy, and a non-sentinel immutable image digest.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-shared-auth-admin-web
+  namespace: argocd
+  annotations:
+    oresoftware.com/activation-state: inert
+    oresoftware.com/linear-issue: DEN-606
+    oresoftware.com/realm: admin
+spec:
+  project: shared-auth
+  source:
+    repoURL: git@github.com:shared-auth/shared-auth-admin-web-server.rs.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shared-auth
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+      - PruneLast=true
