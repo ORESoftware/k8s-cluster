@@ -1,55 +1,124 @@
 name: cluster e2e contracts
 
-# Runs the k8s-cluster-e2e contract suite (GitOps-boundary invariants: the
-# submodule render-trap ratchet, same-cluster Application identity, tenant
-# AppProject boundaries, observability lockstep, kustomize render sweep)
-# against THIS working tree on every change to the GitOps surface.
+# The public job is always substantive and credential-free. The private suite
+# is an additive signal rather than a token-gated replacement for verification.
 on:
   pull_request:
     paths:
       - "remote/argocd/**"
       - "remote/deployments/**"
+      - "scripts/ci/local-kind-smoke.sh"
+      - "tools/namespace_*.py"
+      - "catalog/namespaces/**"
+      - "artifacts/namespace-inventory.json"
       - ".gitmodules"
+      - ".github/workflows/cluster-e2e.yml"
   push:
     branches: [main, dev]
     paths:
       - "remote/argocd/**"
+      - "remote/deployments/**"
+      - "scripts/ci/local-kind-smoke.sh"
+      - "tools/namespace_*.py"
+      - "catalog/namespaces/**"
+      - "artifacts/namespace-inventory.json"
       - ".gitmodules"
+      - ".github/workflows/cluster-e2e.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: cluster-e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  contracts:
-    runs-on: ubuntu-latest
+  local-kind-smoke:
+    name: Credential-free local kind smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact repository tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up pinned kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        with:
+          version: v1.32.8
+
+      - name: Install pinned kind
+        shell: bash
+        env:
+          KIND_VERSION: v0.30.0
+          KIND_LINUX_AMD64_SHA256: 517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889
+        run: |
+          set -euo pipefail
+          curl -fsSLo "$RUNNER_TEMP/kind" \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          printf '%s  %s\n' \
+            "$KIND_LINUX_AMD64_SHA256" \
+            "$RUNNER_TEMP/kind" \
+            | sha256sum --check -
+          chmod +x "$RUNNER_TEMP/kind"
+          printf '%s\n' "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Run ownership-aware migration and Kubernetes API smoke
+        env:
+          KIND_CLUSTER_NAME: ores-k8s-ci
+          KIND_NODE_IMAGE: kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1
+        run: bash scripts/ci/local-kind-smoke.sh
+
+  private-contracts:
+    name: Private extended contracts
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: k8s-cluster
-      - name: Gate on e2e-repo read token
+          persist-credentials: false
+          submodules: false
+
+      - name: Gate on private e2e repository token
         id: gate
-        env: { TOKEN: "${{ secrets.K8S_SUBMODULE_TOKEN }}" }
+        env:
+          TOKEN: "${{ secrets.K8S_SUBMODULE_TOKEN }}"
         run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::notice::K8S_SUBMODULE_TOKEN not set — e2e contract run skipped"
+          set -euo pipefail
+          if [[ -z "$TOKEN" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Private extended contracts were not executed: K8S_SUBMODULE_TOKEN is unavailable." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Checkout k8s-cluster-e2e
+
+      - name: Check out private extended contracts
         if: steps.gate.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/k8s-cluster-e2e
           token: ${{ secrets.K8S_SUBMODULE_TOKEN }}
           path: k8s-cluster-e2e
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+          persist-credentials: false
+
+      - name: Set up Node
         if: steps.gate.outputs.skip != 'true'
-        with: { node-version: 22 }
-      - name: Run contract suite against this tree
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Run private contract suite against this tree
         if: steps.gate.outputs.skip != 'true'
         working-directory: k8s-cluster-e2e
         env:
           K8S_CLUSTER_DIR: ${{ github.workspace }}/k8s-cluster
         run: |
+          set -euo pipefail
           npm ci
           npm test
