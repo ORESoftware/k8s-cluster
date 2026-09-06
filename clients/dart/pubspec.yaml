@@ -1,0 +1,11 @@
+name: dd_rust_network_mutex_client
+description: Dart client for the rust-network-mutex-rs broker. Uses sealed classes for Request/Response so the discriminator is a true sum type.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.0
+
+dev_dependencies:
+  lints: ^5.1.0
+  test: ^1.25.0

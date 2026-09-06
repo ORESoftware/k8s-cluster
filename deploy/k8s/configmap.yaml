@@ -1,0 +1,49 @@
+# BrokerRaft config. node_id + advertise_addr come from env (LMX_RAFT_NODE_ID /
+# LMX_RAFT_ADVERTISE_ADDR = pod name / pod FQDN), so the only thing pinned here is
+# the voter set: raft.peers ids MUST equal the StatefulSet pod names, and addrs
+# MUST be the per-pod headless DNS in THIS namespace (live-mutex-rs).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: live-mutex-rs-raft-config
+data:
+  lmx.toml: |
+    [server]
+    bind_host = "0.0.0.0"
+    http_port = 6971
+    disable_tcp = true
+    disable_http = false
+
+    [broker]
+    default_ttl_ms = 4000
+    max_lock_holders = 1
+
+    [raft]
+    enabled = true
+    bind_addr = "0.0.0.0:7980"
+    data_dir = "/var/lib/dd-rust-network-mutex/raft"
+    data_dir_lock = true
+    max_inbound_rpc_connections = 1024
+    inbound_rpc_idle_timeout_ms = 30000
+    heartbeat_interval_ms = 50
+    election_timeout_min_ms = 150
+    election_timeout_max_ms = 300
+    snapshot_interval_ms = 1800000
+    trailing_log_entries = 10000
+    append_entries_max_entries = 256
+    append_entries_max_bytes = 1048576
+    append_entries_max_inline_batches = 64
+    install_snapshot_chunk_bytes = 1048576
+    sync_log = true
+
+    [[raft.peers]]
+    id = "live-mutex-rs-raft-0"
+    addr = "live-mutex-rs-raft-0.live-mutex-rs-raft-peers.live-mutex-rs.svc.cluster.local:7980"
+
+    [[raft.peers]]
+    id = "live-mutex-rs-raft-1"
+    addr = "live-mutex-rs-raft-1.live-mutex-rs-raft-peers.live-mutex-rs.svc.cluster.local:7980"
+
+    [[raft.peers]]
+    id = "live-mutex-rs-raft-2"
+    addr = "live-mutex-rs-raft-2.live-mutex-rs-raft-peers.live-mutex-rs.svc.cluster.local:7980"

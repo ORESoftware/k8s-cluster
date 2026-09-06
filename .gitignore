@@ -139,3 +139,21 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-6681a6e3a723-merge-remote-agent-den-1816-trusted-flag ---
+.cargo-cache/
+.vscode/
+*.log
+**/*.rs.bk
+clients/dart/.dart_tool/
+clients/dart/.packages
+clients/dart/pubspec.lock
+clients/gleam/build/
+clients/gleam/erl_crash.dump
+clients/go/cmd/smoke/smoke
+clients/go/go.sum.lock
+clients/ts/*.tsbuildinfo
+clients/ts/dist/
+clients/ts/node_modules/
+temp/worktrees
+tmp/worktrees

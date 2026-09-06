@@ -1,0 +1,117 @@
+# BrokerRaft StatefulSet (adapted from docs/k8s.md for local k3d):
+#  - image is the locally-built live-mutex-rs-raft:dev (imported into k3d)
+#  - readiness uses /healthz (NOT /raft/leaderz) so all nodes are Ready and the
+#    client Service round-robins; followers proxy client writes to the leader.
+#    This deliberately exercises the follower-proxy path. (Switch to /raft/leaderz
+#    if you instead want the client Service to route only to the fresh leader.)
+#  - per-pod durable raft data via volumeClaimTemplates (k3s local-path SC)
+#  - pod name == raft node_id == raft.peers id  (LMX_RAFT_NODE_ID=$(POD_NAME))
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: live-mutex-rs-raft
+  labels:
+    app: live-mutex-rs-raft
+spec:
+  serviceName: live-mutex-rs-raft-peers
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: live-mutex-rs-raft
+  template:
+    metadata:
+      labels:
+        app: live-mutex-rs-raft
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: live-mutex-rs-raft
+          image: live-mutex-rs-raft:dev
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: LMX_CONFIG
+              value: /etc/dd-rust-network-mutex/lmx.toml
+            - name: LMX_RAFT_NODE_ID
+              value: "$(POD_NAME)"
+            - name: LMX_RAFT_ADVERTISE_ADDR
+              value: "$(POD_NAME).live-mutex-rs-raft-peers.$(POD_NAMESPACE).svc.cluster.local:7980"
+            - name: LMX_RAFT_DATA_DIR
+              value: /var/lib/dd-rust-network-mutex/raft
+            - name: LMX_LOG_FORMAT
+              value: text
+            - name: RUST_LOG
+              value: info,lmx=info
+          ports:
+            - name: http
+              containerPort: 6971
+            - name: raft
+              containerPort: 7980
+          volumeMounts:
+            - name: config
+              mountPath: /etc/dd-rust-network-mutex
+              readOnly: true
+            - name: raft-data
+              mountPath: /var/lib/dd-rust-network-mutex/raft
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: live-mutex-rs-raft-config
+  volumeClaimTemplates:
+    - metadata:
+        name: raft-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
