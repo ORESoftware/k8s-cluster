@@ -118,8 +118,9 @@ jobs:
         run: |
           set -euo pipefail
           docker build \
+            --file remote/deployments/benefactor-orchestrator/Dockerfile \
             --tag benefactor-orchestrator:den-2786 \
-            remote/deployments/benefactor-orchestrator
+            .
 
       - name: Set up Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
