@@ -1,6 +1,9 @@
 """Assemble per-repository co-living bootstrap files."""
 from __future__ import annotations
 import json
+import shutil
+import subprocess
+import tempfile
 import textwrap
 from coliving_repository_specs import RepoSpec
 from coliving_bootstrap_common import (
@@ -10,6 +13,29 @@ from coliving_rust_templates import (
     rust_cli, rust_integrations, rust_mcp, rust_public_core, rust_sidecar, rust_web, rust_worker,
 )
 from coliving_test_templates import python_reference_model, python_tests
+
+
+
+def format_rust_sources(files: dict[str, str]) -> None:
+    """Format generated Rust with the installed, workflow-pinned rustfmt."""
+    rustfmt = shutil.which("rustfmt")
+    if rustfmt is None:
+        return
+    for relative in sorted(path for path in files if path.endswith(".rs")):
+        with tempfile.TemporaryDirectory(prefix="coliving-rustfmt-") as temporary:
+            path = Path(temporary) / Path(relative).name
+            path.write_text(files[relative], encoding="utf-8")
+            completed = subprocess.run(
+                [rustfmt, "--edition", "2021", str(path)],
+                text=True,
+                capture_output=True,
+            )
+            if completed.returncode != 0:
+                raise RuntimeError(
+                    f"rustfmt failed for {relative}: {completed.stderr or completed.stdout}"
+                )
+            files[relative] = path.read_text(encoding="utf-8")
+
 
 def docs_files() -> dict[str, str]:
     return {
@@ -121,8 +147,11 @@ def bootstrap_files(spec: RepoSpec) -> dict[str, str]:
     else:
         raise AssertionError(f"unknown repository kind: {spec.kind}")
 
+    format_rust_sources(files)
+
     required = list(files)
     required.extend(["scripts/verify_repository.py", ".github/workflows/ci.yml"])
     files["scripts/verify_repository.py"] = verifier_py(spec, required)
     files[".github/workflows/ci.yml"] = ci_workflow(spec)
     return dict(sorted(files.items()))
+
