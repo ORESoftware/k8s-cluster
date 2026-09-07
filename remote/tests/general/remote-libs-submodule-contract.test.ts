@@ -80,9 +80,11 @@ test('remote/libs and its nested dependency are initialized at their pinned comm
     ['async-java'],
     'remote/libs should contain exactly its pinned async-java submodule.',
   );
+  const asyncJavaGitlink = nestedGitlinks[0];
+  assert.ok(asyncJavaGitlink, 'remote/libs must expose the async-java gitlink.');
   assert.equal(
     runGit(repoRoot, ['-C', `${LIBS_PATH}/async-java`, 'rev-parse', 'HEAD']),
-    nestedGitlinks[0].sha,
+    asyncJavaGitlink.sha,
     'remote/libs/async-java checkout must match the nested gitlink.',
   );
 });
@@ -172,7 +174,10 @@ test('CI and repository documentation preserve recursive pinned checkout semanti
   assert.match(checkoutAction, /path: remote\/libs/);
   assert.match(checkoutAction, /ssh-key: \$\{\{ inputs\.ssh-key \}\}/);
   assert.match(checkoutAction, /persist-credentials: false/);
-  assert.match(checkoutAction, /submodules: recursive/);
+  assert.doesNotMatch(checkoutAction, /submodules:\s*(?:true|recursive)/);
+  assert.match(checkoutAction, /EXPECTED_ASYNC_JAVA_URL: https:\/\/github\.com\/async-java\/async\.java\.git/);
+  assert.match(checkoutAction, /GIT_SSH_COMMAND: \/bin\/false/);
+  assert.match(checkoutAction, /submodule update --init --depth 1 -- async-java/);
   assert.match(checkoutAction, /git -C remote\/libs rev-parse HEAD/);
   assert.match(checkoutAction, /git -C remote\/libs ls-files --stage -- async-java/);
   assert.match(checkoutAction, /git -C remote\/libs\/async-java rev-parse HEAD/);
