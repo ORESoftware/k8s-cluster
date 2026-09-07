@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
+from pathlib import Path
 from coliving_repository_specs import RepoSpec
 from coliving_bootstrap_common import (
     agents_md, cargo_toml, ci_workflow, project_json, repository_readme, verifier_py, zpkg_toml,
