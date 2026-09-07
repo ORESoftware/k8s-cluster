@@ -3,14 +3,10 @@ use gha_clone_server::credentials::TokenSource;
 #[test]
 fn public_token_source_validates_reads_and_redacts_inline_tokens() {
     let token = "example_installation_token_value_123456";
-    let source = TokenSource::from_values(
-        Some(token.to_string()),
-        None,
-        "INLINE_TOKEN",
-        "TOKEN_FILE",
-    )
-    .expect("valid token source")
-    .expect("configured token source");
+    let source =
+        TokenSource::from_values(Some(token.to_string()), None, "INLINE_TOKEN", "TOKEN_FILE")
+            .expect("valid token source")
+            .expect("configured token source");
 
     assert_eq!(source.kind(), "environment");
     assert_eq!(source.read().expect("read token"), token);
