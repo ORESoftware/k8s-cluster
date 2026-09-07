@@ -190,7 +190,7 @@ def verifier_py(spec: RepoSpec, required: list[str]) -> str:
                 raise SystemExit(f"credential-shaped source: {{path.relative_to(ROOT)}}")
 
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        if "permissions:\n  contents: read" not in workflow or "pull_request_target" in workflow:
+        if "permissions:\\n  contents: read" not in workflow or "pull_request_target" in workflow:
             raise SystemExit("unsafe workflow permission boundary")
         action_pattern = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{{40}}$")
         actions = [line.split("uses:", 1)[1].strip() for line in workflow.splitlines() if "uses:" in line]
@@ -266,4 +266,5 @@ def ci_workflow(spec: RepoSpec) -> str:
             ]
         )
     return "\n".join(lines) + "\n"
+
 
