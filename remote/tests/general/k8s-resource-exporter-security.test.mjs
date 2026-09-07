@@ -7,7 +7,7 @@ const manifestPath = new URL(
   import.meta.url,
 );
 
-async function exporterContainer(): Promise<string> {
+async function exporterContainer() {
   const manifest = await readFile(manifestPath, 'utf8');
   const start = manifest.indexOf('        - name: exporter\n');
   assert.notEqual(start, -1, 'resource exporter container is missing');
