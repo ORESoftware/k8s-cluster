@@ -1,0 +1,75 @@
+name: DEN-1950 one-shot trailing whitespace normalizer
+
+on:
+  push:
+    branches:
+      - agent/den-1950-expand-coliving-repository-fleet
+    paths:
+      - .github/workflows/den-1950-one-shot-format.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1950-one-shot-format
+  cancel-in-progress: false
+
+jobs:
+  normalize:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact co-living branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1950-expand-coliving-repository-fleet
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Normalize only the known Python files and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          files = (
+              Path('scripts/ops/coliving_bootstrap.py'),
+              Path('scripts/ops/coliving_bootstrap_common.py'),
+              Path('scripts/ops/coliving_rust_templates.py'),
+              Path('scripts/ops/coliving_test_templates.py'),
+          )
+          for path in files:
+              contents = path.read_text(encoding='utf-8')
+              path.write_text(contents.rstrip('\n') + '\n', encoding='utf-8')
+          Path('.github/workflows/den-1950-one-shot-format.yml').unlink()
+          PY
+
+      - name: Verify normalized sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/coliving_bootstrap.py \
+            scripts/ops/coliving_bootstrap_common.py \
+            scripts/ops/coliving_rust_templates.py \
+            scripts/ops/coliving_test_templates.py
+          git diff --check
+          git diff --exit-code -- . ':!scripts/ops/coliving_bootstrap.py' ':!scripts/ops/coliving_bootstrap_common.py' ':!scripts/ops/coliving_rust_templates.py' ':!scripts/ops/coliving_test_templates.py' ':!.github/workflows/den-1950-one-shot-format.yml'
+
+      - name: Commit the deterministic formatting fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/ops/coliving_bootstrap.py \
+            scripts/ops/coliving_bootstrap_common.py \
+            scripts/ops/coliving_rust_templates.py \
+            scripts/ops/coliving_test_templates.py \
+            .github/workflows/den-1950-one-shot-format.yml
+          git diff --cached --check
+          git commit -m 'style(DEN-1950): trim trailing blank lines'
+          git push origin HEAD:agent/den-1950-expand-coliving-repository-fleet
