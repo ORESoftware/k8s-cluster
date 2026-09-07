@@ -13,6 +13,7 @@ on:
       - 'docs/operations/local-kind-namespace-smoke.md'
       - 'remote/argocd/observability/**'
       - 'remote/deployments/benefactor-orchestrator/**'
+      - 'remote/tests/general/k8s-resource-exporter-security.test.mjs'
       - 'remote/tools/check-observability-coverage.mjs'
   workflow_dispatch:
 
@@ -107,6 +108,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Verify resource exporter restricted pod security
+        run: node --test remote/tests/general/k8s-resource-exporter-security.test.mjs
+
       - name: Verify explicit runtime on Node 22
         working-directory: remote/deployments/benefactor-orchestrator
         run: |
@@ -161,6 +165,7 @@ jobs:
             echo '- kind v0.30.0 with Kubernetes v1.32.8, one control-plane and one worker: passed'
             echo '- exact-tree namespace inventory/manifest parity and migration contracts: passed'
             echo '- Kubernetes admission plus positive/negative RBAC authorization: passed'
+            echo '- resource exporter restricted non-root and read-only security contract: passed'
             echo '- benefactor runtime tests on Node 22 and Node 24: passed'
             echo '- hardened benefactor Docker image build: passed'
             echo '- observability no-global-wrapper policy: passed'
