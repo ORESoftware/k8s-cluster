@@ -164,4 +164,3 @@ def python_tests(spec: RepoSpec) -> str:
         ])
     lines.extend(["", "", 'if __name__ == "__main__":', "    unittest.main()", ""])
     return "\n".join(lines)
-

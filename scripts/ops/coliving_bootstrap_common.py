@@ -266,5 +266,3 @@ def ci_workflow(spec: RepoSpec) -> str:
             ]
         )
     return "\n".join(lines) + "\n"
-
-

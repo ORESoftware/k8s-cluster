@@ -155,4 +155,3 @@ def bootstrap_files(spec: RepoSpec) -> dict[str, str]:
     files["scripts/verify_repository.py"] = verifier_py(spec, required)
     files[".github/workflows/ci.yml"] = ci_workflow(spec)
     return dict(sorted(files.items()))
-

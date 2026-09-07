@@ -371,4 +371,3 @@ def rust_cli() -> str:
         }
         """
     )
-
