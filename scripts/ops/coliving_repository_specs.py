@@ -1,5 +1,7 @@
 """Allowlisted co-living repository topology."""
 from __future__ import annotations
+
+from collections import Counter
 from dataclasses import dataclass
 from typing import Mapping
 
@@ -8,6 +10,22 @@ BRANCH = "agent/den-1950-bootstrap-coliving-v1"
 CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
 SETUP_PYTHON_SHA = "ece7cb06caefa5fff74198d8649806c4678c61a1"
 RUST_TOOLCHAIN_SHA = "4360b52568e2003a75bf9bc1d59f33a8e3fc893c"
+ALLOWED_KINDS = frozenset(
+    {
+        "assets",
+        "cli",
+        "docs",
+        "integrations",
+        "mcp",
+        "org-meta",
+        "public-core",
+        "sidecar",
+        "test",
+        "web",
+        "worker",
+    }
+)
+
 
 @dataclass(frozen=True)
 class RepoSpec:
@@ -67,3 +85,57 @@ EXPECTED_COUNTS: Mapping[str, int] = {
     "hhaus-org-test": 11,
     "hacker-house-medellin-test": 7,
 }
+
+
+def validate_topology() -> None:
+    """Reject topology drift before any GitHub mutation can begin."""
+    expected_total = sum(EXPECTED_COUNTS.values())
+    if len(SPECS) != expected_total:
+        raise RuntimeError(
+            f"co-living topology size mismatch: expected {expected_total}, found {len(SPECS)}"
+        )
+
+    full_names = [spec.full_name for spec in SPECS]
+    duplicates = sorted(
+        full_name for full_name, count in Counter(full_names).items() if count > 1
+    )
+    if duplicates:
+        raise RuntimeError(f"duplicate co-living repositories: {duplicates!r}")
+
+    observed_counts = Counter(spec.org for spec in SPECS)
+    if dict(observed_counts) != dict(EXPECTED_COUNTS):
+        raise RuntimeError(
+            "co-living organization counts differ from the reviewed allowlist: "
+            f"expected={dict(EXPECTED_COUNTS)!r} observed={dict(observed_counts)!r}"
+        )
+
+    invalid_kinds = sorted(
+        f"{spec.full_name}:{spec.kind}" for spec in SPECS if spec.kind not in ALLOWED_KINDS
+    )
+    if invalid_kinds:
+        raise RuntimeError(f"unsupported co-living repository kinds: {invalid_kinds!r}")
+
+    invalid_metadata = sorted(
+        spec.full_name
+        for spec in SPECS
+        if not spec.org.strip()
+        or not spec.name.strip()
+        or not spec.description.strip()
+        or ((spec.name == ".github") != (spec.kind == "org-meta"))
+    )
+    if invalid_metadata:
+        raise RuntimeError(f"invalid co-living repository metadata: {invalid_metadata!r}")
+
+    invalid_shadow_kinds = sorted(
+        spec.full_name
+        for spec in SPECS
+        if spec.org.endswith("-test") and spec.kind not in {"org-meta", "test"}
+    )
+    if invalid_shadow_kinds:
+        raise RuntimeError(
+            "shadow organizations may contain only test or organization metadata repos: "
+            f"{invalid_shadow_kinds!r}"
+        )
+
+
+validate_topology()
