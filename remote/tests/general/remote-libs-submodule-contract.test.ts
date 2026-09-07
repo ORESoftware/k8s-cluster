@@ -60,21 +60,30 @@ test('remote/libs is the canonical main-branch git submodule', () => {
 
 test('remote/libs and its nested dependency are initialized at their pinned commits', () => {
   const repoRoot = findRepoRoot();
-  const statuses = runGit(repoRoot, ['submodule', 'status', '--recursive', LIBS_PATH]).split('\n');
-  const paths = statuses.map((status) => {
-    const match = status.match(/^([ +\-U]?)([0-9a-f]{40}) (\S+)/);
-    assert.ok(match, `Submodule is absent or does not match its pin: ${status}`);
-    assert.ok(
-      match[1] === '' || match[1] === ' ',
-      `Submodule is absent or does not match its pin: ${status}`,
-    );
-    return match[3];
-  });
+  const topLevelGitlink = runGit(repoRoot, ['ls-files', '--stage', '--', LIBS_PATH]);
+  const topLevelMatch = topLevelGitlink.match(/^160000 ([0-9a-f]{40}) 0\tremote\/libs$/);
+  assert.ok(topLevelMatch, 'remote/libs must resolve to one mode-160000 gitlink.');
+  assert.equal(
+    runGit(repoRoot, ['-C', LIBS_PATH, 'rev-parse', 'HEAD']),
+    topLevelMatch[1],
+    'remote/libs checkout must match the superproject gitlink.',
+  );
 
+  const nestedGitlinks = runGit(repoRoot, ['-C', LIBS_PATH, 'ls-files', '--stage'])
+    .split('\n')
+    .flatMap((line) => {
+      const match = line.match(/^160000 ([0-9a-f]{40}) 0\t(.+)$/);
+      return match ? [{ sha: match[1], path: match[2] }] : [];
+    });
   assert.deepEqual(
-    paths,
-    [LIBS_PATH, `${LIBS_PATH}/async-java`],
+    nestedGitlinks.map(({ path }) => path),
+    ['async-java'],
     'remote/libs should contain exactly its pinned async-java submodule.',
+  );
+  assert.equal(
+    runGit(repoRoot, ['-C', `${LIBS_PATH}/async-java`, 'rev-parse', 'HEAD']),
+    nestedGitlinks[0].sha,
+    'remote/libs/async-java checkout must match the nested gitlink.',
   );
 });
 
@@ -163,7 +172,10 @@ test('CI and repository documentation preserve recursive pinned checkout semanti
   assert.match(checkoutAction, /path: remote\/libs/);
   assert.match(checkoutAction, /ssh-key: \$\{\{ inputs\.ssh-key \}\}/);
   assert.match(checkoutAction, /persist-credentials: false/);
+  assert.match(checkoutAction, /submodules: recursive/);
   assert.match(checkoutAction, /git -C remote\/libs rev-parse HEAD/);
+  assert.match(checkoutAction, /git -C remote\/libs ls-files --stage -- async-java/);
+  assert.match(checkoutAction, /git -C remote\/libs\/async-java rev-parse HEAD/);
 
   assert.match(
     helper,
