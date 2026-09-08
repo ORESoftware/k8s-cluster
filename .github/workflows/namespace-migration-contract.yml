@@ -90,6 +90,15 @@ jobs:
             tools/namespace_manifest.py \
             tools/test_namespace_manifest.py
 
+      - name: Render deterministic manifest candidate for diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          python3 tools/namespace_manifest.py render \
+            --root . \
+            > artifacts/namespace-migration-manifest.generated.json
+
       - name: Run classifier and manifest adversarial tests
         run: |
           python3 tools/test_namespace_migration.py
@@ -188,6 +197,7 @@ jobs:
           name: namespace-migration-evidence
           path: |
             artifacts/namespace-source-ref.json
+            artifacts/namespace-migration-manifest.generated.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
             artifacts/namespace-manifest-report.json
