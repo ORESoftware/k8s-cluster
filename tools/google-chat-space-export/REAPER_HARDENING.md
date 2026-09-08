@@ -21,7 +21,9 @@ privacy-preserving materialization stage.
    prevention.
 4. Materialize each candidate:
    - non-actionable candidates are excluded without external mutation;
-   - ambiguous or sensitive candidates receive a durable review issue and are
+   - privacy-bearing, credential-bearing, context-only, unsafe, or deceptive
+     review candidates are excluded before any Linear or GitHub mutation;
+   - other ambiguous candidates receive one durable review issue and are
      quarantined from automated completion;
    - actionable candidates reuse an exact issue or create one canonical child
      issue under `DEN-3473`;
@@ -52,11 +54,32 @@ Source message identifiers are persisted only as SHA-256 digests in Linear.
 Message bodies, sender identities, contact values, credentials, and
 secret-bearing URLs are never included.
 
+## Review disposition gate
+
+Manual-review candidates are classified before `ensureLinearIssue` runs. The
+classification is deliberately narrow and deterministic:
+
+- `privacy_sensitive`: the sanitized title proves that a secret, email address,
+  or phone number was present;
+- `context_only`: the item is only an agent/thread coordination instruction or
+  a prompt preamble, not standalone product work;
+- `unsafe_or_deceptive`: the item requests evasion or misrepresentation in the
+  currently recognized high-risk prompt families;
+- `requires_human_review`: the request is ambiguous but still plausibly valid
+  engineering work, so exactly one quarantined Linear owner is permitted.
+
+Excluded candidates retain their content-free candidate key and reason code in
+the private evidence and public summary counts, but they do not create a Linear
+issue and they do not trigger a GitHub evidence search. Existing false-positive
+review shells should be canceled or linked as duplicates without deleting their
+content-free provenance.
+
 ## Evidence semantics
 
-- **Excluded**: non-actionable after sanitization.
-- **Quarantined**: ambiguous or sensitive; a human-review owner exists, but the
-  item cannot be completed automatically.
+- **Excluded**: non-actionable or rejected by the pre-mutation review disposition
+  gate.
+- **Quarantined**: ambiguous but plausibly valid engineering work; a human-review
+  owner exists, but the item cannot be completed automatically.
 - **Covered**: one canonical Linear owner plus an open/merged implementation PR
   or a verified default-branch commit.
 - **Gap**: a valid engineering item has Linear ownership but no independently
@@ -93,6 +116,9 @@ Optional environment controls:
 5. Keep `DEN-3473` in progress until the exact-window receipt is complete.
 6. For remaining implementation gaps, work from the canonical Linear owners and
    rerun the workflow; it will reuse them instead of creating duplicates.
+7. Reconcile legacy review shells by linking exact duplicates to their canonical
+   owner and canceling privacy-sensitive, context-only, unsafe, or deceptive
+   false positives; never paste their source bodies into comments.
 
 A live run is never inferred from configuration or tests. Only a current
 workflow receipt is operational evidence.
