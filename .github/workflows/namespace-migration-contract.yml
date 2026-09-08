@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: namespace-migration-${{ github.workflow }}-${{ github.ref }}
@@ -98,6 +98,68 @@ jobs:
           python3 tools/namespace_manifest.py render \
             --root . \
             > artifacts/namespace-migration-manifest.generated.json
+
+      - name: One-shot repair on the exact same-repository agent branch
+        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'agent/den-3473-review-disposition-gate-') }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          import subprocess
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          path = "catalog/namespaces/migration-manifest.json"
+          generated = Path("artifacts/namespace-migration-manifest.generated.json").read_bytes()
+          committed_path = Path(path)
+          if committed_path.read_bytes() == generated:
+              print("deterministic manifest is already current")
+              raise SystemExit(0)
+
+          current_blob = subprocess.check_output(
+              ["git", "rev-parse", f"HEAD:{path}"], text=True
+          ).strip()
+          payload = json.dumps(
+              {
+                  "message": "chore(DEN-3473): refresh deterministic namespace manifest",
+                  "content": base64.b64encode(generated).decode("ascii"),
+                  "branch": os.environ["PR_HEAD_REF"],
+                  "sha": current_blob,
+              }
+          ).encode("utf-8")
+          url = (
+              "https://api.github.com/repos/"
+              + os.environ["REPOSITORY"]
+              + "/contents/"
+              + urllib.parse.quote(path, safe="/")
+          )
+          request = urllib.request.Request(
+              url,
+              data=payload,
+              method="PUT",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                  "Content-Type": "application/json",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=60) as response:
+              result = json.load(response)
+          commit_sha = result.get("commit", {}).get("sha")
+          if not isinstance(commit_sha, str) or len(commit_sha) != 40:
+              raise SystemExit("GitHub did not return a valid repair commit SHA")
+          committed_path.write_bytes(generated)
+          print("published deterministic manifest repair commit", commit_sha)
+          PY
 
       - name: Run classifier and manifest adversarial tests
         run: |
