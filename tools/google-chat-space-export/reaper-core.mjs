@@ -18,6 +18,29 @@ import {
 const DEFAULT_MAX_CREATES = 25;
 const MAX_EVIDENCE_REFERENCES = 16;
 
+const REVIEW_EXCLUSION_RULES = Object.freeze([
+  {
+    reasonCode: 'privacy_sensitive',
+    pattern: /\[REDACTED_(?:EMAIL|PHONE|SECRET)\]/,
+  },
+  {
+    reasonCode: 'unsafe_or_deceptive',
+    pattern: /(?:\b(?:bypass|evade)\b.{0,160}\b(?:immigration|visa|border|customs)\b|\b(?:immigration|visa|border|customs)\b.{0,160}\b(?:bypass|evade)\b)/i,
+  },
+  {
+    reasonCode: 'unsafe_or_deceptive',
+    pattern: /\bremote\b.{0,160}\b(?:pretend|spoof|misrepresent)\b/i,
+  },
+  {
+    reasonCode: 'context_only',
+    pattern: /^(?:ok[, ]+)?coordinate with (?:the )?(?:other )?(?:(?:claude|chatgpt)\s+)?(?:agents?|threads?)(?:\b|$)/i,
+  },
+  {
+    reasonCode: 'context_only',
+    pattern: /^(?:the )?original prompt was\s*:?\s*$/i,
+  },
+]);
+
 function candidateExistingIdentifiers(candidate) {
   const identifiers = [];
   for (const item of candidate.exactExistingIssues || []) {
@@ -28,6 +51,17 @@ function candidateExistingIdentifiers(candidate) {
 
 function reviewCandidate(candidate) {
   return candidate.action === 'manual-review' || titleNeedsReview(safeIssueTitle(candidate.title));
+}
+
+export function classifyReviewDisposition(candidate) {
+  assertPlainObject(candidate, 'candidate');
+  const title = safeIssueTitle(candidate.title);
+  for (const rule of REVIEW_EXCLUSION_RULES) {
+    if (rule.pattern.test(title)) {
+      return { disposition: 'excluded', reasonCode: rule.reasonCode };
+    }
+  }
+  return { disposition: 'quarantined', reasonCode: 'requires_human_review' };
 }
 
 function linkedPullRequestReferences(issue) {
@@ -137,14 +171,21 @@ export async function materializePlan(plan, dependencies, options = {}) {
     }
 
     const review = reviewCandidate(candidate);
+    const reviewDisposition = review ? classifyReviewDisposition(candidate) : null;
+    if (reviewDisposition?.disposition === 'excluded') {
+      entries.push({ candidateKey: candidate.candidateKey, ...reviewDisposition });
+      operations.push({
+        candidateKey: candidate.candidateKey,
+        operation: 'excluded',
+        reasonCode: reviewDisposition.reasonCode,
+      });
+      continue;
+    }
+
     const { issue, operation } = await ensureLinearIssue(candidate, context, review);
     operations.push({ candidateKey: candidate.candidateKey, operation, linearIssue: issue.identifier });
     if (review) {
-      entries.push({
-        candidateKey: candidate.candidateKey,
-        disposition: 'quarantined',
-        reasonCode: 'requires_human_review',
-      });
+      entries.push({ candidateKey: candidate.candidateKey, ...reviewDisposition });
       continue;
     }
 
