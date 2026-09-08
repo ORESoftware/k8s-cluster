@@ -13,6 +13,7 @@ CONTROL_FILES = {
     ".github/workflows/repo-checks.yml",
     "scripts/ci/classify_repo_check_scope.py",
     "scripts/ci/test_classify_repo_check_scope.py",
+    "scripts/ci/test_google_chat_reaper_scope.py",
 }
 
 GOVERNANCE_FILES = {
@@ -86,6 +87,9 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     "remote/tests/ui/lib/live-targets.mjs",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
+    "tools/google-chat-space-export/REAPER_HARDENING.md",
+    "tools/google-chat-space-export/reaper-core.mjs",
+    "tools/google-chat-space-export/test/reaper-review-disposition.test.mjs",
     "tools/google-chat-space-export/test_relay_workflows.py",
     "tools/test_namespace_manifest.py",
 }
