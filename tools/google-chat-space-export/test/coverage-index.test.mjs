@@ -22,7 +22,11 @@ test('parses filed and unfiled legacy rows without creating issues', () => {
 test('does not silently discard malformed legacy requirement rows', () => assert.equal(parseLegacyTables([{ body: '| `BAD-ROW` | text | `unknown` | 1 |' }]).errors.length, 1));
 test('reports contradictory legacy ownership', () => assert.equal(parseLegacyTables([{ body: '| `SAME` | text | `a/b` | 1 |\n| `SAME` | text | `c/d` | 2 |' }]).errors.length, 1));
 test('redacts token-shaped and personal data from titles', () => {
-  const title = safeTitle('test@example.invalid ghp_abcdefghijklmnopqrstuvwxyz1234567890 +1 (555) 555-0101');
+  // Generate an unmistakably synthetic value; keep the real secret scan enabled.
+  const syntheticToken = `ghp_${'x'.repeat(36)}`;
+  assert.match(syntheticToken, /^ghp_[a-z]{36}$/);
+  const title = safeTitle(`test@example.invalid ${syntheticToken} +1 (555) 555-0101`);
+  assert.equal(title, '[redacted] [redacted] [redacted]');
   assert.ok(!title.includes('@'));
   assert.ok(!title.includes('ghp_'));
   assert.ok(!title.includes('555'));
