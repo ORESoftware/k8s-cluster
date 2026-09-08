@@ -90,11 +90,17 @@ jobs:
             tools/namespace_manifest.py \
             tools/test_namespace_manifest.py
 
+      - name: Generate exact-head inventory before deriving the manifest
+        run: |
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+
       - name: Render deterministic manifest candidate for diagnostics
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p artifacts
           python3 tools/namespace_manifest.py render \
             --root . \
             > artifacts/namespace-migration-manifest.generated.json
@@ -110,13 +116,6 @@ jobs:
             --root . \
             --format json \
             > artifacts/namespace-contract-report.json
-
-      - name: Generate complete read-only inventory
-        run: |
-          python3 tools/namespace_migration.py inventory \
-            --root . \
-            --format json \
-            > artifacts/namespace-inventory.json
 
       - name: Validate deterministic plaintext migration manifest
         shell: bash
