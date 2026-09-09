@@ -78,6 +78,7 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     ".github/workflows/github-app-submodule-auth.yml",
     ".github/workflows/namespace-migration-contract.yml",
     ".github/workflows/repo-check-scope-contract.yml",
+    "catalog/applications.json",
     "catalog/namespaces/migration-manifest.json",
     "config/ci/k8s-submodule-github-app-allowlist.json",
     "remote/tests/general/browser-mcp-public-e2e.test.ts",
