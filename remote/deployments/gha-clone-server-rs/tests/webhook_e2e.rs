@@ -29,7 +29,7 @@ use tokio::{
 const SERVER_BINARY: &str = env!("CARGO_BIN_EXE_gha-clone-server");
 const AUTH_SECRET: &str = "test-server-auth";
 const WEBHOOK_SECRET: &str = "test-webhook-secret";
-const GITHUB_TOKEN: &str = "test-github-token";
+const GITHUB_TOKEN: &str = "test-github-token-000000";
 const BUILD_AUTH: &str = "test-build-auth";
 const REPOSITORY: &str = "owner/repo";
 const REVISION: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -547,7 +547,7 @@ async fn failed_workflow_fetches_exact_sha_dispatches_once_and_deduplicates() {
     );
     assert_eq!(
         github_requests[0].authorization.as_deref(),
-        Some("Bearer test-github-token")
+        Some("Bearer test-github-token-000000")
     );
 
     let submissions = build.state.submissions.lock().await.clone();
