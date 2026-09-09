@@ -152,7 +152,7 @@
     },
     {
       "column": 25,
-      "line": 213,
+      "line": 317,
       "owner": "ores",
       "path": ".github/workflows/ops-bootstrap-k8s-submodule-app-secrets.yml",
       "reference": "dd/remote-dev/agent-secrets",
