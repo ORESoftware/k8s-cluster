@@ -30,7 +30,7 @@ env:
   BUILDX_VERSION: v0.37.0
   RUNNER_PATH: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
   RUNNER_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_repository || 'scintilla-run/gleam-lambda-runner' }}
-  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || 'fdb818fbd20ca6535d2915c50825dd87ba52d60f' }}
+  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '95014de1c5fe799a8c313e20eff8c40dba88d32b' }}
 
 jobs:
   build-and-benchmark:
@@ -45,18 +45,20 @@ jobs:
             platform: linux/amd64
             runner: ubuntu-24.04
             runner_machine: x86_64
-            dockerfile: Dockerfile.x86_64.dkf
+            compatibility_dockerfile: Dockerfile.x86-64.dkf
+            lean_dockerfile: runtime-images/control-plane-lean-amd64.Dockerfile
             iterations: 7
             startup_timeout_ms: 60000
           - arch: arm64
             platform: linux/arm64
             runner: ubuntu-24.04-arm
             runner_machine: aarch64
-            dockerfile: Dockerfile.arm64.dkf
+            compatibility_dockerfile: Dockerfile.arm64.dkf
+            lean_dockerfile: runtime-images/control-plane-lean-arm64.Dockerfile
             iterations: 7
             startup_timeout_ms: 60000
     env:
-      LEGACY_IMAGE: scintilla-legacy:${{ matrix.arch }}-${{ github.run_id }}
+      COMPATIBILITY_IMAGE: scintilla-compatibility:${{ matrix.arch }}-${{ github.run_id }}
       LEAN_IMAGE: scintilla-lean:${{ matrix.arch }}-${{ github.run_id }}
 
     steps:
@@ -65,6 +67,7 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
+          submodules: false
 
       - name: Verify native runner architecture
         shell: bash
@@ -78,7 +81,36 @@ jobs:
           docker version
           node --version
 
-      - name: Mint a repository-restricted Scintilla checkout token
+      - name: Resolve the immutable shared-library and monorepo gitlinks
+        id: pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          libs_sha="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          monorepo_sha="$(git ls-files --stage -- remote/deployments/scintilla-run-monorepo | awk '$1 == 160000 { print $2; exit }')"
+          for pair in "libs:$libs_sha" "monorepo:$monorepo_sha"; do
+            name="${pair%%:*}"
+            sha="${pair#*:}"
+            if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "$name does not resolve to one mode-160000 gitlink" >&2
+              exit 1
+            fi
+          done
+          printf 'libs_sha=%s\n' "$libs_sha" >> "$GITHUB_OUTPUT"
+          printf 'monorepo_sha=%s\n' "$monorepo_sha" >> "$GITHUB_OUTPUT"
+          mkdir -p remote remote/deployments/scintilla-run-monorepo/apps
+
+      - name: Mint a repository-restricted shared-libraries token
+        id: libs-app-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: ORESoftware
+          repositories: k8s-libs-and-shared-defs
+          permission-contents: read
+
+      - name: Mint a repository-restricted Scintilla token
         id: scintilla-app-token
         uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
         with:
@@ -88,26 +120,17 @@ jobs:
           repositories: gleam-lambda-runner
           permission-contents: read
 
-      - name: Check out pinned private remote libraries with the narrow deploy key
-        id: remote-libs
-        uses: ./.github/actions/checkout-remote-libs
+      - name: Check out the exact pinned shared-library tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.pins.outputs.libs_sha }}
+          path: remote/libs
+          fetch-depth: 1
+          persist-credentials: false
+          token: ${{ steps.libs-app-token.outputs.token }}
 
-      - name: Resolve and retain the pinned Scintilla monorepo provenance
-        id: monorepo-pin
-        shell: bash
-        run: |
-          set -euo pipefail
-          pin="$(git ls-files --stage -- remote/deployments/scintilla-run-monorepo | awk '$1 == 160000 { print $2; exit }')"
-          if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
-            echo 'Scintilla monorepo does not resolve to one mode-160000 gitlink.' >&2
-            exit 1
-          fi
-          printf 'sha=%s\n' "$pin" >> "$GITHUB_OUTPUT"
-          mkdir -p remote/deployments/scintilla-run-monorepo/apps
-
-      - name: Overlay the candidate runner at its canonical nested path
+      - name: Overlay the exact candidate runner at its canonical nested path
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.RUNNER_REPOSITORY }}
@@ -117,11 +140,11 @@ jobs:
           persist-credentials: false
           token: ${{ steps.scintilla-app-token.outputs.token }}
 
-      - name: Verify every authoritative source revision
+      - name: Verify every authoritative source revision and contract gate
         shell: bash
         env:
-          EXPECTED_LIBS_SHA: ${{ steps.remote-libs.outputs.sha }}
-          EXPECTED_MONOREPO_SHA: ${{ steps.monorepo-pin.outputs.sha }}
+          EXPECTED_LIBS_SHA: ${{ steps.pins.outputs.libs_sha }}
+          EXPECTED_MONOREPO_SHA: ${{ steps.pins.outputs.monorepo_sha }}
         run: |
           set -euo pipefail
           test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_LIBS_SHA"
@@ -132,6 +155,11 @@ jobs:
             echo "candidate runner resolved to $candidate instead of $RUNNER_REF" >&2
             exit 1
           fi
+          grep -qF \
+            'ORESoftware/typespec-json-schema-validator@03ccc0ecdfc70f9198c3ccf80718910961d3fde1' \
+            "$RUNNER_PATH/.github/workflows/runtime-wire-contract.yml"
+          test -f "$RUNNER_PATH/contracts/runtime-wire/main.tsp"
+          test -f "$RUNNER_PATH/contracts/runtime-wire/authored.schema.json"
           printf 'remote/libs=%s\nmonorepo-gitlink=%s\nrunner=%s\n' \
             "$EXPECTED_LIBS_SHA" "$EXPECTED_MONOREPO_SHA" "$candidate"
 
@@ -140,28 +168,28 @@ jobs:
         with:
           version: ${{ env.BUILDX_VERSION }}
 
-      - name: Build the compatibility image from the full cluster-root context
+      - name: Build compatibility image from the full cluster-root context
         shell: bash
         run: |
           set -euo pipefail
           docker buildx build \
             --platform "${{ matrix.platform }}" \
-            --file "$RUNNER_PATH/Dockerfile" \
-            --tag "$LEGACY_IMAGE" \
-            --cache-from "type=gha,scope=scintilla-legacy-${{ matrix.arch }}" \
-            --cache-to "type=gha,mode=max,scope=scintilla-legacy-${{ matrix.arch }}" \
+            --file "$RUNNER_PATH/${{ matrix.compatibility_dockerfile }}" \
+            --tag "$COMPATIBILITY_IMAGE" \
+            --cache-from "type=gha,scope=scintilla-compatibility-${{ matrix.arch }}" \
+            --cache-to "type=gha,mode=max,scope=scintilla-compatibility-${{ matrix.arch }}" \
             --provenance=false \
             --sbom=false \
             --load \
             .
 
-      - name: Build the lean architecture-specific image from the full cluster-root context
+      - name: Build lean image from the full cluster-root context
         shell: bash
         run: |
           set -euo pipefail
           docker buildx build \
             --platform "${{ matrix.platform }}" \
-            --file "$RUNNER_PATH/${{ matrix.dockerfile }}" \
+            --file "$RUNNER_PATH/${{ matrix.lean_dockerfile }}" \
             --tag "$LEAN_IMAGE" \
             --cache-from "type=gha,scope=scintilla-lean-${{ matrix.arch }}" \
             --cache-to "type=gha,mode=max,scope=scintilla-lean-${{ matrix.arch }}" \
@@ -174,7 +202,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(docker image inspect --format '{{.Architecture}}' "$LEGACY_IMAGE")" = "${{ matrix.arch }}"
+          test "$(docker image inspect --format '{{.Architecture}}' "$COMPATIBILITY_IMAGE")" = "${{ matrix.arch }}"
           test "$(docker image inspect --format '{{.Architecture}}' "$LEAN_IMAGE")" = "${{ matrix.arch }}"
 
       - name: Measure image size and create-to-health cold start
@@ -186,12 +214,19 @@ jobs:
           mkdir -p "$output"
           node "$RUNNER_PATH/scripts/benchmark-container-cold-start.mjs" \
             --platform "${{ matrix.platform }}" \
-            --legacy-image "$LEGACY_IMAGE" \
+            --legacy-image "$COMPATIBILITY_IMAGE" \
             --lean-image "$LEAN_IMAGE" \
             --iterations "${{ matrix.iterations }}" \
             --timeout-ms "${{ matrix.startup_timeout_ms }}" \
             --output "$output/results.json" \
             --markdown "$output/results.md"
+          {
+            printf 'runner_sha=%s\n' "$(git -C "$RUNNER_PATH" rev-parse HEAD)"
+            printf 'libs_sha=%s\n' "$(git -C remote/libs rev-parse HEAD)"
+            printf 'monorepo_gitlink=%s\n' "${{ steps.pins.outputs.monorepo_sha }}"
+            printf 'compatibility_dockerfile=%s\n' "${{ matrix.compatibility_dockerfile }}"
+            printf 'lean_dockerfile=%s\n' "${{ matrix.lean_dockerfile }}"
+          } > "$output/provenance.env"
           printf 'output=%s\n' "$output" >> "$GITHUB_OUTPUT"
           cat "$output/results.md" >> "$GITHUB_STEP_SUMMARY"
 
