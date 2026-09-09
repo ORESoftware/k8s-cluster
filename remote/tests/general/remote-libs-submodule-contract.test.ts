@@ -60,21 +60,32 @@ test('remote/libs is the canonical main-branch git submodule', () => {
 
 test('remote/libs and its nested dependency are initialized at their pinned commits', () => {
   const repoRoot = findRepoRoot();
-  const statuses = runGit(repoRoot, ['submodule', 'status', '--recursive', LIBS_PATH]).split('\n');
-  const paths = statuses.map((status) => {
-    const match = status.match(/^([ +\-U]?)([0-9a-f]{40}) (\S+)/);
-    assert.ok(match, `Submodule is absent or does not match its pin: ${status}`);
-    assert.ok(
-      match[1] === '' || match[1] === ' ',
-      `Submodule is absent or does not match its pin: ${status}`,
-    );
-    return match[3];
-  });
+  const topLevelGitlink = runGit(repoRoot, ['ls-files', '--stage', '--', LIBS_PATH]);
+  const topLevelMatch = topLevelGitlink.match(/^160000 ([0-9a-f]{40}) 0\tremote\/libs$/);
+  assert.ok(topLevelMatch, 'remote/libs must resolve to one mode-160000 gitlink.');
+  assert.equal(
+    runGit(repoRoot, ['-C', LIBS_PATH, 'rev-parse', 'HEAD']),
+    topLevelMatch[1],
+    'remote/libs checkout must match the superproject gitlink.',
+  );
 
+  const nestedGitlinks = runGit(repoRoot, ['-C', LIBS_PATH, 'ls-files', '--stage'])
+    .split('\n')
+    .flatMap((line) => {
+      const match = line.match(/^160000 ([0-9a-f]{40}) 0\t(.+)$/);
+      return match ? [{ sha: match[1], path: match[2] }] : [];
+    });
   assert.deepEqual(
-    paths,
-    [LIBS_PATH, `${LIBS_PATH}/async-java`],
+    nestedGitlinks.map(({ path }) => path),
+    ['async-java'],
     'remote/libs should contain exactly its pinned async-java submodule.',
+  );
+  const asyncJavaGitlink = nestedGitlinks[0];
+  assert.ok(asyncJavaGitlink, 'remote/libs must expose the async-java gitlink.');
+  assert.equal(
+    runGit(repoRoot, ['-C', `${LIBS_PATH}/async-java`, 'rev-parse', 'HEAD']),
+    asyncJavaGitlink.sha,
+    'remote/libs/async-java checkout must match the nested gitlink.',
   );
 });
 
@@ -139,6 +150,10 @@ test('tracked Rust and Gleam consumers resolve to the canonical generated packag
 test('CI and repository documentation preserve recursive pinned checkout semantics', () => {
   const repoRoot = findRepoRoot();
   const repoChecks = readFileSync(resolve(repoRoot, '.github/workflows/repo-checks.yml'), 'utf8');
+  const checkoutAction = readFileSync(
+    resolve(repoRoot, '.github/actions/checkout-remote-libs/action.yml'),
+    'utf8',
+  );
   const helper = readFileSync(resolve(repoRoot, 'scripts/ci/init-submodules-with-report.sh'), 'utf8');
   const docs = readFileSync(resolve(repoRoot, 'docs/remote-libs-submodule.md'), 'utf8');
   const submodules = readFileSync(resolve(repoRoot, 'SUBMODULES.md'), 'utf8');
@@ -148,18 +163,35 @@ test('CI and repository documentation preserve recursive pinned checkout semanti
     repoChecks.indexOf('  backend-contracts:'),
   );
   assert.match(staticJob, /K8S_LIBS_DEPLOY_KEY:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
+  assert.match(staticJob, /uses: \.\/\.github\/actions\/checkout-remote-libs/);
   assert.match(staticJob, /ssh-key:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /SUBMODULE_AUTH_MODE:\s*ssh/);
-  assert.match(staticJob, /init-submodules-with-report\.sh remote\/libs/);
+  assert.doesNotMatch(staticJob, /SUBMODULE_AUTH_MODE/);
+  assert.doesNotMatch(staticJob, /init-submodules-with-report\.sh remote\/libs/);
   assert.doesNotMatch(staticJob, /REMOTE_DEV_GH_PAT/);
 
-  assert.match(helper, /git "\$\{git_config\[@\]\}" submodule update --init --recursive --depth 1 -- "\$path"/);
+  assert.match(checkoutAction, /git ls-files --stage -- remote\/libs/);
+  assert.match(checkoutAction, /ref: \$\{\{ steps\.pin\.outputs\.sha \}\}/);
+  assert.match(checkoutAction, /path: remote\/libs/);
+  assert.match(checkoutAction, /ssh-key: \$\{\{ inputs\.ssh-key \}\}/);
+  assert.match(checkoutAction, /persist-credentials: false/);
+  assert.doesNotMatch(checkoutAction, /submodules:\s*(?:true|recursive)/);
+  assert.match(checkoutAction, /EXPECTED_ASYNC_JAVA_URL: https:\/\/github\.com\/async-java\/async\.java\.git/);
+  assert.match(checkoutAction, /GIT_SSH_COMMAND: \/bin\/false/);
+  assert.match(checkoutAction, /submodule update --init --depth 1 -- async-java/);
+  assert.match(checkoutAction, /git -C remote\/libs rev-parse HEAD/);
+  assert.match(checkoutAction, /git -C remote\/libs ls-files --stage -- async-java/);
+  assert.match(checkoutAction, /git -C remote\/libs\/async-java rev-parse HEAD/);
+
+  assert.match(
+    helper,
+    /git "\$\{path_git_config\[@\]\}" submodule update --init --recursive --depth 1 -- "\$path"/,
+  );
   assert.match(helper, /git ls-files --stage -- "\$path"/);
   assert.match(helper, /git -C "\$path" rev-parse HEAD/);
   assert.match(helper, /pinned-commit-mismatch/);
 
   assert.match(docs, /K8S_LIBS_DEPLOY_KEY/);
-  assert.match(docs, /init-submodules-with-report\.sh remote\/libs/);
+  assert.match(docs, /init-submodules-with-report\.sh\s+remote\/libs/);
   assert.match(docs, /git submodule update --init --recursive remote\/libs/);
   assert.doesNotMatch(docs, /repo-checks\.yml` uses the[\s\S]{0,80}REMOTE_DEV_GH_PAT/);
   assert.match(

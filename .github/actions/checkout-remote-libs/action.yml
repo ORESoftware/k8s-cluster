@@ -48,6 +48,29 @@ runs:
         persist-credentials: false
         fetch-depth: 1
 
+    - name: Initialize only the pinned public nested dependency
+      shell: bash
+      env:
+        GIT_TERMINAL_PROMPT: "0"
+        GIT_SSH_COMMAND: /bin/false
+        EXPECTED_ASYNC_JAVA_URL: https://github.com/async-java/async.java.git
+      run: |
+        set -euo pipefail
+        nested_url="$(git -C remote/libs config -f .gitmodules --get submodule.async-java.url)"
+        if [[ "$nested_url" != "$EXPECTED_ASYNC_JAVA_URL" ]]; then
+          echo 'remote/libs/async-java has an unexpected source URL.' >&2
+          exit 1
+        fi
+        nested_pin="$(git -C remote/libs ls-files --stage -- async-java | awk '$1 == 160000 { print $2; exit }')"
+        if [[ ! "$nested_pin" =~ ^[0-9a-f]{40}$ ]]; then
+          echo 'remote/libs/async-java does not resolve to exactly one mode-160000 gitlink.' >&2
+          exit 1
+        fi
+        git -C remote/libs \
+          -c credential.helper= \
+          -c core.askPass= \
+          submodule update --init --depth 1 -- async-java
+
     - name: Verify the nested checkout is pinned
       shell: bash
       env:
@@ -59,8 +82,24 @@ runs:
           echo 'remote/libs checkout does not match the superproject gitlink.' >&2
           exit 1
         fi
+
+        nested_pin="$(git -C remote/libs ls-files --stage -- async-java | awk '$1 == 160000 { print $2; exit }')"
+        if [[ ! "$nested_pin" =~ ^[0-9a-f]{40}$ ]]; then
+          echo 'remote/libs/async-java does not resolve to exactly one mode-160000 gitlink.' >&2
+          exit 1
+        fi
+        nested_actual="$(git -C remote/libs/async-java rev-parse HEAD)"
+        if [[ "$nested_actual" != "$nested_pin" ]]; then
+          echo 'remote/libs/async-java checkout does not match the nested gitlink.' >&2
+          exit 1
+        fi
+
         if [[ -n "$(git -C remote/libs status --porcelain)" ]]; then
           echo 'remote/libs checkout is unexpectedly dirty.' >&2
           exit 1
         fi
-        echo "Verified remote/libs at ${actual:0:12}."
+        if [[ -n "$(git -C remote/libs/async-java status --porcelain)" ]]; then
+          echo 'remote/libs/async-java checkout is unexpectedly dirty.' >&2
+          exit 1
+        fi
+        echo "Verified remote/libs at ${actual:0:12} and async-java at ${nested_actual:0:12}."
