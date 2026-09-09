@@ -322,7 +322,10 @@ async fn running_server_dispatches_exact_msgint_profiles_and_rejects_mutations()
             .json()
             .await
             .unwrap_or_else(|error| panic!("read rejected {label} response: {error}"));
-        assert_eq!(rejected["error"], "workflow plan rejected");
+        assert_eq!(
+            rejected["error"],
+            "workflow is not independently executable"
+        );
         assert!(
             rejected.to_string().contains(expected_reason),
             "{label} response did not explain {expected_reason}: {rejected}"
