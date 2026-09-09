@@ -134,8 +134,9 @@ After App installations and repository secrets are configured:
    exporting their values.
 6. Re-run the failed `backend pins + private deployment contracts` job and the
    Scintilla native image benchmark on their current authoritative commits.
-7. Download sanitized access and benchmark reports and confirm every expected
-   private checkout actually ran; a skipped test is not a green result.
+7. Download the sanitized `backend-submodule-access-report` and benchmark
+   reports and confirm every expected private checkout actually ran; a skipped
+   test is not a green result.
 8. Confirm every checkout commit equals its superproject gitlink or the explicit
    immutable candidate SHA named by the benchmark.
 9. Confirm reports contain no token, key, credential-bearing URL, subject, email,
