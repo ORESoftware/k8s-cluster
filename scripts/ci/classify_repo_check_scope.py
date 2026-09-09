@@ -13,6 +13,7 @@ CONTROL_FILES = {
     ".github/workflows/repo-checks.yml",
     "scripts/ci/classify_repo_check_scope.py",
     "scripts/ci/test_classify_repo_check_scope.py",
+    "scripts/ci/test_google_chat_reaper_scope.py",
 }
 
 GOVERNANCE_FILES = {
@@ -69,6 +70,7 @@ GOVERNANCE_PREFIXES = (
 CREDENTIAL_FREE_CONTRACT_FILES = {
     ".github/workflows/athleto-ui-tests.yml",
     ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+    ".github/workflows/google-chat-daily-reconciliation.yml",
     ".github/workflows/google-chat-relay-contract.yml",
     ".github/workflows/browser-mcp-external-smoke.yml",
     ".github/workflows/browser-mcp-public-e2e.yml",
@@ -76,6 +78,7 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     ".github/workflows/github-app-submodule-auth.yml",
     ".github/workflows/namespace-migration-contract.yml",
     ".github/workflows/repo-check-scope-contract.yml",
+    "catalog/applications.json",
     "catalog/namespaces/migration-manifest.json",
     "config/ci/k8s-submodule-github-app-allowlist.json",
     "remote/tests/general/browser-mcp-public-e2e.test.ts",
@@ -86,9 +89,20 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     "remote/tests/ui/lib/live-targets.mjs",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
+    "tools/google-chat-space-export/REAPER_HARDENING.md",
+    "tools/google-chat-space-export/reaper-contracts.mjs",
+    "tools/google-chat-space-export/reaper-core.mjs",
+    "tools/google-chat-space-export/reconciliation-receipt.mjs",
+    "tools/google-chat-space-export/test/reaper-contracts.test.mjs",
+    "tools/google-chat-space-export/test/reaper-review-disposition.test.mjs",
+    "tools/google-chat-space-export/test/reconciliation-review-reasons.test.mjs",
     "tools/google-chat-space-export/test_relay_workflows.py",
     "tools/test_namespace_manifest.py",
 }
+
+CREDENTIAL_FREE_CONTRACT_PREFIXES = (
+    "tools/google-chat-space-export/contracts/",
+)
 
 
 class ScopeError(RuntimeError):
@@ -111,7 +125,9 @@ def is_governance_path(path: str) -> bool:
 
 
 def is_credential_free_contract_path(path: str) -> bool:
-    return path in CREDENTIAL_FREE_CONTRACT_FILES
+    return path in CREDENTIAL_FREE_CONTRACT_FILES or any(
+        path.startswith(prefix) for prefix in CREDENTIAL_FREE_CONTRACT_PREFIXES
+    )
 
 
 def classify(event_name: str, changed_files: Iterable[str]) -> dict[str, object]:

@@ -1,4 +1,10 @@
 import {
+  CANDIDATE_ACTION_SET,
+  REAPER_SCHEMA_VERSION,
+  assertCoverageEvidenceContract,
+  assertReaperSummaryContract,
+} from './reaper-contracts.mjs';
+import {
   buildContentFreeLinearSection,
   titleNeedsReview,
 } from './reaper-provenance.mjs';
@@ -18,6 +24,29 @@ import {
 const DEFAULT_MAX_CREATES = 25;
 const MAX_EVIDENCE_REFERENCES = 16;
 
+const REVIEW_EXCLUSION_RULES = Object.freeze([
+  {
+    reasonCode: 'privacy_sensitive',
+    pattern: /\[REDACTED_(?:EMAIL|PHONE|SECRET)\]/,
+  },
+  {
+    reasonCode: 'unsafe_or_deceptive',
+    pattern: /(?:\b(?:bypass|evade)\b.{0,160}\b(?:immigration|visa|border|customs)\b|\b(?:immigration|visa|border|customs)\b.{0,160}\b(?:bypass|evade)\b)/i,
+  },
+  {
+    reasonCode: 'unsafe_or_deceptive',
+    pattern: /\bremote\b.{0,160}\b(?:pretend|spoof|misrepresent)\b/i,
+  },
+  {
+    reasonCode: 'context_only',
+    pattern: /^(?:ok[, ]+)?coordinate with (?:the )?(?:other )?(?:(?:claude|chatgpt)\s+)?(?:agents?|threads?)(?:\b|$)/i,
+  },
+  {
+    reasonCode: 'context_only',
+    pattern: /^(?:the )?original prompt was\s*:?\s*$/i,
+  },
+]);
+
 function candidateExistingIdentifiers(candidate) {
   const identifiers = [];
   for (const item of candidate.exactExistingIssues || []) {
@@ -28,6 +57,17 @@ function candidateExistingIdentifiers(candidate) {
 
 function reviewCandidate(candidate) {
   return candidate.action === 'manual-review' || titleNeedsReview(safeIssueTitle(candidate.title));
+}
+
+export function classifyReviewDisposition(candidate) {
+  assertPlainObject(candidate, 'candidate');
+  const title = safeIssueTitle(candidate.title);
+  for (const rule of REVIEW_EXCLUSION_RULES) {
+    if (rule.pattern.test(title)) {
+      return { disposition: 'excluded', reasonCode: rule.reasonCode };
+    }
+  }
+  return { disposition: 'quarantined', reasonCode: 'requires_human_review' };
 }
 
 function linkedPullRequestReferences(issue) {
@@ -49,7 +89,10 @@ async function ensureLinearIssue(candidate, context, review) {
   let reused = false;
   for (const identifier of existingIdentifiers) {
     issue = await context.linear.getIssue(identifier);
-    if (issue) { reused = true; break; }
+    if (issue) {
+      reused = true;
+      break;
+    }
   }
   if (!issue) {
     const title = safeIssueTitle(candidate.title, review ? '[Google Chat review] ' : '[Google Chat] ');
@@ -107,7 +150,7 @@ function validatePlan(plan) {
     }
     if (seen.has(candidate.candidateKey)) throw new Error(`duplicate candidate ${candidate.candidateKey}`);
     seen.add(candidate.candidateKey);
-    if (!['create', 'comment-existing', 'manual-review', 'skip-non-actionable'].includes(candidate.action)) {
+    if (!CANDIDATE_ACTION_SET.has(candidate.action)) {
       throw new Error(`unsupported action ${candidate.action}`);
     }
   }
@@ -137,14 +180,21 @@ export async function materializePlan(plan, dependencies, options = {}) {
     }
 
     const review = reviewCandidate(candidate);
+    const reviewDisposition = review ? classifyReviewDisposition(candidate) : null;
+    if (reviewDisposition?.disposition === 'excluded') {
+      entries.push({ candidateKey: candidate.candidateKey, ...reviewDisposition });
+      operations.push({
+        candidateKey: candidate.candidateKey,
+        operation: 'excluded',
+        reasonCode: reviewDisposition.reasonCode,
+      });
+      continue;
+    }
+
     const { issue, operation } = await ensureLinearIssue(candidate, context, review);
     operations.push({ candidateKey: candidate.candidateKey, operation, linearIssue: issue.identifier });
     if (review) {
-      entries.push({
-        candidateKey: candidate.candidateKey,
-        disposition: 'quarantined',
-        reasonCode: 'requires_human_review',
-      });
+      entries.push({ candidateKey: candidate.candidateKey, ...reviewDisposition });
       continue;
     }
 
@@ -163,7 +213,11 @@ export async function materializePlan(plan, dependencies, options = {}) {
     });
   }
 
-  const evidence = { schemaVersion: 1, planId: plan.planId, entries };
+  const evidence = {
+    schemaVersion: REAPER_SCHEMA_VERSION,
+    planId: plan.planId,
+    entries,
+  };
   const coverageCounts = {
     coveredWithImplementation: entries.filter((entry) => entry.disposition === 'covered' && (entry.pullRequests.length || entry.defaultBranchCommits.length)).length,
     awaitingImplementation: entries.filter((entry) => entry.disposition === 'covered' && !(entry.pullRequests.length || entry.defaultBranchCommits.length)).length,
@@ -171,7 +225,7 @@ export async function materializePlan(plan, dependencies, options = {}) {
     excluded: entries.filter((entry) => entry.disposition === 'excluded').length,
   };
   const summaryCore = {
-    schemaVersion: 1,
+    schemaVersion: REAPER_SCHEMA_VERSION,
     planId: plan.planId,
     counts: {
       candidates: entries.length,
@@ -186,5 +240,7 @@ export async function materializePlan(plan, dependencies, options = {}) {
     ...summaryCore,
     summaryId: `google-chat-reaper-summary:${sha256(stableStringify(summaryCore)).slice(0, 24)}`,
   };
+  assertCoverageEvidenceContract(evidence);
+  assertReaperSummaryContract(summary);
   return { evidence, summary };
 }
