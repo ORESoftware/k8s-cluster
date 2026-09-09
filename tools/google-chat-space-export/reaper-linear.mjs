@@ -3,6 +3,16 @@ import { normalizeIssue } from './reaper-provenance.mjs';
 import { candidateMarker } from './reaper-utils.mjs';
 
 const LINEAR_ENDPOINT = 'https://api.linear.app/graphql';
+const LINEAR_ISSUE_LIMIT_CODE = 'linear_issue_limit';
+
+function linearGraphqlError(errors) {
+  const messages = errors.map((item) => String(item?.message || 'unknown Linear error'));
+  const error = new Error(`Linear GraphQL error: ${messages.join('; ')}`);
+  if (messages.some((message) => message.toLocaleLowerCase('en-US').includes('usage limit exceeded'))) {
+    error.code = LINEAR_ISSUE_LIMIT_CODE;
+  }
+  return error;
+}
 
 export function createLinearClient({ apiKey, teamId, parentIssue, fetchImpl } = {}) {
   if (!apiKey) throw new Error('LINEAR_API_KEY is required');
@@ -18,7 +28,7 @@ export function createLinearClient({ apiKey, teamId, parentIssue, fetchImpl } = 
       { fetchImpl },
     );
     if (Array.isArray(payload.errors) && payload.errors.length) {
-      throw new Error(`Linear GraphQL error: ${payload.errors.map((item) => item.message).join('; ')}`);
+      throw linearGraphqlError(payload.errors);
     }
     return payload.data;
   }

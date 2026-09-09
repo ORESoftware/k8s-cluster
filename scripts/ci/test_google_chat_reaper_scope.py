@@ -18,8 +18,11 @@ REAPER_FILES = [
     "tools/google-chat-space-export/REAPER_HARDENING.md",
     "tools/google-chat-space-export/reaper-contracts.mjs",
     "tools/google-chat-space-export/reaper-core.mjs",
+    "tools/google-chat-space-export/reaper-linear.mjs",
+    "tools/google-chat-space-export/reaper-materializer.mjs",
     "tools/google-chat-space-export/reconciliation-receipt.mjs",
     "tools/google-chat-space-export/test/reaper-contracts.test.mjs",
+    "tools/google-chat-space-export/test/reaper-linear-capacity.test.mjs",
     "tools/google-chat-space-export/test/reaper-review-disposition.test.mjs",
     "tools/google-chat-space-export/test/reconciliation-review-reasons.test.mjs",
     "tools/google-chat-space-export/contracts/main.tsp",
@@ -48,6 +51,24 @@ class GoogleChatReaperScopeTests(unittest.TestCase):
             ],
         )
         self.assertFalse(result["governance_only"])
+        self.assertTrue(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "credential_free_contract_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_linear_capacity_reaper_surface_is_credential_free(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_google_chat_reaper_scope.py",
+                "tools/google-chat-space-export/reaper-linear.mjs",
+                "tools/google-chat-space-export/reaper-materializer.mjs",
+                "tools/google-chat-space-export/test/reaper-linear-capacity.test.mjs",
+            ],
+        )
         self.assertTrue(result["credential_free_contract_only"])
         self.assertFalse(result["private_contracts_required"])
         self.assertEqual(
