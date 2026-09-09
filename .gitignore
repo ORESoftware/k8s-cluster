@@ -121,6 +121,7 @@ service-account*.json
 tmp
 temp
 .cache/
+.typespec-json-schema-validator/
 
 # Local cluster-test runtime artifacts (Gleam presence server etc.)
 **/.cluster-local/
