@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ores.local-k8s-platform.authored.schema.json",
+  "$defs": {
+    "RuntimeKind": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "RuntimeKind",
+      "type": "string",
+      "enum": ["colima-kind", "multipass-k3s"]
+    },
+    "CpuArchitecture": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "CpuArchitecture",
+      "type": "string",
+      "enum": ["arm64", "amd64"]
+    },
+    "ResourceClass": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ResourceClass",
+      "type": "string",
+      "enum": ["compact", "standard", "large"]
+    },
+    "ClusterTopology": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ClusterTopology",
+      "type": "string",
+      "enum": ["single-node", "three-node"]
+    },
+    "CloudMutationPolicy": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "CloudMutationPolicy",
+      "type": "string",
+      "enum": ["denied"]
+    },
+    "RuntimeProfile": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "RuntimeProfile",
+      "type": "object",
+      "properties": {
+        "schema": { "type": "string" },
+        "name": { "type": "string" },
+        "runtime": { "$ref": "RuntimeKind" },
+        "architecture": { "$ref": "CpuArchitecture" },
+        "resourceClass": { "$ref": "ResourceClass" },
+        "topology": { "$ref": "ClusterTopology" },
+        "kubernetesVersion": { "type": "string" },
+        "runtimeArtifact": { "type": "string" },
+        "cloudMutationPolicy": { "$ref": "CloudMutationPolicy" },
+        "cloudWrites": { "type": "boolean" }
+      },
+      "required": [
+        "schema",
+        "name",
+        "runtime",
+        "architecture",
+        "resourceClass",
+        "topology",
+        "kubernetesVersion",
+        "runtimeArtifact",
+        "cloudMutationPolicy",
+        "cloudWrites"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
