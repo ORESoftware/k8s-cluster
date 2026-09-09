@@ -14,12 +14,15 @@ privacy-preserving materialization stage.
 
 ## Pipeline
 
-1. Fetch the fixed `alex-alex-me` Google Chat space through the protected Apps
+1. Run the credential-free syntax, runtime-contract, fixture, and peer-authority
+   gates. The protected live job depends on this job and cannot start if it
+   fails.
+2. Fetch the fixed `alex-alex-me` Google Chat space through the protected Apps
    Script bridge.
-2. Sanitize the private export before any Linear or GitHub operation.
-3. Export a private Linear index and feed it to `import-plan.mjs` for duplicate
+3. Sanitize the private export before any Linear or GitHub operation.
+4. Export a private Linear index and feed it to `import-plan.mjs` for duplicate
    prevention.
-4. Materialize each candidate:
+5. Materialize each candidate:
    - non-actionable candidates are excluded without external mutation;
    - privacy-bearing, credential-bearing, context-only, unsafe, or deceptive
      review candidates are excluded before any Linear or GitHub mutation;
@@ -30,12 +33,50 @@ privacy-preserving materialization stage.
    - existing issues receive only a content-free provenance section;
    - GitHub pull requests and default-branch commits are independently queried
      using the resulting Linear identifier.
-5. Generate the existing content-free reconciliation receipt.
-6. Upload only fetch totals, safety totals, content-free mutation totals, and the
+6. Generate the content-free reconciliation receipt and validate it through the
+   same executable runtime contract used by materialization.
+7. Upload only fetch totals, safety totals, content-free mutation totals, and the
    receipt. Raw pages, sanitized message bodies, the Linear index, import plan,
    and coverage evidence remain in the private runner directory.
-7. Fail closed while any actionable candidate lacks real implementation
+8. Fail closed while any actionable candidate lacks real implementation
    evidence. Creating a planning ticket alone is not reported as completion.
+
+## Peer TypeSpec and JSON Schema authorities
+
+The contract subtree contains two independently authored authorities:
+
+- `contracts/main.tsp` is the TypeSpec source;
+- `contracts/authored.schema.json` is the JSON Schema Draft 2020-12 source.
+
+Neither file is generated from, ranked below, or silently overwritten by the
+other. The daily workflow pins
+`ORESoftware/typespec-json-schema-validator` to immutable commit
+`2281843126ab644607b11cf8281d84f382d68dfc`. TJSV generates a comparison-only
+Schema B with the official TypeSpec emitter, compares the declaration and
+behavioral surfaces in both directions, and emits a deterministic report,
+SARIF file, generated witness, and digest-bound Contract IR. Any unexplained
+difference stops the workflow before protected credentials or live mutations
+are used.
+
+The authored authorities cover the candidate-action vocabulary, evidence and
+receipt dispositions, materialization operations, reason-code vocabulary,
+coverage evidence, materialization summaries, and final reconciliation
+receipts. The independently maintained `contracts/instances/` corpus includes
+positive and negative examples. It proves extra freeform fields, negative
+counters, and incomplete receipt identities are rejected by both authorities.
+
+`reaper-contracts.mjs` is the executable JavaScript boundary. Materialization
+and receipt generation call it before returning or writing evidence. Its tests
+compare every runtime enum to the independently authored JSON Schema enum, then
+exercise conditional invariants that basic data-shape declarations do not
+express, including content-free field restrictions, counter accounting,
+operation accounting, and completion consistency. This is an incremental
+JavaScript runtime bridge; generated clients or other language projections must
+consume the parity-approved Contract IR and add their own native conformance
+fixtures before claiming support.
+
+Generated witnesses and reports are evidence only. They do not authorize source
+replacement, publication, deployment, or a preferred-authority fallback.
 
 ## Idempotence and duplicate prevention
 
@@ -107,11 +148,13 @@ Optional environment controls:
 
 ## Operator runbook
 
-1. Merge the hardening PR after the validation job passes.
-2. Confirm both protected secrets exist; rotate any value that was pasted into
-   chat, email, an issue, or a URL.
+1. Merge the hardening PR only after the runtime tests, TJSV parity action,
+   exact-head namespace contract, secret scan, and required repository checks
+   pass at the same commit.
+2. Confirm both protected secrets exist. Do not copy credential values into
+   Chat, Linear, GitHub comments, email, artifacts, or URLs.
 3. Run `Daily Google Chat reconciliation` manually once.
-4. Inspect the uploaded `reaper-summary.json` and
+4. Inspect the uploaded TJSV report/Contract IR plus `reaper-summary.json` and
    `reconciliation-receipt.json` artifacts.
 5. Keep `DEN-3473` in progress until the exact-window receipt is complete.
 6. For remaining implementation gaps, work from the canonical Linear owners and
@@ -125,4 +168,7 @@ workflow receipt is operational evidence.
 
 ## Module boundaries
 
-The reaper is split into small, independently syntax-checkable modules for HTTP retry logic, Linear mutations, GitHub evidence lookup, privacy-safe provenance, and materialization policy. The CLI re-exports the tested public surface, so tests exercise the same code used by the scheduled workflow.
+The reaper is split into small, independently syntax-checkable modules for HTTP
+retry logic, Linear mutations, GitHub evidence lookup, privacy-safe provenance,
+contract enforcement, and materialization policy. The CLI re-exports the tested
+public surface, so tests exercise the same code used by the scheduled workflow.
