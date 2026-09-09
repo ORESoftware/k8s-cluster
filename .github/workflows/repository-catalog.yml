@@ -58,6 +58,15 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
 
+      - name: Render the exact-head application catalog candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          nix develop --accept-flake-config -c \
+            python tools/application_catalog.py generate \
+            artifacts/applications.generated.json
+
       - name: Run the locked development-shell gate
         run: nix develop --accept-flake-config -c agent-check all
 
