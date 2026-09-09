@@ -7,6 +7,7 @@ on:
       - .github/workflows/test-k8s-submodule-app-selector.yml
       - scripts/ops/bootstrap_k8s_submodule_app_secrets.py
       - scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py
+      - scripts/ops/test_k8s_submodule_app_bootstrap_workflow.py
       - config/ci/k8s-submodule-github-app-allowlist.json
       - docs/k8s-submodule-github-app.md
   push:
@@ -16,6 +17,7 @@ on:
       - .github/workflows/test-k8s-submodule-app-selector.yml
       - scripts/ops/bootstrap_k8s_submodule_app_secrets.py
       - scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py
+      - scripts/ops/test_k8s_submodule_app_bootstrap_workflow.py
       - config/ci/k8s-submodule-github-app-allowlist.json
       - docs/k8s-submodule-github-app.md
   workflow_dispatch:
@@ -44,9 +46,11 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile \
             scripts/ops/bootstrap_k8s_submodule_app_secrets.py \
-            scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py
+            scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py \
+            scripts/ops/test_k8s_submodule_app_bootstrap_workflow.py
           python3 scripts/ops/bootstrap_k8s_submodule_app_secrets.py --self-test
           python3 scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py --verbose
+          python3 scripts/ops/test_k8s_submodule_app_bootstrap_workflow.py --verbose
           git diff --check
 
       - name: Verify allowlist contains the Scintilla build graph exactly once
