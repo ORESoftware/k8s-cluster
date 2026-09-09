@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "authored.google-chat-reaper.schema.json",
+  "$defs": {
+    "CandidateAction": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "CandidateAction",
+      "type": "string",
+      "enum": [
+        "create",
+        "comment-existing",
+        "manual-review",
+        "skip-non-actionable"
+      ]
+    },
+    "EvidenceDisposition": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "EvidenceDisposition",
+      "type": "string",
+      "enum": ["covered", "excluded", "quarantined"]
+    },
+    "ReceiptDispositionKind": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReceiptDispositionKind",
+      "type": "string",
+      "enum": ["covered", "excluded", "quarantined", "gap"]
+    },
+    "MaterializationOperation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "MaterializationOperation",
+      "type": "string",
+      "enum": ["created", "updated", "reused", "excluded"]
+    },
+    "ReaperReasonCode": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReaperReasonCode",
+      "type": "string",
+      "enum": [
+        "non_actionable",
+        "private_or_personal",
+        "credential_only",
+        "duplicate_refinement",
+        "invalid_prompt",
+        "out_of_scope",
+        "privacy_sensitive",
+        "unsafe_or_deceptive",
+        "context_only",
+        "sensitive_content",
+        "ambiguous_scope",
+        "unsafe_automation",
+        "requires_human_review",
+        "missing_evidence",
+        "missing_implementation_evidence"
+      ]
+    },
+    "CoverageEvidenceEntry": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "CoverageEvidenceEntry",
+      "type": "object",
+      "properties": {
+        "candidateKey": { "type": "string" },
+        "disposition": { "$ref": "EvidenceDisposition" },
+        "linearIssues": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "pullRequests": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "defaultBranchCommits": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reasonCode": { "$ref": "ReaperReasonCode" }
+      },
+      "required": ["candidateKey", "disposition"],
+      "unevaluatedProperties": false
+    },
+    "CoverageEvidence": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "CoverageEvidence",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number", "const": 1 },
+        "planId": { "type": "string" },
+        "entries": {
+          "type": "array",
+          "items": { "$ref": "CoverageEvidenceEntry" }
+        }
+      },
+      "required": ["schemaVersion", "planId", "entries"],
+      "unevaluatedProperties": false
+    },
+    "ReaperCounts": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReaperCounts",
+      "type": "object",
+      "properties": {
+        "candidates": { "type": "integer", "exclusiveMinimum": -1 },
+        "linearCreated": { "type": "integer", "exclusiveMinimum": -1 },
+        "linearUpdated": { "type": "integer", "exclusiveMinimum": -1 },
+        "linearReused": { "type": "integer", "exclusiveMinimum": -1 },
+        "coveredWithImplementation": { "type": "integer", "exclusiveMinimum": -1 },
+        "awaitingImplementation": { "type": "integer", "exclusiveMinimum": -1 },
+        "quarantined": { "type": "integer", "exclusiveMinimum": -1 },
+        "excluded": { "type": "integer", "exclusiveMinimum": -1 }
+      },
+      "required": [
+        "candidates",
+        "linearCreated",
+        "linearUpdated",
+        "linearReused",
+        "coveredWithImplementation",
+        "awaitingImplementation",
+        "quarantined",
+        "excluded"
+      ],
+      "unevaluatedProperties": false
+    },
+    "MaterializationRecord": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "MaterializationRecord",
+      "type": "object",
+      "properties": {
+        "candidateKey": { "type": "string" },
+        "operation": { "$ref": "MaterializationOperation" },
+        "linearIssue": { "type": "string" },
+        "reasonCode": { "$ref": "ReaperReasonCode" }
+      },
+      "required": ["candidateKey", "operation"],
+      "unevaluatedProperties": false
+    },
+    "ReaperSummary": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReaperSummary",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number", "const": 1 },
+        "planId": { "type": "string" },
+        "counts": { "$ref": "ReaperCounts" },
+        "operations": {
+          "type": "array",
+          "items": { "$ref": "MaterializationRecord" }
+        },
+        "summaryId": { "type": "string" }
+      },
+      "required": ["schemaVersion", "planId", "counts", "operations", "summaryId"],
+      "unevaluatedProperties": false
+    },
+    "ReceiptCandidateCounts": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReceiptCandidateCounts",
+      "type": "object",
+      "properties": {
+        "total": { "type": "integer", "exclusiveMinimum": -1 },
+        "actionable": { "type": "integer", "exclusiveMinimum": -1 },
+        "covered": { "type": "integer", "exclusiveMinimum": -1 },
+        "excluded": { "type": "integer", "exclusiveMinimum": -1 },
+        "quarantined": { "type": "integer", "exclusiveMinimum": -1 },
+        "gaps": { "type": "integer", "exclusiveMinimum": -1 }
+      },
+      "required": ["total", "actionable", "covered", "excluded", "quarantined", "gaps"],
+      "unevaluatedProperties": false
+    },
+    "ReconciliationCounts": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReconciliationCounts",
+      "type": "object",
+      "properties": {
+        "scanned": { "type": "integer", "exclusiveMinimum": -1 },
+        "actionable": { "type": "integer", "exclusiveMinimum": -1 },
+        "covered": { "type": "integer", "exclusiveMinimum": -1 },
+        "excluded": { "type": "integer", "exclusiveMinimum": -1 },
+        "quarantined": { "type": "integer", "exclusiveMinimum": -1 },
+        "gaps": { "type": "integer", "exclusiveMinimum": -1 },
+        "candidates": { "$ref": "ReceiptCandidateCounts" },
+        "complete": { "type": "boolean" }
+      },
+      "required": [
+        "scanned",
+        "actionable",
+        "covered",
+        "excluded",
+        "quarantined",
+        "gaps",
+        "candidates",
+        "complete"
+      ],
+      "unevaluatedProperties": false
+    },
+    "ReceiptSource": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReceiptSource",
+      "type": "object",
+      "properties": {
+        "spaceName": { "type": "string" },
+        "windowStartInclusive": { "type": "string" },
+        "windowEndExclusive": { "type": "string" }
+      },
+      "required": ["spaceName", "windowStartInclusive", "windowEndExclusive"],
+      "unevaluatedProperties": false
+    },
+    "ReconciliationDisposition": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReconciliationDisposition",
+      "type": "object",
+      "properties": {
+        "candidateKey": { "type": "string" },
+        "messageCount": { "type": "integer", "exclusiveMinimum": 0 },
+        "disposition": { "$ref": "ReceiptDispositionKind" },
+        "linearIssues": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "pullRequests": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "defaultBranchCommits": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "reasonCode": { "$ref": "ReaperReasonCode" }
+      },
+      "required": [
+        "candidateKey",
+        "messageCount",
+        "disposition",
+        "linearIssues",
+        "pullRequests",
+        "defaultBranchCommits"
+      ],
+      "unevaluatedProperties": false
+    },
+    "ReconciliationReceipt": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ReconciliationReceipt",
+      "type": "object",
+      "properties": {
+        "schemaVersion": { "type": "number", "const": 1 },
+        "planId": { "type": "string" },
+        "source": { "$ref": "ReceiptSource" },
+        "counts": { "$ref": "ReconciliationCounts" },
+        "dispositions": {
+          "type": "array",
+          "items": { "$ref": "ReconciliationDisposition" }
+        },
+        "receiptId": { "type": "string" }
+      },
+      "required": [
+        "schemaVersion",
+        "planId",
+        "source",
+        "counts",
+        "dispositions",
+        "receiptId"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
