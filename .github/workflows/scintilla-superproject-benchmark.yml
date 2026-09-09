@@ -30,7 +30,7 @@ env:
   BUILDX_VERSION: v0.37.0
   RUNNER_PATH: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
   RUNNER_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_repository || 'scintilla-run/gleam-lambda-runner' }}
-  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '95014de1c5fe799a8c313e20eff8c40dba88d32b' }}
+  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '25689f71870a4b975ec519d384a30fd2a1409626' }}
 
 jobs:
   build-and-benchmark:
@@ -79,7 +79,21 @@ jobs:
             exit 1
           fi
           docker version
-          node --version
+
+      - name: Use the Node release supported by tjsv and the runtime probes
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+
+      - name: Use the Python runtime represented by the child adapter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Use the Ruby runtime represented by the child adapter
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "3.3"
 
       - name: Resolve the immutable shared-library and monorepo gitlinks
         id: pins
@@ -158,10 +172,94 @@ jobs:
           grep -qF \
             'ORESoftware/typespec-json-schema-validator@03ccc0ecdfc70f9198c3ccf80718910961d3fde1' \
             "$RUNNER_PATH/.github/workflows/runtime-wire-contract.yml"
-          test -f "$RUNNER_PATH/contracts/runtime-wire/main.tsp"
-          test -f "$RUNNER_PATH/contracts/runtime-wire/authored.schema.json"
+          for required in \
+            contracts/runtime-wire/main.tsp \
+            contracts/runtime-wire/authored.schema.json \
+            scripts/capture-runtime-wire-evidence.mjs \
+            test/runtime-wire-contract.test.mjs \
+            test/runtime-wire-execution.test.mjs; do
+            test -f "$RUNNER_PATH/$required" || {
+              echo "candidate is missing runtime-contract input: $required" >&2
+              exit 1
+            }
+          done
           printf 'remote/libs=%s\nmonorepo-gitlink=%s\nrunner=%s\n' \
             "$EXPECTED_LIBS_SHA" "$EXPECTED_MONOREPO_SHA" "$candidate"
+
+      - name: Execute child runtimes and capture observed wire instances
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_PATH/artifacts/runtime-wire"
+          mkdir -p "$RUNNER_PATH/artifacts/runtime-wire/instances"
+          cp -R \
+            "$RUNNER_PATH/contracts/runtime-wire/instances/." \
+            "$RUNNER_PATH/artifacts/runtime-wire/instances/"
+          node "$RUNNER_PATH/scripts/capture-runtime-wire-evidence.mjs"
+
+      - name: Compare the candidate's independent TypeSpec and JSON Schema authorities
+        uses: ORESoftware/typespec-json-schema-validator@03ccc0ecdfc70f9198c3ccf80718910961d3fde1
+        with:
+          typespec: ${{ env.RUNNER_PATH }}/contracts/runtime-wire/main.tsp
+          schema: ${{ env.RUNNER_PATH }}/contracts/runtime-wire/authored.schema.json
+          instances: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/instances
+          report: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/tjsv-report.json
+          sarif: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/tjsv-report.sarif
+          contract_ir: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/contract-ir.json
+          output_dir: ${{ env.RUNNER_PATH }}/.typespec-json-schema-validator/runtime-wire
+          max_probes: "64"
+          int64_strategy: string
+          seal_object_schemas: "false"
+          polymorphic_models_strategy: oneOf
+          quiet: "false"
+
+      - name: Prove the candidate's parity and concrete runtime evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - "$RUNNER_PATH" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = process.argv[2];
+          const load = (name) => JSON.parse(
+            fs.readFileSync(path.join(root, 'artifacts/runtime-wire', name), 'utf8'),
+          );
+          const report = load('tjsv-report.json');
+          const contractIr = load('contract-ir.json');
+          const execution = load('runtime-execution-evidence.json');
+          if (
+            report.schema !== 'ores.typespec-json-schema-validator.report/v1' ||
+            report.status !== 'passed' ||
+            report.zeroUnexplainedFindings !== true ||
+            !Array.isArray(report.findings) ||
+            report.findings.length !== 0
+          ) {
+            throw new Error('candidate TJSV receipt did not authorize the build');
+          }
+          if (
+            contractIr.status !== 'passed' ||
+            contractIr.admissible !== true ||
+            contractIr.editableAuthority !== false
+          ) {
+            throw new Error('candidate Contract IR is not admissible');
+          }
+          const runtimes = execution.runtimes.map(({ runtime }) => runtime);
+          if (
+            execution.schemaVersion !==
+              'scintilla.run/runtime-wire-execution-evidence.v1' ||
+            execution.directRuntimeCount !== 4 ||
+            JSON.stringify(runtimes) !==
+              JSON.stringify(['nodejs', 'python3', 'ruby', 'bash'])
+          ) {
+            throw new Error('candidate runtime execution evidence is incomplete');
+          }
+          NODE
+          (
+            cd "$RUNNER_PATH"
+            node --test \
+              test/runtime-wire-contract.test.mjs \
+              test/runtime-wire-execution.test.mjs
+          )
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
@@ -220,17 +318,22 @@ jobs:
             --timeout-ms "${{ matrix.startup_timeout_ms }}" \
             --output "$output/results.json" \
             --markdown "$output/results.md"
+          cp -R "$RUNNER_PATH/artifacts/runtime-wire" "$output/runtime-wire"
           {
             printf 'runner_sha=%s\n' "$(git -C "$RUNNER_PATH" rev-parse HEAD)"
             printf 'libs_sha=%s\n' "$(git -C remote/libs rev-parse HEAD)"
             printf 'monorepo_gitlink=%s\n' "${{ steps.pins.outputs.monorepo_sha }}"
             printf 'compatibility_dockerfile=%s\n' "${{ matrix.compatibility_dockerfile }}"
             printf 'lean_dockerfile=%s\n' "${{ matrix.lean_dockerfile }}"
+            printf 'tjsv_run_id=%s\n' \
+              "$(jq -r .runId "$RUNNER_PATH/artifacts/runtime-wire/tjsv-report.json")"
+            printf 'runtime_execution_sha256=%s\n' \
+              "$(sha256sum "$RUNNER_PATH/artifacts/runtime-wire/runtime-execution-evidence.json" | awk '{print $1}')"
           } > "$output/provenance.env"
           printf 'output=%s\n' "$output" >> "$GITHUB_OUTPUT"
           cat "$output/results.md" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish benchmark evidence
+      - name: Publish benchmark and contract evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: scintilla-superproject-${{ matrix.arch }}-${{ github.run_id }}
