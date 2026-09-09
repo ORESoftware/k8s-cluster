@@ -100,7 +100,7 @@ class BootstrapWorkflowContractTests(unittest.TestCase):
         self.assertIn("approved AWS OIDC roles accepted this workflow", block)
         self.assertRegex(
             block,
-            re.compile(r"for outcome in[\s\S]+exit 0[\s\S]+exit 1"),
+            re.compile(r"for entry in[\s\S]+exit 0[\s\S]+exit 1"),
         )
 
     def test_personal_token_is_not_a_submodule_recovery_path(self) -> None:
