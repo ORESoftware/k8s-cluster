@@ -103,7 +103,7 @@ For three independent local sites, create three distinct Multipass profiles/VMs.
 
 ## Relationship to `DEN-2786`
 
-`DEN-2786` owns the `dd/`/`dd.dev/` classification and ownership-aware migration. Its PR #1527 already includes a cloud-free kind smoke that proves the namespace inventory, manifest parity, canonical `ores/` ConfigMap round trip, server-side admission, and least-privilege RBAC.
+`DEN-2786` owns classification and ownership-aware migration of the legacy development namespaces. Its PR #1527 already includes a cloud-free kind smoke that proves the namespace inventory, manifest parity, canonical platform ConfigMap round trip, server-side admission, and least-privilege RBAC.
 
 This `DEN-1032` layer does not replace that verifier and does not bulk-rewrite legacy names. It provides reusable local runtime/VM boundaries on which the migration verifier and future product-neutral recovery tests can run.
 
