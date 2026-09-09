@@ -29,10 +29,12 @@ The App does not push code. The normal workflow `GITHUB_TOKEN` remains read-only
 
 The authoritative repository set is
 [`config/ci/k8s-submodule-github-app-allowlist.json`](../config/ci/k8s-submodule-github-app-allowlist.json).
-Static CI requires that list to match the `remote/deployments` gitlinks exactly.
-Adding, removing, or renaming a deployment submodule therefore requires an
-intentional allowlist review in the same pull request. The allowlist includes
-both `scintilla-run/gleam-lambda-runner` and
+It includes `ORESoftware/k8s-libs-and-shared-defs` for the separate
+`remote/libs` gitlink plus every private `remote/deployments/*` gitlink. Static
+CI requires that exact union to match the checked-in gitlinks. Adding, removing,
+or renaming a private-source submodule therefore requires an intentional
+allowlist review in the same pull request. The allowlist includes both
+`scintilla-run/gleam-lambda-runner` and
 `scintilla-run/scintilla-run-monorepo`; do not create a separate broader App or
 fall back to a personal token for those repositories.
 
