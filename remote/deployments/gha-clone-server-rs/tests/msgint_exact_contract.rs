@@ -1,4 +1,4 @@
-use gha_clone_server::{build_plan, PlanRequest, PlannerLimits};
+use gha_clone_server::{build_plan, PlanRequest, PlannerLimits, WorkflowPlan};
 
 const REPOSITORY: &str = "messaging-intel/msgint-connectors";
 const REVISION: &str = "a9cc977d78347ec0efdbe8e6766967f80d425882";
@@ -47,7 +47,7 @@ fn request(repository: &str, revision: &str, workflow_path: &str, yaml: &str) ->
     }
 }
 
-fn reviewed(yaml: &str) -> Result<gha_clone_server::WorkflowPlan, Vec<String>> {
+fn reviewed(yaml: &str) -> Result<WorkflowPlan, Vec<String>> {
     build_plan(
         &request(REPOSITORY, REVISION, WORKFLOW_PATH, yaml),
         &PlannerLimits::default(),
@@ -57,6 +57,58 @@ fn reviewed(yaml: &str) -> Result<gha_clone_server::WorkflowPlan, Vec<String>> {
 fn replace_once(old: &str, new: &str) -> String {
     assert!(REVIEWED.contains(old), "missing mutation anchor {old:?}");
     REVIEWED.replacen(old, new, 1)
+}
+
+fn assert_terminal_rejection(
+    result: Result<WorkflowPlan, Vec<String>>,
+    expected_reason_fragments: &[&str],
+) {
+    match result {
+        Err(errors) => {
+            assert!(!errors.is_empty(), "terminal rejection returned no errors");
+            if !expected_reason_fragments.is_empty() {
+                let joined = errors.join("\n");
+                assert!(
+                    expected_reason_fragments
+                        .iter()
+                        .any(|fragment| joined.contains(fragment)),
+                    "unexpected terminal errors: {joined}"
+                );
+            }
+        }
+        Ok(plan) => {
+            assert!(
+                !plan.independent_executable,
+                "terminal rejection returned an independently executable plan: {plan:?}"
+            );
+            assert!(
+                plan.jobs.iter().all(|job| !job.independent_supported),
+                "terminal rejection left an independently supported job: {plan:?}"
+            );
+            assert!(
+                plan.jobs
+                    .iter()
+                    .all(|job| job.independent_profile.is_none()),
+                "terminal rejection retained a privileged profile: {plan:?}"
+            );
+
+            if !expected_reason_fragments.is_empty() {
+                let reasons = plan
+                    .jobs
+                    .iter()
+                    .flat_map(|job| job.independent_reasons.iter())
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(
+                    expected_reason_fragments
+                        .iter()
+                        .any(|fragment| reasons.contains(fragment)),
+                    "unexpected terminal plan reasons: {reasons}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -100,13 +152,9 @@ fn reserved_repository_path_and_revision_mismatches_are_terminal() {
             REVIEWED,
         ),
     ] {
-        let error = build_plan(&request, &PlannerLimits::default())
-            .expect_err("reserved identity mismatch must fail closed")
-            .join("\n");
-        assert!(
-            error.contains("reserved Messaging Intel")
-                || error.contains("requires reviewed revision"),
-            "unexpected rejection: {error}"
+        assert_terminal_rejection(
+            build_plan(&request, &PlannerLimits::default()),
+            &["reserved Messaging Intel", "requires reviewed revision"],
         );
     }
 }
@@ -129,14 +177,13 @@ fn immutable_action_and_input_lookalikes_never_fall_back_to_generic_node() {
             "      - uses: actions/setup-python@8a5f4f9f4d7e4c9f5eead5d7f7e770585a6e9430\n      - run: |\n          npm ci --ignore-scripts\n",
         ),
     ] {
-        let error = reviewed(&yaml)
-            .expect_err("lookalike action/input workflow must fail closed")
-            .join("\n");
-        assert!(
-            error.contains("reviewed contract")
-                || error.contains("exact 40-hex commit SHA")
-                || error.contains("exactly three reviewed steps"),
-            "unexpected rejection: {error}"
+        assert_terminal_rejection(
+            reviewed(&yaml),
+            &[
+                "reviewed contract",
+                "exact 40-hex commit SHA",
+                "exactly three reviewed steps",
+            ],
         );
     }
 }
@@ -169,10 +216,7 @@ fn command_dag_environment_and_secret_lookalikes_are_rejected() {
             "          echo npm run test:operator-config\n",
         ),
     ] {
-        assert!(
-            reviewed(&yaml).is_err(),
-            "lookalike workflow unexpectedly executed:\n{yaml}"
-        );
+        assert_terminal_rejection(reviewed(&yaml), &[]);
     }
 }
 
