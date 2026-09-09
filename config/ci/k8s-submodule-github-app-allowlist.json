@@ -22,6 +22,9 @@
       "akrion-backend.rs",
       "akrion-web-server.rs"
     ],
+    "anticaptrad": [
+      "act-monorepo"
+    ],
     "athlet-o": [
       "athleto-app-rs",
       "athleto-backend.rs"
