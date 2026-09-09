@@ -89,6 +89,13 @@ jobs:
             --report="$evidence_dir/tjsv-report.json" \
             --quiet
 
+      - name: Stress TJSV deterministic and fail-closed behavior
+        env:
+          TJSV_EVIDENCE_DIR: ${{ steps.tjsv.outputs.path }}
+        run: |
+          set -euo pipefail
+          node scripts/local-k8s/test_tjsv_failclosed.mjs
+
       - name: Run semantic profile regression tests
         run: |
           set -euo pipefail
@@ -114,6 +121,7 @@ jobs:
       - name: Verify bootstrap syntax and repository hygiene
         run: |
           set -euo pipefail
+          node --check scripts/local-k8s/test_tjsv_failclosed.mjs
           bash -n scripts/local-k8s/bootstrap-colima-kind.sh
           bash -n scripts/local-k8s/bootstrap-multipass-k3s.sh
           test ! -e package-lock.json
@@ -137,6 +145,8 @@ jobs:
             echo "- TJSV exact revision: \`${TJSV_SHA}\`"
             echo '- independent TypeSpec and Draft 2020-12 JSON Schema authorities: converged'
             echo '- differential valid/invalid RuntimeProfile corpus: passed'
+            echo '- deterministic TJSV receipt replay: passed'
+            echo '- authored-schema and TypeSpec drift mutations: both stopped for evaluation as expected'
             echo '- Docker-only runtime admission: rejected as expected'
             echo '- digest-pinned kind and single-VM K3s semantic policy: passed'
             echo '- Colima/kind and Multipass/K3s bootstrap syntax: passed'
