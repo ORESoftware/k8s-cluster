@@ -97,14 +97,14 @@
       "$id": "ReaperCounts",
       "type": "object",
       "properties": {
-        "candidates": { "type": "integer", "exclusiveMinimum": -1 },
-        "linearCreated": { "type": "integer", "exclusiveMinimum": -1 },
-        "linearUpdated": { "type": "integer", "exclusiveMinimum": -1 },
-        "linearReused": { "type": "integer", "exclusiveMinimum": -1 },
-        "coveredWithImplementation": { "type": "integer", "exclusiveMinimum": -1 },
-        "awaitingImplementation": { "type": "integer", "exclusiveMinimum": -1 },
-        "quarantined": { "type": "integer", "exclusiveMinimum": -1 },
-        "excluded": { "type": "integer", "exclusiveMinimum": -1 }
+        "candidates": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "linearCreated": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "linearUpdated": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "linearReused": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "coveredWithImplementation": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "awaitingImplementation": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "quarantined": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "excluded": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
       },
       "required": [
         "candidates",
@@ -153,12 +153,12 @@
       "$id": "ReceiptCandidateCounts",
       "type": "object",
       "properties": {
-        "total": { "type": "integer", "exclusiveMinimum": -1 },
-        "actionable": { "type": "integer", "exclusiveMinimum": -1 },
-        "covered": { "type": "integer", "exclusiveMinimum": -1 },
-        "excluded": { "type": "integer", "exclusiveMinimum": -1 },
-        "quarantined": { "type": "integer", "exclusiveMinimum": -1 },
-        "gaps": { "type": "integer", "exclusiveMinimum": -1 }
+        "total": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "actionable": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "covered": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "excluded": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "quarantined": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "gaps": { "type": "integer", "minimum": 0, "maximum": 2147483647 }
       },
       "required": ["total", "actionable", "covered", "excluded", "quarantined", "gaps"],
       "unevaluatedProperties": false
@@ -168,12 +168,12 @@
       "$id": "ReconciliationCounts",
       "type": "object",
       "properties": {
-        "scanned": { "type": "integer", "exclusiveMinimum": -1 },
-        "actionable": { "type": "integer", "exclusiveMinimum": -1 },
-        "covered": { "type": "integer", "exclusiveMinimum": -1 },
-        "excluded": { "type": "integer", "exclusiveMinimum": -1 },
-        "quarantined": { "type": "integer", "exclusiveMinimum": -1 },
-        "gaps": { "type": "integer", "exclusiveMinimum": -1 },
+        "scanned": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "actionable": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "covered": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "excluded": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "quarantined": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+        "gaps": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
         "candidates": { "$ref": "ReceiptCandidateCounts" },
         "complete": { "type": "boolean" }
       },
@@ -207,7 +207,7 @@
       "type": "object",
       "properties": {
         "candidateKey": { "type": "string" },
-        "messageCount": { "type": "integer", "exclusiveMinimum": 0 },
+        "messageCount": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
         "disposition": { "$ref": "ReceiptDispositionKind" },
         "linearIssues": {
           "type": "array",
