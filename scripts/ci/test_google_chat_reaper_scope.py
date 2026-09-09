@@ -40,6 +40,7 @@ class GoogleChatReaperScopeTests(unittest.TestCase):
             [
                 ".github/workflows/namespace-migration-contract.yml",
                 ".github/workflows/repo-check-scope-contract.yml",
+                "catalog/applications.json",
                 "catalog/namespaces/migration-manifest.json",
                 "scripts/ci/classify_repo_check_scope.py",
                 "scripts/ci/test_google_chat_reaper_scope.py",
@@ -53,6 +54,17 @@ class GoogleChatReaperScopeTests(unittest.TestCase):
             "credential_free_contract_only_no_private_gitlinks",
             result["reason"],
         )
+
+    def test_deterministic_catalogs_do_not_require_private_gitlinks(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                "catalog/applications.json",
+                "catalog/namespaces/migration-manifest.json",
+            ],
+        )
+        self.assertTrue(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
 
     def test_reaper_surface_mixed_with_unknown_file_fails_closed(self):
         result = MODULE.classify(
