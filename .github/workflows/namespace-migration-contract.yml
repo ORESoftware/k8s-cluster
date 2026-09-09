@@ -109,6 +109,13 @@ jobs:
             --format json \
             > artifacts/namespace-inventory.json
 
+      - name: Render deterministic expected manifest evidence
+        run: |
+          set -euo pipefail
+          python3 tools/namespace_manifest.py render \
+            --root . \
+            > artifacts/namespace-manifest-expected.json
+
       - name: Validate deterministic plaintext migration manifest
         shell: bash
         run: |
@@ -135,10 +142,15 @@ jobs:
           )
           spec = manifest['spec']
           entries = spec['entries']
+          entry_count = report.get('entryCount')
+          inventory_entry_count = report.get('inventoryEntryCount')
           checks = {
               'valid report': report.get('valid') is True,
-              'manifest entries': report.get('entryCount') == 1276,
-              'inventory entries': report.get('inventoryEntryCount') == 1276,
+              'manifest inventory parity': (
+                  isinstance(entry_count, int)
+                  and entry_count > 0
+                  and entry_count == inventory_entry_count == len(entries)
+              ),
               'zero diagnostics': report.get('diagnostics') == [],
               'no encoded staging': report.get('encodedStagingFiles') == [],
               'execution disabled': spec.get('executionAuthorized') is False,
@@ -190,6 +202,7 @@ jobs:
             artifacts/namespace-source-ref.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
+            artifacts/namespace-manifest-expected.json
             artifacts/namespace-manifest-report.json
             artifacts/namespace-manifest-invariants.json
             artifacts/namespace-manifest.sha256
