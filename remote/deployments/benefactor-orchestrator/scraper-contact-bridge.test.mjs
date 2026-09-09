@@ -126,10 +126,14 @@ test('browser and non-scraper requests do not recursively escalate', async () =>
   assert.equal(calls, 1);
 });
 
-test('container startup preloads only the contact compatibility bridge', () => {
+test('runtime integration is explicit and container startup has no preload hook', () => {
   const dockerfile = readFileSync(new URL('./Dockerfile', import.meta.url), 'utf8');
-  const preload = readFileSync(new URL('./scraper-contact-preload.mjs', import.meta.url), 'utf8');
-  assert.match(dockerfile, /NODE_OPTIONS=--import=\/work\/scraper-contact-preload\.mjs/);
-  assert.match(preload, /installScraperContactBridge/);
-  assert.doesNotMatch(preload, /mail\/send|messages\.send|twilio|hubspot/i);
+  const runtime = readFileSync(new URL('./orchestrator-runtime.mjs', import.meta.url), 'utf8');
+  const orchestrator = readFileSync(new URL('./orchestrate.mjs', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(dockerfile, /NODE_OPTIONS|scraper-contact-preload/);
+  assert.match(runtime, /createScraperContactFetch/);
+  assert.match(runtime, /createProviderDiagnosticsFetch/);
+  assert.match(orchestrator, /createBenefactorRuntime/);
+  assert.match(orchestrator, /runtime\.fetch/);
 });
