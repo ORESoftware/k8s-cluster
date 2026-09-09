@@ -1,15 +1,28 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import importlib.util
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/namespace-migration-contract.yml"
+CLASSIFIER = ROOT / "scripts/ci/classify_repo_check_scope.py"
 
 
 def require(text: str, needle: str, message: str) -> None:
     if needle not in text:
         raise AssertionError(message)
+
+
+def load_classifier():
+    spec = importlib.util.spec_from_file_location("namespace_repo_check_scope", CLASSIFIER)
+    if spec is None or spec.loader is None:
+        raise AssertionError("unable to load repo-check scope classifier")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 def main() -> None:
@@ -42,7 +55,22 @@ def main() -> None:
             "namespace workflow must inventory, render, test, then validate in deterministic order"
         )
 
-    print("Namespace migration workflow exact-head and post-merge certification checks passed")
+    classifier = load_classifier()
+    scope = classifier.classify(
+        "pull_request",
+        [
+            ".github/workflows/namespace-migration-contract.yml",
+            "docs/namespace-migration-manifest.md",
+            "scripts/ci/classify_repo_check_scope.py",
+            "tests/namespace_migration_workflow_test.py",
+        ],
+    )
+    if scope["private_contracts_required"] is not False:
+        raise AssertionError("namespace-only contract diffs must not require private gitlinks")
+    if scope["credential_free_contract_only"] is not True:
+        raise AssertionError("namespace-only contract diffs must classify credential-free")
+
+    print("Namespace migration workflow and credential-free scope checks passed")
 
 
 if __name__ == "__main__":
