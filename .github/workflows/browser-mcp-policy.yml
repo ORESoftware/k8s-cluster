@@ -3,16 +3,20 @@ name: Browser MCP policy
 on:
   pull_request:
     paths:
+      - 'contracts/browser-mcp-platform-jobs/**'
       - 'remote/deployments/browser-mcp-rs/k8s/**'
       - 'remote/argocd/dd-next-runtime/dd-web-scraper*.yaml'
+      - 'remote/tests/general/browser-mcp-platform-jobs-contract.test.ts'
       - 'tests/browser_mcp_policy_test.py'
       - '.github/workflows/browser-mcp-policy.yml'
   push:
     branches:
       - main
     paths:
+      - 'contracts/browser-mcp-platform-jobs/**'
       - 'remote/deployments/browser-mcp-rs/k8s/**'
       - 'remote/argocd/dd-next-runtime/dd-web-scraper*.yaml'
+      - 'remote/tests/general/browser-mcp-platform-jobs-contract.test.ts'
       - 'tests/browser_mcp_policy_test.py'
       - '.github/workflows/browser-mcp-policy.yml'
 
@@ -22,8 +26,37 @@ permissions:
 jobs:
   policy:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Verify policy alignment and workflow isolation
+      - name: Verify manifest policy alignment and workflow isolation
         run: python3 tests/browser_mcp_policy_test.py
+      - name: Set up Node.js 22 for contract verification
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Verify TypeSpec and JSON Schema peer authorities with pinned TJSV
+        env:
+          TJSV_SHA: 2281843126ab644607b11cf8281d84f382d68dfc
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/browser-mcp-platform-jobs-tjsv"
+          mkdir -p "$work/contracts"
+          cp -R contracts/browser-mcp-platform-jobs "$work/contracts/"
+          cd "$work"
+          npm init -y >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund \
+            "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz"
+          ./node_modules/.bin/tjsv check \
+            --typespec=contracts/browser-mcp-platform-jobs/main.tsp \
+            --schema=contracts/browser-mcp-platform-jobs/authored.schema.json \
+            --instances=contracts/browser-mcp-platform-jobs/instances \
+            --report="$RUNNER_TEMP/browser-mcp-platform-jobs-tjsv-report.json" \
+            --quiet
+      - name: Verify TypeScript consumer against the same policy instance
+        run: |
+          set -euo pipefail
+          corepack enable
+          cd remote/tests
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test general/browser-mcp-platform-jobs-contract.test.ts
