@@ -1,4 +1,10 @@
 import {
+  CANDIDATE_ACTION_SET,
+  REAPER_SCHEMA_VERSION,
+  assertCoverageEvidenceContract,
+  assertReaperSummaryContract,
+} from './reaper-contracts.mjs';
+import {
   buildContentFreeLinearSection,
   titleNeedsReview,
 } from './reaper-provenance.mjs';
@@ -83,7 +89,10 @@ async function ensureLinearIssue(candidate, context, review) {
   let reused = false;
   for (const identifier of existingIdentifiers) {
     issue = await context.linear.getIssue(identifier);
-    if (issue) { reused = true; break; }
+    if (issue) {
+      reused = true;
+      break;
+    }
   }
   if (!issue) {
     const title = safeIssueTitle(candidate.title, review ? '[Google Chat review] ' : '[Google Chat] ');
@@ -141,7 +150,7 @@ function validatePlan(plan) {
     }
     if (seen.has(candidate.candidateKey)) throw new Error(`duplicate candidate ${candidate.candidateKey}`);
     seen.add(candidate.candidateKey);
-    if (!['create', 'comment-existing', 'manual-review', 'skip-non-actionable'].includes(candidate.action)) {
+    if (!CANDIDATE_ACTION_SET.has(candidate.action)) {
       throw new Error(`unsupported action ${candidate.action}`);
     }
   }
@@ -204,7 +213,11 @@ export async function materializePlan(plan, dependencies, options = {}) {
     });
   }
 
-  const evidence = { schemaVersion: 1, planId: plan.planId, entries };
+  const evidence = {
+    schemaVersion: REAPER_SCHEMA_VERSION,
+    planId: plan.planId,
+    entries,
+  };
   const coverageCounts = {
     coveredWithImplementation: entries.filter((entry) => entry.disposition === 'covered' && (entry.pullRequests.length || entry.defaultBranchCommits.length)).length,
     awaitingImplementation: entries.filter((entry) => entry.disposition === 'covered' && !(entry.pullRequests.length || entry.defaultBranchCommits.length)).length,
@@ -212,7 +225,7 @@ export async function materializePlan(plan, dependencies, options = {}) {
     excluded: entries.filter((entry) => entry.disposition === 'excluded').length,
   };
   const summaryCore = {
-    schemaVersion: 1,
+    schemaVersion: REAPER_SCHEMA_VERSION,
     planId: plan.planId,
     counts: {
       candidates: entries.length,
@@ -227,5 +240,7 @@ export async function materializePlan(plan, dependencies, options = {}) {
     ...summaryCore,
     summaryId: `google-chat-reaper-summary:${sha256(stableStringify(summaryCore)).slice(0, 24)}`,
   };
+  assertCoverageEvidenceContract(evidence);
+  assertReaperSummaryContract(summary);
   return { evidence, summary };
 }
