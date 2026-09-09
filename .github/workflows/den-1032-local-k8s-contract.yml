@@ -1,0 +1,144 @@
+name: DEN-1032 local Kubernetes contract
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/den-1032-local-k8s-contract.yml'
+      - 'contracts/local-k8s-platform/**'
+      - 'scripts/local-k8s/**'
+      - 'docs/operations/local-k8s-macbook.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-1032-local-k8s-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  contract:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TJSV_SHA: 2281843126ab644607b11cf8281d84f382d68dfc
+    steps:
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source-ref.outputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify exact source
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git diff --check
+
+      - name: Set up Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install exact TypeSpec JSON Schema validator
+        run: |
+          set -euo pipefail
+          npm install \
+            --no-save \
+            --package-lock=false \
+            --no-audit \
+            --no-fund \
+            "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz"
+          ./node_modules/.bin/tjsv doctor
+
+      - name: Prove TypeSpec and JSON Schema convergence
+        id: tjsv
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/den-1032-contract-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$evidence_dir"
+          printf 'path=%s\n' "$evidence_dir" >> "$GITHUB_OUTPUT"
+          ./node_modules/.bin/tjsv check \
+            --typespec=contracts/local-k8s-platform/main.tsp \
+            --schema=contracts/local-k8s-platform/authored.schema.json \
+            --instances=contracts/local-k8s-platform/instances \
+            --report="$evidence_dir/tjsv-report.json" \
+            --quiet
+
+      - name: Run semantic profile regression tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/local-k8s/verify_profile.py \
+            scripts/local-k8s/test_verify_profile.py
+          python3 scripts/local-k8s/test_verify_profile.py
+
+      - name: Verify positive and negative admission receipts
+        run: |
+          set -euo pipefail
+          LOCAL_K8S_PROFILE=contracts/local-k8s-platform/instances/RuntimeProfile/valid/colima-kind.json \
+            python3 scripts/local-k8s/verify_profile.py
+          LOCAL_K8S_PROFILE=contracts/local-k8s-platform/instances/RuntimeProfile/valid/multipass-k3s.json \
+            python3 scripts/local-k8s/verify_profile.py
+          set +e
+          LOCAL_K8S_PROFILE=contracts/local-k8s-platform/instances/RuntimeProfile/invalid/docker-only.json \
+            python3 scripts/local-k8s/verify_profile.py
+          status=$?
+          set -e
+          test "$status" -eq 2
+
+      - name: Verify bootstrap syntax and repository hygiene
+        run: |
+          set -euo pipefail
+          bash -n scripts/local-k8s/bootstrap-colima-kind.sh
+          bash -n scripts/local-k8s/bootstrap-multipass-k3s.sh
+          test ! -e package-lock.json
+          git diff --check
+
+      - name: Upload contract evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-1032-local-k8s-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.tjsv.outputs.path }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record verification summary
+        if: success()
+        run: |
+          {
+            echo '## DEN-1032 exact-head contract'
+            echo
+            echo "- TJSV exact revision: \`${TJSV_SHA}\`"
+            echo '- independent TypeSpec and Draft 2020-12 JSON Schema authorities: converged'
+            echo '- differential valid/invalid RuntimeProfile corpus: passed'
+            echo '- Docker-only runtime admission: rejected as expected'
+            echo '- digest-pinned kind and single-VM K3s semantic policy: passed'
+            echo '- Colima/kind and Multipass/K3s bootstrap syntax: passed'
+            echo '- cloud writes and credential inputs: denied'
+          } >> "$GITHUB_STEP_SUMMARY"
