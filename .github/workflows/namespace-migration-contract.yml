@@ -3,7 +3,7 @@ name: Namespace migration contract
 on:
   pull_request:
   push:
-    branches: [dev]
+    branches: [dev, main]
   workflow_dispatch:
 
 permissions:
@@ -88,7 +88,11 @@ jobs:
             tools/namespace_migration.py \
             tools/test_namespace_migration.py \
             tools/namespace_manifest.py \
-            tools/test_namespace_manifest.py
+            tools/test_namespace_manifest.py \
+            tests/namespace_migration_workflow_test.py
+
+      - name: Verify workflow exact-head and post-merge coverage
+        run: python3 tests/namespace_migration_workflow_test.py
 
       - name: Generate exact-head inventory before deriving the manifest
         run: |
