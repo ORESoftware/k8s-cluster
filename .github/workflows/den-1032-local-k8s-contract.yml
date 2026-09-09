@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
-      TJSV_SHA: 2281843126ab644607b11cf8281d84f382d68dfc
+      TJSV_SHA: 1f74cdf2791343fb3b3ba82570ef7d0318d08d27
     steps:
       - name: Select exact source ref
         id: source-ref
