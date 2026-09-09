@@ -63,7 +63,7 @@ jobs:
     needs: schedule-gate
     if: ${{ needs.schedule-gate.outputs.should-run == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 16
     steps:
       - name: Check out without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,6 +85,7 @@ jobs:
           node --check tools/google-chat-space-export/import-plan.mjs
           node --check tools/google-chat-space-export/daily-schedule-gate.mjs
           node --check tools/google-chat-space-export/reaper-materializer.mjs
+          node --check tools/google-chat-space-export/reaper-contracts.mjs
           node --check tools/google-chat-space-export/reaper-core.mjs
           node --check tools/google-chat-space-export/reaper-github.mjs
           node --check tools/google-chat-space-export/reaper-http.mjs
@@ -96,12 +97,37 @@ jobs:
             tools/google-chat-space-export/test/sensitive-content.test.mjs \
             tools/google-chat-space-export/test/import-plan.test.mjs \
             tools/google-chat-space-export/test/daily-schedule-gate.test.mjs \
+            tools/google-chat-space-export/test/reaper-contracts.test.mjs \
             tools/google-chat-space-export/test/reaper-materializer.test.mjs \
+            tools/google-chat-space-export/test/reaper-review-disposition.test.mjs \
             tools/google-chat-space-export/test/reconciliation-receipt.test.mjs \
+            tools/google-chat-space-export/test/reconciliation-review-reasons.test.mjs \
             tools/google-chat-space-export/test/reconciliation-pipeline.test.mjs \
             tools/google-chat-space-export/test/audit-ledger-2026-08-04.test.mjs \
             tools/google-chat-space-export/test/audit-ledger-2026-08-08.test.mjs
           python scripts/ops/verify_google_chat_reconciliation_ledger.py >/dev/null
+
+      - name: Enforce independent TypeSpec and JSON Schema authorities
+        uses: ORESoftware/typespec-json-schema-validator@2281843126ab644607b11cf8281d84f382d68dfc
+        with:
+          typespec: tools/google-chat-space-export/contracts/main.tsp
+          schema: tools/google-chat-space-export/contracts/authored.schema.json
+          instances: tools/google-chat-space-export/contracts/instances
+          report: .typespec-json-schema-validator/google-chat-reaper/report.json
+          sarif: .typespec-json-schema-validator/google-chat-reaper/report.sarif
+          contract_ir: .typespec-json-schema-validator/google-chat-reaper/contract-ir.json
+          output_dir: .typespec-json-schema-validator/google-chat-reaper/generated
+          max_probes: '96'
+          quiet: 'false'
+
+      - name: Upload TJSV contract evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: google-chat-reaper-contract-evidence-${{ github.run_id }}
+          path: .typespec-json-schema-validator/google-chat-reaper
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Build content-free audit evidence bundle
         shell: bash
