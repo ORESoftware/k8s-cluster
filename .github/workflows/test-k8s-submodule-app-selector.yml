@@ -1,0 +1,82 @@
+name: Test cross-organization submodule App selector
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-bootstrap-k8s-submodule-app-secrets.yml
+      - .github/workflows/test-k8s-submodule-app-selector.yml
+      - scripts/ops/bootstrap_k8s_submodule_app_secrets.py
+      - scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py
+      - config/ci/k8s-submodule-github-app-allowlist.json
+      - docs/k8s-submodule-github-app.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-bootstrap-k8s-submodule-app-secrets.yml
+      - .github/workflows/test-k8s-submodule-app-selector.yml
+      - scripts/ops/bootstrap_k8s_submodule_app_secrets.py
+      - scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py
+      - config/ci/k8s-submodule-github-app-allowlist.json
+      - docs/k8s-submodule-github-app.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-k8s-submodule-app-selector-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source without persisting credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Compile and run protected-selector regression tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ops/bootstrap_k8s_submodule_app_secrets.py \
+            scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py
+          python3 scripts/ops/bootstrap_k8s_submodule_app_secrets.py --self-test
+          python3 scripts/ops/test_bootstrap_k8s_submodule_app_secrets.py --verbose
+          git diff --check
+
+      - name: Verify allowlist contains the Scintilla build graph exactly once
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          document = json.loads(
+              Path('config/ci/k8s-submodule-github-app-allowlist.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          repositories = [
+              f'{owner}/{repo}'
+              for owner, names in document['repositories_by_owner'].items()
+              for repo in names
+          ]
+          identities = [name.casefold() for name in repositories]
+          if len(identities) != len(set(identities)):
+              raise SystemExit('submodule App allowlist contains duplicates')
+          for required in (
+              'scintilla-run/gleam-lambda-runner',
+              'scintilla-run/scintilla-run-monorepo',
+          ):
+              if repositories.count(required) != 1:
+                  raise SystemExit(
+                      f'{required} must appear exactly once in the App allowlist'
+                  )
+          print(f'validated {len(repositories)} allowlisted repositories')
+          PY

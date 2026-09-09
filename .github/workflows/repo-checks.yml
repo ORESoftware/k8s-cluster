@@ -67,20 +67,52 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Require private libraries deploy key
-        env:
-          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
-        run: test -n "$K8S_LIBS_DEPLOY_KEY"
-
-      - name: Checkout
+      - name: Checkout repository without private submodules
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
 
-      - name: Initialize required contract submodule
-        env:
-          SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+      - name: Resolve the exact shared-libraries gitlink
+        id: remote-libs-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'remote/libs does not resolve to one mode-160000 gitlink' >&2
+            exit 1
+          fi
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a repository-restricted shared-libraries token
+        id: remote-libs-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: ORESoftware
+          repositories: k8s-libs-and-shared-defs
+          permission-contents: read
+
+      - name: Check out exact pinned shared libraries recursively
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.remote-libs-pin.outputs.sha }}
+          path: remote/libs
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+          token: ${{ steps.remote-libs-token.outputs.token }}
+
+      - name: Verify the shared-library checkout equals the superproject pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C remote/libs rev-parse HEAD)" = "${{ steps.remote-libs-pin.outputs.sha }}"
+          git -C remote/libs diff --exit-code -- .
 
       - name: Install pnpm
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
@@ -223,20 +255,52 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - name: Require private libraries deploy key
-        env:
-          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
-        run: test -n "$K8S_LIBS_DEPLOY_KEY"
-
-      - name: Checkout
+      - name: Checkout repository without private submodules
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
 
-      - name: Initialize pinned shared libraries
-        env:
-          SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+      - name: Resolve the exact shared-libraries gitlink
+        id: remote-libs-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'remote/libs does not resolve to one mode-160000 gitlink' >&2
+            exit 1
+          fi
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a repository-restricted shared-libraries token
+        id: remote-libs-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: ORESoftware
+          repositories: k8s-libs-and-shared-defs
+          permission-contents: read
+
+      - name: Check out exact pinned shared libraries recursively
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.remote-libs-pin.outputs.sha }}
+          path: remote/libs
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+          token: ${{ steps.remote-libs-token.outputs.token }}
+
+      - name: Verify the shared-library checkout equals the superproject pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C remote/libs rev-parse HEAD)" = "${{ steps.remote-libs-pin.outputs.sha }}"
+          git -C remote/libs diff --exit-code -- .
 
       - name: Initialize pinned backend repositories with owner-scoped installation tokens
         id: backend-submodules

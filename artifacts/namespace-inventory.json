@@ -32,7 +32,7 @@
     },
     {
       "column": 34,
-      "line": 144,
+      "line": 137,
       "owner": "unclassified",
       "path": ".github/workflows/browser-mcp-public-e2e.yml",
       "reference": "dd/remote-dev/browser-mcp-secrets",
@@ -44,7 +44,7 @@
     },
     {
       "column": 16,
-      "line": 158,
+      "line": 151,
       "owner": "ores",
       "path": ".github/workflows/browser-mcp-public-e2e.yml",
       "reference": "/home/ec2-user/codes/dd/dd-next-1",
@@ -52,6 +52,18 @@
       "scope": "active",
       "status": "review-required",
       "system": "host-path",
+      "target_preview": null
+    },
+    {
+      "column": 23,
+      "line": 77,
+      "owner": "unclassified",
+      "path": ".github/workflows/browser-test-driver-e2e.yml",
+      "reference": "dd/telemetry",
+      "rule_id": "fallback.slash-namespace",
+      "scope": "active",
+      "status": "unclassified",
+      "system": "slash-namespace",
       "target_preview": null
     },
     {
@@ -140,7 +152,7 @@
     },
     {
       "column": 25,
-      "line": 141,
+      "line": 213,
       "owner": "ores",
       "path": ".github/workflows/ops-bootstrap-k8s-submodule-app-secrets.yml",
       "reference": "dd/remote-dev/agent-secrets",
@@ -4484,7 +4496,7 @@
     },
     {
       "column": 19,
-      "line": 174,
+      "line": 211,
       "owner": "ores",
       "path": "remote/argocd/dd-next-runtime/dd-browser-job-runner.deployment.yaml",
       "reference": "/home/ec2-user/codes/dd/dd-next-1",
@@ -14456,7 +14468,7 @@
     },
     {
       "column": 14,
-      "line": 270,
+      "line": 353,
       "owner": "ores",
       "path": "scripts/ops/bootstrap_k8s_submodule_app_secrets.py",
       "reference": "dd/remote-dev/agent-secrets",
@@ -14468,7 +14480,7 @@
     },
     {
       "column": 14,
-      "line": 271,
+      "line": 354,
       "owner": "unclassified",
       "path": "scripts/ops/bootstrap_k8s_submodule_app_secrets.py",
       "reference": "dd/remote-dev/k8s-submodule-github-app",
@@ -14480,7 +14492,7 @@
     },
     {
       "column": 14,
-      "line": 272,
+      "line": 355,
       "owner": "unclassified",
       "path": "scripts/ops/bootstrap_k8s_submodule_app_secrets.py",
       "reference": "dd/remote-dev/github-app",
@@ -14492,7 +14504,7 @@
     },
     {
       "column": 14,
-      "line": 273,
+      "line": 356,
       "owner": "unclassified",
       "path": "scripts/ops/bootstrap_k8s_submodule_app_secrets.py",
       "reference": "dd/remote-dev/github-app-secrets",
@@ -15013,28 +15025,28 @@
       "fiducia-cloud": 81,
       "ores": 500,
       "shared-auth": 13,
-      "unclassified": 653
+      "unclassified": 654
     },
     "byScope": {
-      "active": 980,
+      "active": 981,
       "documentation": 184,
       "test": 86
     },
     "byStatus": {
       "classified": 114,
       "review-required": 483,
-      "unclassified": 653
+      "unclassified": 654
     },
     "bySystem": {
       "generated-package": 82,
       "host-path": 192,
       "metadata-key": 405,
-      "slash-namespace": 457,
+      "slash-namespace": 458,
       "source-package": 114
     },
     "distinctReferences": 239,
-    "total": 1250,
-    "unclassifiedActive": 538
+    "total": 1251,
+    "unclassifiedActive": 539
   },
   "valid": true
 }
