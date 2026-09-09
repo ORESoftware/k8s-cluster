@@ -1,52 +1,53 @@
 # DEN-8 Browser MCP platform-jobs workflow
 
-This change set introduces a dedicated `platform-jobs` workflow for authorized job-application automation without broadening the existing `fiducia-applications` workflow.
+This change set introduced a dedicated `platform-jobs` workflow for authorized job-application automation without broadening the existing `fiducia-applications` workflow. Current hardening and ownership are tracked under DEN-256.
 
-## Required ATS hosts
+## Reviewed ATS roots
 
 ```text
-boards.greenhouse.io
-job-boards.greenhouse.io
 greenhouse.io
-jobs.lever.co
 lever.co
-jobs.ashbyhq.com
 ashbyhq.com
-jobs.smartrecruiters.com
-smartrecruiters.com
 myworkdayjobs.com
 workday.com
-apply.workable.com
-workable.com
-jobs.jobvite.com
+smartrecruiters.com
+icims.com
 jobvite.com
-careers-page.com
-click.appcast.io
-to.indeed.com
-www.indeed.com
-www.ziprecruiter.com
+workable.com
+bamboohr.com
+recruitee.com
+applytojob.com
+ats.rippling.com
+breezy.hr
+jobscore.com
+candidateportalin.ceipal.com
+candidateportalnew.ceipal.com
 ```
+
+The Browser MCP hostname matcher admits subdomains of a reviewed root. Rippling and CEIPAL use exact candidate-facing hosts. Historical entries for Indeed, ZipRecruiter, Appcast redirectors, generic careers-page hosts, and Google document/static hosts are not part of `platform-jobs` and must not be reintroduced by an overlay.
 
 ## Invariants
 
 - `fiducia-applications` remains unchanged.
 - `BROWSER_MCP_DEFAULT_WORKFLOW` remains `fiducia-applications`.
 - `platform-jobs` must be explicitly selected by callers.
-- `BROWSER_MCP_ALLOWED_DOMAINS` and `BROWSER_AGENT_ALLOWED_DOMAINS` remain byte-for-byte aligned.
+- `BROWSER_MCP_ALLOWED_DOMAINS` and `BROWSER_AGENT_ALLOWED_DOMAINS` remain byte-for-byte aligned across base manifests and applied overlays.
 - CAPTCHA detection stays enabled while auto-solving remains disabled.
 - Private-network access, URL credentials, sensitive headers, and arbitrary domains remain blocked.
 - MFA, payments, signatures, legal attestations, compensation commitments, and consequential final submissions remain manual boundaries.
+- The TypeSpec and Draft-2020-12 JSON Schema policy sources remain independent peer authorities and must pass pinned TJSV parity/differential checks.
 
 ## Validation plan
 
-1. Add the ATS hosts to both process-level ceilings.
-2. Add `platform-jobs` to `BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON` with only those ATS hosts.
-3. Add tests that parse both manifests and assert aligned ceilings.
-4. Assert the existing `fiducia-applications` array is unchanged.
-5. Assert `platform-jobs` excludes unrelated domains.
-6. Verify `initialize`, `tools/list`, `browser_state`, and harmless `browser_act` navigation after rollout.
-7. Verify an off-profile domain is denied.
-8. Reconcile AWS and Hetzner ArgoCD deployments.
-9. Refresh the ChatGPT custom app so `browser_act` and `browser_state` are visible.
+1. Keep the reviewed ATS roots in both process-level ceilings.
+2. Keep `platform-jobs` restricted to the exact reviewed roots.
+3. Compare base manifests and Kustomize overlays so an overlay cannot widen or stale the production policy.
+4. Validate the independently authored TypeSpec and JSON Schema authorities with `ORESoftware/typespec-json-schema-validator` pinned to an exact commit.
+5. Make Python and TypeScript consumers read the same reviewed `BrowserWorkflowPolicy` instance.
+6. Assert the existing `fiducia-applications` and `appointments` profiles are preserved by overlays.
+7. Verify `initialize`, `tools/list`, `browser_state`, and harmless `browser_act` navigation after rollout.
+8. Verify marketplace, redirector, off-profile, webmail, identity-login, and payment hosts are denied.
+9. Reconcile AWS and Hetzner ArgoCD deployments.
+10. Refresh the ChatGPT custom app only after the deployed exact revision passes the live canary.
 
-References DEN-8
+References DEN-8 and DEN-256.
