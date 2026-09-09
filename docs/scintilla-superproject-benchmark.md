@@ -12,10 +12,10 @@ installation tokens for:
 - the exact `ORESoftware/k8s-libs-and-shared-defs` gitlink; and
 - the exact `scintilla-run/gleam-lambda-runner` candidate revision.
 
-The App selector and trusted bootstrap are tracked in PR #1460. That bootstrap
-must validate the same App across the authoritative allowlist before writing the
-repository Actions secrets. No personal token is committed, accepted as a
-workflow input, embedded in a Git URL, or written to evidence.
+The App selector and trusted bootstrap were merged through PR #1460. The
+bootstrap must validate the same App across the authoritative allowlist before
+writing the repository Actions secrets. No personal token is committed,
+accepted as a workflow input, embedded in a Git URL, or written to evidence.
 
 For each native architecture, the workflow:
 
@@ -26,16 +26,22 @@ For each native architecture, the workflow:
 3. overlays the exact runner candidate at its canonical nested path;
 4. verifies the shared-library SHA, retained monorepo gitlink, and candidate
    runner SHA independently;
-5. verifies the immutable
-   `ORESoftware/typespec-json-schema-validator` CI pin and both independently
-   authored runtime-wire authorities;
-6. builds the generated compatibility image and hand-authored lean image from
+5. executes the Node.js, Python, Ruby, and Bash child adapters in check mode,
+   covering both valid function bodies and syntax failures;
+6. records the observed requests, success responses, and failure responses as
+   an instance corpus;
+7. runs the immutable
+   `ORESoftware/typespec-json-schema-validator` action over the independently
+   authored TypeSpec and JSON Schema authorities plus that observed corpus;
+8. requires a passed parity receipt, zero findings, and an admissible,
+   non-authoritative Contract IR before any image build;
+9. builds the generated compatibility image and hand-authored lean image from
    the cluster-root context;
-7. verifies the loaded OCI architecture;
-8. starts fresh containers in alternating order and measures `docker run`
-   through the first HTTP 200 from `/healthz`; and
-9. publishes JSON, Markdown, provenance, image-size, raw-sample, median, and p95
-   evidence.
+10. verifies the loaded OCI architecture;
+11. starts fresh containers in alternating order and measures `docker run`
+    through the first HTTP 200 from `/healthz`; and
+12. publishes JSON, Markdown, provenance, runtime-contract, image-size,
+    raw-sample, median, and p95 evidence.
 
 The compatibility and lean files deliberately have different ownership and
 names:
@@ -46,9 +52,19 @@ names:
 | arm64 | `Dockerfile.arm64.dkf` | `runtime-images/control-plane-lean-arm64.Dockerfile` |
 
 The current pull request benchmarks runner commit
-`95014de1c5fe799a8c313e20eff8c40dba88d32b`. After merge,
+`25689f71870a4b975ec519d384a30fd2a1409626`. After merge,
 `workflow_dispatch` can benchmark another branch, tag, or immutable commit
 without changing the cluster gitlinks.
+
+## Current operational blocker
+
+The first trusted-main bootstrap run after PR #1460 passed the selector
+self-test and exact 32-repository allowlist validation, then failed before
+secret hydration because AWS rejected `sts:AssumeRoleWithWebIdentity` for the
+configured OIDC role. The benchmark must not fall back to a personal access
+token. The AWS role trust relationship or selected repository secret must be
+corrected, the trusted bootstrap rerun, and both native jobs rerun on the exact
+candidate above.
 
 The runner remains draft until both native architecture jobs complete
 successfully, the TJSV receipt for the candidate head is passed and admissible,
