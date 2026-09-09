@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "browser-mcp-platform-jobs.authored.schema.json",
+  "$defs": {
+    "PlatformJobDomain": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "PlatformJobDomain",
+      "type": "string",
+      "enum": [
+        "greenhouse.io", "lever.co", "ashbyhq.com", "myworkdayjobs.com", "workday.com",
+        "smartrecruiters.com", "icims.com", "jobvite.com", "workable.com", "bamboohr.com",
+        "recruitee.com", "applytojob.com", "ats.rippling.com", "breezy.hr", "jobscore.com",
+        "candidateportalin.ceipal.com", "candidateportalnew.ceipal.com"
+      ]
+    },
+    "PlatformJobBlockedDomain": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "PlatformJobBlockedDomain",
+      "type": "string",
+      "enum": [
+        "careers-page.com", "click.appcast.io", "to.indeed.com", "www.indeed.com",
+        "www.ziprecruiter.com", "linkedin.com", "docs.google.com", "www.gstatic.com",
+        "ssl.gstatic.com", "fonts.googleapis.com", "fonts.gstatic.com"
+      ]
+    },
+    "GloballyBlockedDomain": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "GloballyBlockedDomain",
+      "type": "string",
+      "enum": [
+        "accounts.google.com", "mail.google.com", "login.microsoftonline.com", "paypal.com", "stripe.com"
+      ]
+    },
+    "HumanCompletionPoint": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "HumanCompletionPoint",
+      "type": "string",
+      "enum": ["captcha", "mfa"]
+    },
+    "BlockedFieldClass": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BlockedFieldClass",
+      "type": "string",
+      "enum": [
+        "ssn", "tax_identifier", "bank_account", "payment_card", "mfa", "otp", "pin", "credential",
+        "demographic", "disability", "signature", "legal_attestation", "compensation_commitment"
+      ]
+    },
+    "BrowserWorkflowPolicy": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "BrowserWorkflowPolicy",
+      "type": "object",
+      "properties": {
+        "workflowId": { "type": "string", "const": "platform-jobs" },
+        "allowedDomains": { "type": "array", "items": { "$ref": "PlatformJobDomain" } },
+        "blockedPlatformJobDomains": { "type": "array", "items": { "$ref": "PlatformJobBlockedDomain" } },
+        "globallyBlockedDomains": { "type": "array", "items": { "$ref": "GloballyBlockedDomain" } },
+        "blockedFieldClasses": { "type": "array", "items": { "$ref": "BlockedFieldClass" } },
+        "humanCompletionPoints": { "type": "array", "items": { "$ref": "HumanCompletionPoint" } },
+        "requireExplicitApproval": { "type": "boolean", "const": true },
+        "requireRevisionBoundActionDigest": { "type": "boolean", "const": true },
+        "allowArbitraryCompanySites": { "type": "boolean", "const": false },
+        "allowMarketplaceNavigation": { "type": "boolean", "const": false },
+        "allowRedirectorNavigation": { "type": "boolean", "const": false },
+        "permitCaptchaAutomation": { "type": "boolean", "const": false }
+      },
+      "required": [
+        "workflowId", "allowedDomains", "blockedPlatformJobDomains", "globallyBlockedDomains",
+        "blockedFieldClasses", "humanCompletionPoints", "requireExplicitApproval",
+        "requireRevisionBoundActionDigest", "allowArbitraryCompanySites", "allowMarketplaceNavigation",
+        "allowRedirectorNavigation", "permitCaptchaAutomation"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
