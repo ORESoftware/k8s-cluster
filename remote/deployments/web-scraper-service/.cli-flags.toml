@@ -1,0 +1,390 @@
+# Canonical CLI/environment contract for dd-web-scraper.
+# Auditable with:
+#   npx --yes @oresoftware/f2e@0.3.0 audit .cli-flags.toml
+#
+# Secrets are deliberately environment/secret-store only and are NOT exposed as
+# CLI flags (to avoid shell history / process-list leakage):
+#   SERVER_AUTH_SECRET, BROWSERLESS_TOKEN, BROWSERLESS_CONTENT_URL,
+#   SCRAPER_PROXIES, SCRAPER_CAPTCHA_API_KEY, APIFY_TOKEN.
+
+[help]
+url = "https://github.com/flags-2-env/flags-2-env"
+
+[parse]
+allow_unknown = false
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+
+[flags.host]
+env = "HOST"
+aliases = ["host"]
+type = "string"
+default = "0.0.0.0"
+help = "Fastify bind host."
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "http-port"]
+short = "p"
+type = "integer"
+default = 8097
+help = "Fastify HTTP port."
+
+[flags.allow_unauthenticated]
+env = "SCRAPER_ALLOW_UNAUTHENTICATED"
+aliases = ["allow-unauthenticated"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Allow POST /scrape without SERVER_AUTH_SECRET. Keep false in production."
+
+[flags.default_strategy]
+env = "SCRAPER_DEFAULT_STRATEGY"
+aliases = ["default-strategy", "strategy"]
+type = "string"
+default = "auto"
+help = "Default scraping strategy."
+
+[flags.max_concurrent]
+env = "SCRAPER_MAX_CONCURRENT"
+aliases = ["max-concurrent"]
+type = "integer"
+default = 4
+help = "Maximum concurrent scrape requests per process."
+
+[flags.parser_workers]
+env = "SCRAPER_PARSER_WORKERS"
+aliases = ["parser-workers"]
+type = "integer"
+default = 2
+help = "Maximum concurrent HTML parser worker_threads."
+
+[flags.parser_worker_memory_mb]
+env = "SCRAPER_PARSER_WORKER_MEMORY_MB"
+aliases = ["parser-worker-memory-mb"]
+type = "integer"
+default = 128
+help = "Per-parser-worker V8 old-generation memory cap in MiB."
+
+[flags.default_timeout_ms]
+env = "SCRAPER_DEFAULT_TIMEOUT_MS"
+aliases = ["default-timeout-ms"]
+type = "integer"
+default = 30000
+help = "Default per-attempt scrape timeout in milliseconds."
+
+[flags.max_timeout_ms]
+env = "SCRAPER_MAX_TIMEOUT_MS"
+aliases = ["max-timeout-ms"]
+type = "integer"
+default = 60000
+help = "Maximum caller-selectable scrape timeout in milliseconds."
+
+[flags.dns_timeout_ms]
+env = "SCRAPER_DNS_TIMEOUT_MS"
+aliases = ["dns-timeout-ms"]
+type = "integer"
+default = 5000
+help = "Bounded DNS lookup timeout used by SSRF checks."
+
+[flags.max_redirects]
+env = "SCRAPER_MAX_REDIRECTS"
+aliases = ["max-redirects"]
+type = "integer"
+default = 5
+help = "Maximum validated redirect hops."
+
+[flags.max_html_chars]
+env = "SCRAPER_MAX_HTML_CHARS"
+aliases = ["max-html-chars"]
+type = "integer"
+default = 1000000
+help = "Maximum retained HTML characters per scrape."
+
+[flags.max_text_chars]
+env = "SCRAPER_MAX_TEXT_CHARS"
+aliases = ["max-text-chars"]
+type = "integer"
+default = 40000
+help = "Maximum extracted text characters per scrape."
+
+[flags.max_links]
+env = "SCRAPER_MAX_LINKS"
+aliases = ["max-links"]
+type = "integer"
+default = 250
+help = "Maximum extracted links per scrape."
+
+[flags.max_phones]
+env = "SCRAPER_MAX_PHONES"
+aliases = ["max-phones"]
+type = "integer"
+default = 50
+help = "Maximum extracted phone numbers per scrape."
+
+[flags.max_emails]
+env = "SCRAPER_MAX_EMAILS"
+aliases = ["max-emails"]
+type = "integer"
+default = 50
+help = "Maximum extracted email addresses per scrape."
+
+[flags.contact_region]
+env = "SCRAPER_CONTACT_REGION"
+aliases = ["contact-region"]
+type = "string"
+default = "US"
+help = "ISO 3166-1 alpha-2 region used for local phone normalization."
+
+[flags.user_agent]
+env = "SCRAPER_USER_AGENT"
+aliases = ["user-agent"]
+type = "string"
+default = "dd-web-scraper/0.1 (+https://github.com/ORESoftware/k8s-cluster)"
+help = "Default scraper User-Agent."
+
+[flags.respect_robots]
+env = "SCRAPER_RESPECT_ROBOTS"
+aliases = ["respect-robots"]
+type = "bool"
+default = "true"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Honor robots.txt before local and provider scraping."
+
+[flags.allow_robots_override]
+env = "SCRAPER_ALLOW_ROBOTS_OVERRIDE"
+aliases = ["allow-robots-override"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Permit per-request robots override for owned/authorized targets only."
+
+[flags.robots_cache_ttl_ms]
+env = "SCRAPER_ROBOTS_CACHE_TTL_MS"
+aliases = ["robots-cache-ttl-ms"]
+type = "integer"
+default = 3600000
+help = "robots.txt cache TTL in milliseconds."
+
+[flags.min_origin_delay_ms]
+env = "SCRAPER_MIN_ORIGIN_DELAY_MS"
+aliases = ["min-origin-delay-ms"]
+type = "integer"
+default = 1000
+help = "Minimum delay between top-level requests to one origin."
+
+[flags.browser_headless]
+env = "SCRAPER_BROWSER_HEADLESS"
+aliases = ["browser-headless"]
+type = "bool"
+default = "true"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Run Playwright/Puppeteer headless."
+
+[flags.capture_failure_screenshots]
+env = "SCRAPER_CAPTURE_FAILURE_SCREENSHOTS"
+aliases = ["capture-failure-screenshots"]
+type = "bool"
+default = "true"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Capture bounded browser screenshots on failures."
+
+[flags.failure_screenshot_quality]
+env = "SCRAPER_FAILURE_SCREENSHOT_QUALITY"
+aliases = ["failure-screenshot-quality"]
+type = "integer"
+default = 65
+help = "Failure screenshot JPEG quality."
+
+[flags.failure_screenshot_max_bytes]
+env = "SCRAPER_FAILURE_SCREENSHOT_MAX_BYTES"
+aliases = ["failure-screenshot-max-bytes"]
+type = "integer"
+default = 512000
+help = "Maximum failure screenshot payload bytes."
+
+[flags.auto_browserless]
+env = "SCRAPER_AUTO_BROWSERLESS"
+aliases = ["auto-browserless"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Allow Browserless in the automatic provider ladder when configured."
+
+[flags.allow_private_networks]
+env = "SCRAPER_ALLOW_PRIVATE_NETWORKS"
+aliases = ["allow-private-networks"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Permit private-network targets. Keep false except tightly controlled internal use."
+
+[flags.allow_sensitive_headers]
+env = "SCRAPER_ALLOW_SENSITIVE_HEADERS"
+aliases = ["allow-sensitive-headers"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Permit sensitive caller headers to same-origin targets."
+
+[flags.allow_url_credentials]
+env = "SCRAPER_ALLOW_URL_CREDENTIALS"
+aliases = ["allow-url-credentials"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Permit credentials embedded in target URLs."
+
+[flags.browserless_endpoint]
+env = "BROWSERLESS_ENDPOINT"
+aliases = ["browserless-endpoint"]
+type = "string"
+default = "https://production-sfo.browserless.io"
+help = "Browserless API endpoint; token remains secret-only."
+
+[flags.proxy_rotation]
+env = "SCRAPER_PROXY_ROTATION"
+aliases = ["proxy-rotation"]
+type = "string"
+default = "sticky"
+help = "Proxy rotation policy: sticky, round-robin, or random."
+
+[flags.proxy_cooldown_ms]
+env = "SCRAPER_PROXY_COOLDOWN_MS"
+aliases = ["proxy-cooldown-ms"]
+type = "integer"
+default = 60000
+help = "Cooldown for unhealthy pooled proxies."
+
+[flags.allow_request_proxy]
+env = "SCRAPER_ALLOW_REQUEST_PROXY"
+aliases = ["allow-request-proxy"]
+type = "bool"
+default = "true"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Allow authenticated callers to supply a per-request proxy."
+
+[flags.detect_captchas]
+env = "SCRAPER_DETECT_CAPTCHAS"
+aliases = ["detect-captchas"]
+type = "bool"
+default = "true"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Detect challenges for diagnostics; this does not authorize bypassing them."
+
+[flags.captcha_autosolve]
+env = "SCRAPER_CAPTCHA_AUTOSOLVE"
+aliases = ["captcha-autosolve"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Auto-solve only on owned/explicitly authorized test targets."
+
+[flags.allow_captcha_solving]
+env = "SCRAPER_ALLOW_CAPTCHA_SOLVING"
+aliases = ["allow-captcha-solving"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Operator gate for authorized CAPTCHA test flows."
+
+[flags.captcha_provider_url]
+env = "SCRAPER_CAPTCHA_PROVIDER_URL"
+aliases = ["captcha-provider-url"]
+type = "string"
+default = "https://2captcha.com"
+help = "Authorized CAPTCHA-test provider endpoint."
+
+[flags.captcha_poll_interval_ms]
+env = "SCRAPER_CAPTCHA_POLL_INTERVAL_MS"
+aliases = ["captcha-poll-interval-ms"]
+type = "integer"
+default = 5000
+help = "CAPTCHA provider poll interval."
+
+[flags.captcha_timeout_ms]
+env = "SCRAPER_CAPTCHA_TIMEOUT_MS"
+aliases = ["captcha-timeout-ms"]
+type = "integer"
+default = 120000
+help = "CAPTCHA provider timeout."
+
+[flags.captcha_max_attempts]
+env = "SCRAPER_CAPTCHA_MAX_ATTEMPTS"
+aliases = ["captcha-max-attempts"]
+type = "integer"
+default = 2
+help = "Maximum authorized CAPTCHA solve attempts."
+
+[flags.captcha_max_concurrent]
+env = "SCRAPER_CAPTCHA_MAX_CONCURRENT"
+aliases = ["captcha-max-concurrent"]
+type = "integer"
+default = 2
+help = "Maximum simultaneous paid CAPTCHA solves."
+
+[flags.apify_fallback]
+env = "SCRAPER_APIFY_FALLBACK"
+aliases = ["apify-fallback"]
+type = "bool"
+default = "false"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Allow automatic Apify fallback after retryable local failures when APIFY_TOKEN is configured."
+
+[flags.apify_actor_id]
+env = "APIFY_ACTOR_ID"
+aliases = ["apify-actor-id"]
+type = "string"
+default = "apify~website-content-crawler"
+help = "Apify Actor used for the external fallback."
+
+[flags.apify_api_base_url]
+env = "APIFY_API_BASE_URL"
+aliases = ["apify-api-base-url"]
+type = "string"
+default = "https://api.apify.com/v2"
+help = "HTTPS Apify API base URL."
+
+[flags.apify_timeout_ms]
+env = "SCRAPER_APIFY_TIMEOUT_MS"
+aliases = ["apify-timeout-ms"]
+type = "integer"
+default = 90000
+help = "Hard timeout for one synchronous Apify fallback run."
+
+[flags.apify_max_concurrent]
+env = "SCRAPER_APIFY_MAX_CONCURRENT"
+aliases = ["apify-max-concurrent"]
+type = "integer"
+default = 2
+help = "Maximum simultaneous paid Apify fallback calls per process."
+
+[flags.apify_max_response_bytes]
+env = "SCRAPER_APIFY_MAX_RESPONSE_BYTES"
+aliases = ["apify-max-response-bytes"]
+type = "integer"
+default = 4194304
+help = "Maximum synchronous Apify dataset response bytes retained by the service."
+
+[flags.apify_use_proxy]
+env = "SCRAPER_APIFY_USE_PROXY"
+aliases = ["apify-use-proxy"]
+type = "bool"
+default = "true"
+true_aliases = ["1", "yes", "on"]
+false_aliases = ["0", "no", "off"]
+help = "Ask the Apify Actor to use Apify Proxy for the fallback crawl."
