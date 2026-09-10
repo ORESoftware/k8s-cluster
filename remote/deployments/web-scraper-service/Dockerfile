@@ -17,8 +17,7 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
 RUN corepack enable \
  && corepack prepare pnpm@9.15.4 --activate \
  && pnpm --version \
- && npm install --global @oresoftware/f2e@0.3.0 \
- && flags2env --help >/dev/null
+ && npm install --global @oresoftware/f2e@0.3.0
 
 COPY remote/libs/telemetry-node /app/remote/libs/telemetry-node
 COPY remote/deployments/web-scraper-service/package.json \
