@@ -20,9 +20,18 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
-test('web scraper service supports browser, DOM, fetch, and Browserless strategies', async () => {
+test('web scraper service supports local browsers, hosted fallbacks, and bounded extraction', async () => {
   const packageJson = await readRepoFile('remote/deployments/web-scraper-service/package.json');
   const source = await readRepoFile('remote/deployments/web-scraper-service/src/server.ts');
+  const apifyFallback = await readRepoFile(
+    'remote/deployments/web-scraper-service/src/apify-fallback.ts',
+  );
+  const fallbackPolicy = await readRepoFile(
+    'remote/deployments/web-scraper-service/src/scrape-fallback.ts',
+  );
+  const flagsConfig = await readRepoFile(
+    'remote/deployments/web-scraper-service/.cli-flags.toml',
+  );
   const extractionWorker = await readRepoFile(
     'remote/deployments/web-scraper-service/src/extraction-worker.ts',
   );
@@ -37,6 +46,8 @@ test('web scraper service supports browser, DOM, fetch, and Browserless strategi
   assert.match(packageJson, /"linkedom":/);
   assert.match(packageJson, /"playwright":/);
   assert.match(packageJson, /"puppeteer":/);
+  assert.match(packageJson, /"flags:audit"/);
+  assert.match(packageJson, /@oresoftware\/f2e@0\.3\.0/);
   assert.match(source, /'native-fetch'/);
   assert.match(source, /'cheerio'/);
   assert.match(source, /'jsdom'/);
@@ -44,6 +55,13 @@ test('web scraper service supports browser, DOM, fetch, and Browserless strategi
   assert.match(source, /'playwright'/);
   assert.match(source, /'puppeteer'/);
   assert.match(source, /'browserless'/);
+  assert.match(source, /'apify'/);
+  assert.match(source, /buildStrategyAttemptPlan/);
+  assert.match(source, /SCRAPER_APIFY_FALLBACK/);
+  assert.match(source, /APIFY_TOKEN/);
+  assert.match(source, /SCRAPER_MAX_TOTAL_TIMEOUT_MS/);
+  assert.match(source, /apifySemaphore/);
+  assert.match(source, /dd_web_scraper_fallback_total/);
   assert.match(source, /POST \/scrape/);
   assert.match(source, /SERVER_AUTH_SECRET/);
   assert.match(source, /SCRAPER_ALLOW_PRIVATE_NETWORKS/);
@@ -85,8 +103,11 @@ test('web scraper service supports browser, DOM, fetch, and Browserless strategi
   assert.match(source, /serverStartedAt: string;/);
   assert.match(source, /serverInstanceId: string;/);
   assert.match(source, /maxConcurrent: number;/);
+  assert.match(source, /maxTotalTimeoutMs: number;/);
   assert.match(source, /blockPrivateNetworks: boolean;/);
   assert.match(source, /browserlessConfigured: boolean;/);
+  assert.match(source, /apifyConfigured: boolean;/);
+  assert.match(source, /apifyFallbackEnabled: boolean;/);
   assert.match(source, /type HealthDescriptor = \{/);
   assert.match(source, /inFlight: number;/);
   assert.match(source, /fastify\.get\('\/', async \(\) => serviceDescriptor\(\)\);/);
@@ -108,7 +129,23 @@ test('web scraper service supports browser, DOM, fetch, and Browserless strategi
   assert.match(source, /javascript:[\s\S]*\? 'browserless' : 'playwright'/);
   assert.match(source, /selectors: 'cheerio'/);
   assert.match(source, /fallback: 'native-fetch'/);
-  assert.match(source, /available: strategy !== 'browserless' \|\| isBrowserlessConfigured\(\)/);
+  assert.match(source, /strategy === 'browserless'[\s\S]*isBrowserlessConfigured\(\)/);
+  assert.match(source, /strategy === 'apify'[\s\S]*isApifyProviderConfigured\(\)/);
+  assert.match(apifyFallback, /run-sync-get-dataset-items/);
+  assert.match(apifyFallback, /authorization: `Bearer \$\{token\}`/);
+  assert.doesNotMatch(apifyFallback, /searchParams\.set\('token'/);
+  assert.match(apifyFallback, /maxCrawlDepth: 0/);
+  assert.match(apifyFallback, /maxCrawlPages: 1/);
+  assert.match(apifyFallback, /respectRobotsTxtFile: true/);
+  assert.match(apifyFallback, /maxResponseBytes/);
+  assert.match(fallbackPolicy, /requestedStrategy === 'auto'/);
+  assert.match(fallbackPolicy, /pushUnique\(plan, 'playwright'\)/);
+  assert.match(fallbackPolicy, /pushUnique\(plan, 'puppeteer'\)/);
+  assert.match(fallbackPolicy, /pushUnique\(plan, 'apify'\)/);
+  assert.match(flagsConfig, /https:\/\/github\.com\/flags-2-env\/flags-2-env/);
+  assert.match(flagsConfig, /env = "SCRAPER_APIFY_FALLBACK"/);
+  assert.match(flagsConfig, /env = "APIFY_API_BASE_URL"/);
+  assert.match(flagsConfig, /APIFY_TOKEN/);
   assert.match(extractionWorker, /from 'node:worker_threads'/);
   assert.match(extractionWorker, /extractNative/);
   assert.match(extractionWorker, /extractWithJsdom/);
@@ -163,9 +200,15 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
   assert.match(deployment, /SCRAPER_FAILURE_SCREENSHOT_QUALITY[\s\S]*value:\s*'65'/);
   assert.match(deployment, /SCRAPER_FAILURE_SCREENSHOT_MAX_BYTES[\s\S]*value:\s*'512000'/);
   assert.match(deployment, /SCRAPER_MAX_REDIRECTS[\s\S]*value:\s*'5'/);
+  assert.match(deployment, /SCRAPER_MAX_TOTAL_TIMEOUT_MS[\s\S]*value:\s*'120000'/);
   assert.match(deployment, /SCRAPER_ALLOW_PRIVATE_NETWORKS[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SCRAPER_ALLOW_SENSITIVE_HEADERS[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SCRAPER_ALLOW_URL_CREDENTIALS[\s\S]*value:\s*'false'/);
+  assert.match(deployment, /SCRAPER_APIFY_FALLBACK[\s\S]*value:\s*'true'/);
+  assert.match(deployment, /APIFY_ACTOR_ID[\s\S]*apify~website-content-crawler/);
+  assert.match(deployment, /APIFY_API_BASE_URL[\s\S]*https:\/\/api\.apify\.com\/v2/);
+  assert.match(deployment, /SCRAPER_APIFY_MAX_CONCURRENT[\s\S]*value:\s*'2'/);
+  assert.match(deployment, /APIFY_TOKEN[\s\S]*dd-agent-secrets[\s\S]*optional:\s*true/);
   assert.match(
     deployment,
     /BROWSER_AGENT_ALLOWED_DOMAINS[\s\S]*value:\s*'[^']*talks\.devopsdays\.org[^']*'/,
