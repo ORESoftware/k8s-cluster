@@ -33,7 +33,7 @@ VERIFY_PROFILE = load_module("verify_profile", PROFILE_VERIFIER_PATH)
 VERIFY_EVIDENCE = load_module("verify_evidence", EVIDENCE_VERIFIER_PATH)
 
 
-def run(command: list[str], *, input_text: str | None = None) -> str:
+def run(command: list[str], *, input_text: str | None = None, label: str | None = None) -> str:
     completed = subprocess.run(
         command,
         cwd=ROOT,
@@ -44,7 +44,10 @@ def run(command: list[str], *, input_text: str | None = None) -> str:
         check=False,
     )
     if completed.returncode != 0:
-        raise RuntimeError(f"command failed: {command[0]} {command[1] if len(command) > 1 else ''}".strip())
+        diagnostic = completed.stderr.strip().replace("\n", " ")[:500]
+        operation = label or command[0]
+        suffix = f": {diagnostic}" if diagnostic else ""
+        raise RuntimeError(f"{operation} failed with exit {completed.returncode}{suffix}")
     return completed.stdout
 
 
@@ -110,22 +113,26 @@ def main() -> int:
                     str(kubeconfig),
                     "--wait",
                     "180s",
-                ]
+                ],
+                label="kind create cluster",
             )
             created = True
 
             kubectl = ["kubectl", "--kubeconfig", str(kubeconfig)]
-            run(kubectl + ["wait", "--for=condition=Ready", "nodes", "--all", "--timeout=180s"])
-            readyz = run(kubectl + ["get", "--raw=/readyz"]).strip()
+            run(
+                kubectl + ["wait", "--for=condition=Ready", "nodes", "--all", "--timeout=180s"],
+                label="kubectl wait nodes",
+            )
+            readyz = run(kubectl + ["get", "--raw=/readyz"], label="kubectl readyz").strip()
             if readyz != "ok":
                 raise RuntimeError("Kubernetes API /readyz did not report ok")
 
-            version = json.loads(run(kubectl + ["version", "-o", "json"]))
+            version = json.loads(run(kubectl + ["version", "-o", "json"], label="kubectl version"))
             server_version = version.get("serverVersion", {}).get("gitVersion")
             if server_version != profile_document["kubernetesVersion"]:
                 raise RuntimeError("Kubernetes server version does not match RuntimeProfile")
 
-            nodes = json.loads(run(kubectl + ["get", "nodes", "-o", "json"]))
+            nodes = json.loads(run(kubectl + ["get", "nodes", "-o", "json"], label="kubectl get nodes"))
             node_count = len(nodes.get("items", []))
             expected_nodes = {"single-node": 1, "three-node": 3}[profile_document["topology"]]
             if node_count != expected_nodes:
@@ -133,15 +140,28 @@ def main() -> int:
 
             namespace = "ores-local-contract"
             identity = f"system:serviceaccount:{namespace}:runtime-evidence"
-            admission_manifest = f"""apiVersion: v1
+            namespace_manifest = f"""apiVersion: v1
 kind: Namespace
 metadata:
   name: {namespace}
   labels:
     platform.oresoftware.com/owner: ores
     platform.oresoftware.com/environment: local
----
-apiVersion: v1
+"""
+            run(
+                kubectl
+                + [
+                    "apply",
+                    "--server-side",
+                    "--field-manager=den-1032-runtime-evidence",
+                    "-f",
+                    "-",
+                ],
+                input_text=namespace_manifest,
+                label="kubectl apply disposable namespace",
+            )
+
+            admission_manifest = f"""apiVersion: v1
 kind: ConfigMap
 metadata:
   name: runtime-evidence-contract
@@ -161,14 +181,10 @@ data:
                     "-",
                 ],
                 input_text=admission_manifest,
+                label="kubectl server-side dry-run admission",
             )
 
             rbac_manifest = f"""apiVersion: v1
-kind: Namespace
-metadata:
-  name: {namespace}
----
-apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: runtime-evidence
@@ -208,6 +224,7 @@ roleRef:
                     "-",
                 ],
                 input_text=rbac_manifest,
+                label="kubectl apply least-privilege RBAC",
             )
 
             list_pods = run(
@@ -220,7 +237,8 @@ roleRef:
                     "--namespace",
                     namespace,
                     f"--as={identity}",
-                ]
+                ],
+                label="kubectl auth list pods",
             ).strip()
             secret_probe = subprocess.run(
                 kubectl
@@ -243,7 +261,7 @@ roleRef:
             if list_pods != "yes" or get_secrets != "no":
                 raise RuntimeError("least-privilege RBAC contract did not converge")
 
-            source_sha = run(["git", "rev-parse", "HEAD"]).strip()
+            source_sha = run(["git", "rev-parse", "HEAD"], label="git source revision").strip()
             evidence = {
                 "schema": "ores.local-k8s-runtime-evidence/v1",
                 "profileName": profile_document["name"],
