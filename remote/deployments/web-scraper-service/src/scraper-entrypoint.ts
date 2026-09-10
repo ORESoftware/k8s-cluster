@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 
 import { initTelemetry } from '@dd/telemetry';
 
+import { parseFlags2EnvOutput } from './flags-runtime.js';
 import { assertTrustedProviderEndpoints } from './runtime-config-guard.js';
 
 const cliArgs = process.argv.slice(2);
@@ -26,28 +27,7 @@ if (cliArgs.some((argument) => argument === '--help' || argument === '-h')) {
   process.exit(0);
 }
 
-let overrides: Record<string, string>;
-try {
-  const value = JSON.parse(parsed.stdout) as unknown;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new TypeError('expected a JSON object');
-  }
-
-  overrides = {};
-  for (const [key, rawValue] of Object.entries(value)) {
-    if (!/^[A-Z_][A-Z0-9_]*$/.test(key)) {
-      throw new TypeError(`unexpected environment key ${JSON.stringify(key)}`);
-    }
-    if (rawValue === null || typeof rawValue === 'object') {
-      throw new TypeError(`unexpected non-scalar value for ${key}`);
-    }
-    overrides[key] = String(rawValue);
-  }
-} catch (error) {
-  throw new Error(
-    `flags2env returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
-  );
-}
+const overrides = parseFlags2EnvOutput(parsed.stdout);
 
 // flags2env has already applied the repository-owned precedence contract. Only
 // declared non-secret keys can arrive here; secret-bearing variables are not
