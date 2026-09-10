@@ -30,9 +30,9 @@ The retained dated transcript provides thirteen tail records after the independe
 | `S9-05` | actionable | `ORESoftware/my-ai#143` |
 | `S9-06` | coordination/quality | existing PR-readiness/recovery controllers |
 | `S9-07` | linked existing implementation | `ores-otel/ores-otel-interfaces#1`, `ores-otel/ores.otel.log#64`, downstream adoption PRs |
-| `S9-08` | linked existing + follow-up | `ORESoftware/ores-cli#52`; stronger manifest behavior in `ORESoftware/flags-2-env#49` |
+| `S9-08` | linked existing + consumer follow-up | merged `flags-2-env/flags-2-env#16`; consumer/adoption work in `ORESoftware/ores-cli#52` and `zed-pkg/.github#87` |
 | `S10-01` | context/status recap | canonical open product issues/PRs named by the recap |
-| `S10-02` | actionable | `ORESoftware/flags-2-env#49` |
+| `S10-02` | linked existing implementation | merged `flags-2-env/flags-2-env#16` (`333c2ace93c362d274171ab0e0edf613d96a8e59`) implements deterministic root-TOML env discovery, value-free `manifest.env`, `.cli-flags.toml` ownership checks, and key-only encrypted/plain env inventory reconciliation |
 | `S10-03` | actionable | `ORESoftware/k8s-cluster#1559` |
 | `S10-04` | coordination/quality | active PR-readiness/recovery controllers |
 | `S10-05` | actionable follow-up, deduplicated | existing `zed-pkg/.github#87`, with related `zed-cli#345`, `zed-cli#350`, `.github#88`, `zed-web-server.rs#55` |
