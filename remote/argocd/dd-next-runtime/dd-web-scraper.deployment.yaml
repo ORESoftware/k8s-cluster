@@ -89,6 +89,8 @@ spec:
               value: '128'
             - name: SCRAPER_MAX_TIMEOUT_MS
               value: '60000'
+            - name: SCRAPER_MAX_TOTAL_TIMEOUT_MS
+              value: '120000'
             - name: SCRAPER_DNS_TIMEOUT_MS
               value: '5000'
             - name: SCRAPER_MAX_REDIRECTS
@@ -149,6 +151,29 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SCRAPER_CAPTCHA_API_KEY
+                  optional: true
+            # Last-resort hosted crawler fallback. The application still performs
+            # its own SSRF/robots policy check first, then retries local Chromium
+            # before reaching Apify. With no APIFY_TOKEN the fallback is inert.
+            - name: SCRAPER_APIFY_FALLBACK
+              value: 'true'
+            - name: APIFY_ACTOR_ID
+              value: apify~website-content-crawler
+            - name: APIFY_API_BASE_URL
+              value: https://api.apify.com/v2
+            - name: SCRAPER_APIFY_TIMEOUT_MS
+              value: '60000'
+            - name: SCRAPER_APIFY_MAX_CONCURRENT
+              value: '2'
+            - name: SCRAPER_APIFY_MAX_RESPONSE_BYTES
+              value: '4194304'
+            - name: SCRAPER_APIFY_USE_PROXY
+              value: 'true'
+            - name: APIFY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: APIFY_TOKEN
                   optional: true
             - name: SERVER_AUTH_SECRET
               valueFrom:
