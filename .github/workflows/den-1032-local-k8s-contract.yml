@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      TJSV_SHA: 4a5d049218adc2740d4cf78f612caf7f38f6f64c
+      TJSV_SHA: 8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
       KIND_VERSION: v0.30.0
       KIND_LINUX_AMD64_SHA256: 517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889
     steps:
@@ -104,6 +104,13 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/local-k8s/test_language_boundaries.mjs
+
+      - name: Attack current-input boundary provenance and identity binding
+        env:
+          TJSV_EVIDENCE_DIR: ${{ steps.tjsv.outputs.path }}
+        run: |
+          set -euo pipefail
+          node scripts/local-k8s/test_language_boundaries_current_tjsv.mjs
 
       - name: Run semantic profile and evidence regression tests
         run: |
@@ -199,6 +206,7 @@ jobs:
           set -euo pipefail
           node --check scripts/local-k8s/test_tjsv_failclosed.mjs
           node --check scripts/local-k8s/test_language_boundaries.mjs
+          node --check scripts/local-k8s/test_language_boundaries_current_tjsv.mjs
           bash -n scripts/local-k8s/bootstrap-colima-kind.sh
           bash -n scripts/local-k8s/bootstrap-multipass-k3s.sh
           test ! -e package-lock.json
@@ -226,6 +234,7 @@ jobs:
             echo '- authored-schema and TypeSpec drift mutations: both stopped for evaluation as expected'
             echo '- five-runtime current-input boundary admission (Rust/TS/Dart/Go/Gleam): passed'
             echo '- missing/stale/ingress/egress language-boundary mutations: stopped fail-closed'
+            echo '- current-input provenance, receipt/IR identity, and duplicate-target mutations: stopped fail-closed'
             echo '- exact-head docker-kind cluster/API/server-admission evidence: passed'
             echo '- least-privilege RBAC: list pods=yes, get secrets=no'
             echo '- live RuntimeEvidence re-admitted by both peer authorities: passed'
