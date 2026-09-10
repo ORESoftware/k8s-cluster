@@ -65,6 +65,46 @@ spec:
               value: '8097'
             - name: NODE_ENV
               value: production
+            # Public port is now owned by the supervisor; the existing Fastify
+            # scraper core is spawned on loopback and retains all policy/auth gates.
+            - name: SCRAPER_CORE_PORT
+              value: '18097'
+            - name: SCRAPER_CORE_STARTUP_TIMEOUT_MS
+              value: '30000'
+            - name: SCRAPER_SUPERVISOR_MAX_BODY_BYTES
+              value: '1048576'
+            - name: SCRAPER_SUPERVISOR_MAX_CORE_RESPONSE_BYTES
+              value: '4194304'
+            # External reliability fallback. The token remains optional and
+            # secret-only; no external call occurs unless both switch and token exist.
+            - name: APIFY_FALLBACK_ENABLED
+              value: 'true'
+            - name: APIFY_ACTOR_ID
+              value: apify/web-scraper
+            - name: APIFY_API_BASE_URL
+              value: https://api.apify.com/v2
+            - name: APIFY_FALLBACK_TIMEOUT_MS
+              value: '90000'
+            - name: APIFY_MAX_REQUEST_RETRIES
+              value: '2'
+            - name: APIFY_FALLBACK_MAX_CONCURRENT
+              value: '1'
+            - name: APIFY_FALLBACK_MIN_DELAY_MS
+              value: '1000'
+            - name: APIFY_FALLBACK_FAILURE_COOLDOWN_MS
+              value: '60000'
+            - name: APIFY_MAX_TOTAL_CHARGE_USD
+              value: '0.25'
+            - name: APIFY_FALLBACK_FOR_EXPLICIT_STRATEGY
+              value: 'false'
+            - name: APIFY_MAX_RESPONSE_BYTES
+              value: '2000000'
+            - name: APIFY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: APIFY_TOKEN
+                  optional: true
             - name: PLAYWRIGHT_BROWSERS_PATH
               value: /ms-playwright
             - name: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
