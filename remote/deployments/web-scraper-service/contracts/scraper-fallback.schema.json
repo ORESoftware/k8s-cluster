@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dd-web-scraper-fallback.schema.json",
+  "$defs": {
+    "WaitUntil": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "WaitUntil",
+      "type": "string",
+      "enum": ["load", "domcontentloaded", "networkidle"]
+    },
+    "ScrapeFallbackRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "ScrapeFallbackRequest",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string" },
+        "url": { "type": "string" },
+        "strategy": { "type": "string" },
+        "selector": { "type": "string" },
+        "includeHtml": { "type": "boolean" },
+        "includeText": { "type": "boolean" },
+        "includeLinks": { "type": "boolean" },
+        "includeContacts": { "type": "boolean" },
+        "includePhones": { "type": "boolean" },
+        "includeEmails": { "type": "boolean" },
+        "contactRegion": { "type": "string" },
+        "maxPhones": { "type": "integer" },
+        "maxEmails": { "type": "integer" },
+        "maxHtmlChars": { "type": "integer" },
+        "maxTextChars": { "type": "integer" },
+        "timeoutMs": { "type": "integer" },
+        "waitUntil": { "$ref": "WaitUntil" },
+        "respectRobots": { "type": "boolean" }
+      },
+      "required": ["url"],
+      "unevaluatedProperties": false
+    },
+    "FallbackProvenance": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "FallbackProvenance",
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string" },
+        "actorId": { "type": "string" },
+        "trigger": { "type": "string" },
+        "localStatusCode": { "type": "integer" },
+        "localStrategy": { "type": "string" },
+        "durationMs": { "type": "integer" },
+        "localDurationMs": { "type": "integer" },
+        "totalDurationMs": { "type": "integer" }
+      },
+      "required": ["provider", "actorId", "trigger", "localStatusCode", "durationMs"],
+      "unevaluatedProperties": false
+    }
+  }
+}
