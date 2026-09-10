@@ -23,7 +23,6 @@ jobs:
     timeout-minutes: 20
     env:
       TJSV_SHA: 8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
-      TJSV_EVIDENCE_DIR: ${{ runner.temp }}/den-1032-current-tjsv-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Select exact source ref
         id: source-ref
@@ -58,6 +57,9 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           git diff --check
+          evidence="$RUNNER_TEMP/den-1032-current-tjsv-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$evidence"
+          printf 'TJSV_EVIDENCE_DIR=%s\n' "$evidence" >> "$GITHUB_ENV"
 
       - name: Set up Node 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -80,7 +82,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$TJSV_EVIDENCE_DIR"
           node scripts/local-k8s/test_tjsv_failclosed.mjs
 
       - name: Re-run five-runtime current-input boundary gate
