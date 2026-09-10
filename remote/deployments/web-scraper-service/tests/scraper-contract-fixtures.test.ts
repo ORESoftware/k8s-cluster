@@ -2,14 +2,20 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { buildApifyActorInput, readApifyFallbackConfig } from '../src/apify-fallback.js';
+import {
+  buildApifyActorInput,
+  readApifyFallbackConfig,
+  type ScrapeFallbackRequest,
+} from '../src/apify-fallback.js';
 
-function loadJson(relativePath: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(new URL(relativePath, import.meta.url), 'utf8')) as Record<string, unknown>;
+function loadJson<T>(relativePath: string): T {
+  return JSON.parse(readFileSync(new URL(relativePath, import.meta.url), 'utf8')) as T;
 }
 
 test('recorded ScrapeFallbackRequest instance crosses the runtime adapter without widening fields', () => {
-  const request = loadJson('../contracts/instances/ScrapeFallbackRequest/valid/minimal.json');
+  const request = loadJson<ScrapeFallbackRequest>(
+    '../contracts/instances/ScrapeFallbackRequest/valid/minimal.json',
+  );
   const config = readApifyFallbackConfig({
     APIFY_FALLBACK_ENABLED: 'true',
     APIFY_TOKEN: 'unit-test-token',
@@ -30,7 +36,9 @@ test('recorded ScrapeFallbackRequest instance crosses the runtime adapter withou
 });
 
 test('recorded fallback provenance remains provider-scoped and secret-free', () => {
-  const provenance = loadJson('../contracts/instances/FallbackProvenance/valid/apify.json');
+  const provenance = loadJson<Record<string, unknown>>(
+    '../contracts/instances/FallbackProvenance/valid/apify.json',
+  );
   assert.equal(provenance.provider, 'apify');
   assert.equal(provenance.trigger, 'local-retriable-5xx');
   assert.equal(Object.hasOwn(provenance, 'token'), false);
