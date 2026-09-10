@@ -1,0 +1,122 @@
+[help]
+url = "https://github.com/ORESoftware/k8s-cluster/tree/main/remote/deployments/web-scraper-service"
+columns = ["options", "env", "type", "default", "description"]
+
+[env]
+files = [".env", ".env.local"]
+
+[parse]
+allow_unknown = false
+
+[flags.host]
+env = "HOST"
+aliases = ["host"]
+type = "string"
+default = "0.0.0.0"
+help = "External scraper gateway bind address."
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "listen-port"]
+short = "p"
+type = "integer"
+default = 8097
+help = "External scraper gateway port."
+
+[flags.internal-port]
+env = "SCRAPER_INTERNAL_PORT"
+aliases = ["internal-port"]
+type = "integer"
+default = 18097
+help = "Loopback port used by the policy-enforcing local scraper behind the gateway."
+
+[flags.strategy]
+env = "SCRAPER_DEFAULT_STRATEGY"
+aliases = ["strategy", "default-strategy"]
+type = "string"
+default = "auto"
+help = "Default local scrape strategy."
+
+[flags.max-concurrent]
+env = "SCRAPER_MAX_CONCURRENT"
+aliases = ["max-concurrent"]
+type = "integer"
+default = 4
+help = "Maximum concurrent local scrape requests."
+
+[flags.timeout-ms]
+env = "SCRAPER_DEFAULT_TIMEOUT_MS"
+aliases = ["timeout-ms"]
+type = "integer"
+default = 30000
+help = "Default local scrape timeout in milliseconds."
+
+[flags.max-timeout-ms]
+env = "SCRAPER_MAX_TIMEOUT_MS"
+aliases = ["max-timeout-ms"]
+type = "integer"
+default = 60000
+help = "Hard ceiling for caller-selected local scrape timeouts."
+
+[flags.respect-robots]
+env = "SCRAPER_RESPECT_ROBOTS"
+aliases = ["respect-robots"]
+type = "bool"
+default = "true"
+help = "Respect robots.txt before scraping."
+
+[flags.min-origin-delay-ms]
+env = "SCRAPER_MIN_ORIGIN_DELAY_MS"
+aliases = ["min-origin-delay-ms"]
+type = "integer"
+default = 1000
+help = "Minimum delay between requests to the same origin."
+
+[flags.auto-browserless]
+env = "SCRAPER_AUTO_BROWSERLESS"
+aliases = ["auto-browserless"]
+type = "bool"
+default = "false"
+help = "Use Browserless for JavaScript auto strategy when configured."
+
+[flags.apify-fallback]
+env = "SCRAPER_APIFY_FALLBACK"
+aliases = ["apify-fallback"]
+type = "bool"
+default = "false"
+help = "Enable bounded Apify fallback after eligible local execution failures."
+
+[flags.apify-actor]
+env = "SCRAPER_APIFY_ACTOR"
+aliases = ["apify-actor"]
+type = "string"
+default = "apify~website-content-crawler"
+help = "Apify Actor identifier used for fallback."
+
+[flags.apify-api-base]
+env = "SCRAPER_APIFY_API_BASE"
+aliases = ["apify-api-base"]
+type = "string"
+default = "https://api.apify.com"
+help = "Apify API base URL."
+
+[flags.apify-timeout-ms]
+env = "SCRAPER_APIFY_TIMEOUT_MS"
+aliases = ["apify-timeout-ms"]
+type = "integer"
+default = 90000
+help = "Apify fallback timeout in milliseconds, capped at five minutes."
+
+[flags.apify-max-concurrent]
+env = "SCRAPER_APIFY_MAX_CONCURRENT"
+aliases = ["apify-max-concurrent"]
+type = "integer"
+default = 2
+help = "Maximum concurrent paid Apify fallback calls."
+
+[flags.apify-max-per-minute]
+env = "SCRAPER_APIFY_MAX_PER_MINUTE"
+aliases = ["apify-max-per-minute"]
+type = "integer"
+default = 20
+help = "Maximum Apify fallback starts per minute."
