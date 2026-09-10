@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 PROFILE_SCHEMA = "ores.local-k8s-runtime-profile/v1"
-RUNTIMES = {"colima-kind", "multipass-k3s"}
+RUNTIMES = {"colima-kind", "docker-kind", "multipass-k3s"}
 ARCHITECTURES = {"arm64", "amd64"}
 RESOURCE_CLASSES = {"compact", "standard", "large"}
 TOPOLOGIES = {"single-node", "three-node"}
@@ -96,12 +96,12 @@ def validate_profile(profile: Any) -> dict[str, Any]:
     version = _require_string(profile, "kubernetesVersion")
     artifact = _require_string(profile, "runtimeArtifact")
 
-    if runtime == "colima-kind":
+    if runtime in {"colima-kind", "docker-kind"}:
         if KIND_VERSION_RE.fullmatch(version) is None:
-            raise ProfileError("colima-kind kubernetesVersion must be v1.x.y")
+            raise ProfileError("kind kubernetesVersion must be v1.x.y")
         image_match = KIND_IMAGE_RE.fullmatch(artifact)
         if image_match is None:
-            raise ProfileError("colima-kind runtimeArtifact must be a digest-pinned kindest/node image")
+            raise ProfileError("kind runtimeArtifact must be a digest-pinned kindest/node image")
         if image_match.group(1) != version:
             raise ProfileError("kind node image version must equal kubernetesVersion")
     elif runtime == "multipass-k3s":

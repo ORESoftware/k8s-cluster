@@ -27,6 +27,12 @@ class RuntimeProfileTests(unittest.TestCase):
         self.assertEqual(profile["runtime"], "colima-kind")
         self.assertEqual(profile["topology"], "three-node")
 
+    def test_ci_docker_kind_profile_passes(self) -> None:
+        profile = VERIFY.validate_profile(read_json(VALID_DIR / "ci-kind.json"))
+        self.assertEqual(profile["runtime"], "docker-kind")
+        self.assertEqual(profile["architecture"], "amd64")
+        self.assertEqual(profile["topology"], "single-node")
+
     def test_multipass_k3s_profile_passes(self) -> None:
         profile = VERIFY.validate_profile(read_json(VALID_DIR / "multipass-k3s.json"))
         self.assertEqual(profile["runtime"], "multipass-k3s")
@@ -67,7 +73,7 @@ class RuntimeProfileTests(unittest.TestCase):
             VERIFY.validate_profile(profile)
 
     def test_kind_image_version_must_match_contract(self) -> None:
-        profile = read_json(VALID_DIR / "colima-kind.json")
+        profile = read_json(VALID_DIR / "ci-kind.json")
         profile["kubernetesVersion"] = "v1.32.7"
         with self.assertRaisesRegex(VERIFY.ProfileError, "must equal"):
             VERIFY.validate_profile(profile)

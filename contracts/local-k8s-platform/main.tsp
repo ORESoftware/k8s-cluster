@@ -6,6 +6,7 @@ namespace Ores.LocalK8s;
 @id("RuntimeKind")
 enum RuntimeKind {
   colimaKind: "colima-kind",
+  dockerKind: "docker-kind",
   multipassK3s: "multipass-k3s",
 }
 
@@ -33,6 +34,12 @@ enum CloudMutationPolicy {
   denied: "denied",
 }
 
+@id("EvidenceSource")
+enum EvidenceSource {
+  githubActionsKind: "github-actions-kind",
+  localKind: "local-kind",
+}
+
 @id("RuntimeProfile")
 model RuntimeProfile {
   schema: string;
@@ -43,6 +50,29 @@ model RuntimeProfile {
   topology: ClusterTopology;
   kubernetesVersion: string;
   runtimeArtifact: string;
+  cloudMutationPolicy: CloudMutationPolicy;
+  cloudWrites: boolean;
+}
+
+@id("RuntimeEvidence")
+model RuntimeEvidence {
+  schema: string;
+  profileName: string;
+  profileSha256: string;
+  evidenceSource: EvidenceSource;
+  sourceSha: string;
+  runtime: RuntimeKind;
+  architecture: CpuArchitecture;
+  resourceClass: ResourceClass;
+  topology: ClusterTopology;
+  kubernetesVersion: string;
+  runtimeArtifact: string;
+  apiServerReady: boolean;
+  serverAdmissionPassed: boolean;
+  rbacListPods: boolean;
+  rbacGetSecrets: boolean;
+  providerWrites: boolean;
+  secretInputs: boolean;
   cloudMutationPolicy: CloudMutationPolicy;
   cloudWrites: boolean;
 }

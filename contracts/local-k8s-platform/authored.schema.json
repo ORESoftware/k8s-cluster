@@ -6,7 +6,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "$id": "RuntimeKind",
       "type": "string",
-      "enum": ["colima-kind", "multipass-k3s"]
+      "enum": ["colima-kind", "docker-kind", "multipass-k3s"]
     },
     "CpuArchitecture": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -31,6 +31,12 @@
       "$id": "CloudMutationPolicy",
       "type": "string",
       "enum": ["denied"]
+    },
+    "EvidenceSource": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "EvidenceSource",
+      "type": "string",
+      "enum": ["github-actions-kind", "local-kind"]
     },
     "RuntimeProfile": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -57,6 +63,54 @@
         "topology",
         "kubernetesVersion",
         "runtimeArtifact",
+        "cloudMutationPolicy",
+        "cloudWrites"
+      ],
+      "unevaluatedProperties": false
+    },
+    "RuntimeEvidence": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "RuntimeEvidence",
+      "type": "object",
+      "properties": {
+        "schema": { "type": "string" },
+        "profileName": { "type": "string" },
+        "profileSha256": { "type": "string" },
+        "evidenceSource": { "$ref": "EvidenceSource" },
+        "sourceSha": { "type": "string" },
+        "runtime": { "$ref": "RuntimeKind" },
+        "architecture": { "$ref": "CpuArchitecture" },
+        "resourceClass": { "$ref": "ResourceClass" },
+        "topology": { "$ref": "ClusterTopology" },
+        "kubernetesVersion": { "type": "string" },
+        "runtimeArtifact": { "type": "string" },
+        "apiServerReady": { "type": "boolean" },
+        "serverAdmissionPassed": { "type": "boolean" },
+        "rbacListPods": { "type": "boolean" },
+        "rbacGetSecrets": { "type": "boolean" },
+        "providerWrites": { "type": "boolean" },
+        "secretInputs": { "type": "boolean" },
+        "cloudMutationPolicy": { "$ref": "CloudMutationPolicy" },
+        "cloudWrites": { "type": "boolean" }
+      },
+      "required": [
+        "schema",
+        "profileName",
+        "profileSha256",
+        "evidenceSource",
+        "sourceSha",
+        "runtime",
+        "architecture",
+        "resourceClass",
+        "topology",
+        "kubernetesVersion",
+        "runtimeArtifact",
+        "apiServerReady",
+        "serverAdmissionPassed",
+        "rbacListPods",
+        "rbacGetSecrets",
+        "providerWrites",
+        "secretInputs",
         "cloudMutationPolicy",
         "cloudWrites"
       ],
