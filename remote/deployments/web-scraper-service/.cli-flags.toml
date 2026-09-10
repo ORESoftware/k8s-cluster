@@ -4,6 +4,9 @@
 # SCRAPER_CAPTCHA_API_KEY, SCRAPER_PROXIES, and BROWSER_AGENT_SECRETS_FILE.
 
 [env]
+# Production/runtime admission must never silently read a checkout-local .env.
+# Kubernetes/secret injection and explicit argv are the only configured inputs.
+enabled = false
 files = []
 
 [help]
@@ -12,6 +15,8 @@ columns = ["options", "env", "type", "default", "description"]
 
 [parse]
 allow_unknown = false
+unknown_options_env = "DD_WEB_SCRAPER_UNKNOWN_OPTIONS"
+errors_env = "DD_WEB_SCRAPER_PARSE_ERRORS"
 
 [flags.host]
 env = "HOST"
@@ -229,7 +234,6 @@ env = "APIFY_FALLBACK_ENABLED"
 aliases = ["apify-fallback"]
 type = "bool"
 default = "false"
-requires_tty = true
 help = "Enable costed Apify fallback after classified retriable local 5xx failures. APIFY_TOKEN remains secret env only."
 
 [flags.apify-actor-id]
