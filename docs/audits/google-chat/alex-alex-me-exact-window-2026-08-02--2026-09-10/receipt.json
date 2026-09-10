@@ -34,6 +34,12 @@
       "kind": "merged_pull_request",
       "ref": "ORESoftware/k8s-cluster#1552",
       "scope": "preserve explicit reconciliation gaps when Linear issue creation is capped"
+    },
+    {
+      "kind": "merged_pull_request",
+      "ref": "flags-2-env/flags-2-env#16",
+      "mergeCommit": "333c2ace93c362d274171ab0e0edf613d96a8e59",
+      "scope": "deterministic root-TOML env discovery, value-free manifest.env, CLI/env ownership checks, and key-only env/enc + env/dec reconciliation"
     }
   ],
   "tail": {
@@ -85,8 +91,8 @@
       {
         "id": "S9-08",
         "date": "2026-09-09",
-        "classification": "linked_existing_follow_up",
-        "owner": "ORESoftware/ores-cli#52; ORESoftware/flags-2-env#49"
+        "classification": "linked_existing_consumer_follow_up",
+        "owner": "flags-2-env/flags-2-env#16; ORESoftware/ores-cli#52; zed-pkg/.github#87"
       },
       {
         "id": "S10-01",
@@ -97,8 +103,9 @@
       {
         "id": "S10-02",
         "date": "2026-09-10",
-        "classification": "actionable",
-        "owner": "ORESoftware/flags-2-env#49"
+        "classification": "linked_existing_implementation",
+        "owner": "flags-2-env/flags-2-env#16",
+        "implementationCommit": "333c2ace93c362d274171ab0e0edf613d96a8e59"
       },
       {
         "id": "S10-03",
