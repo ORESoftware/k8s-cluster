@@ -33,6 +33,7 @@ COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
  && flags2env audit .cli-flags.toml \
  && node --import tsx --test \
+      tests/apify-fallback-wiring.test.ts \
       tests/sensitive-field-policy.test.ts \
       tests/sensitive-field-wiring.test.ts \
       tests/sensitive-field-policy.integration-plan.test.ts \
