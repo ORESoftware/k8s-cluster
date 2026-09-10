@@ -16,18 +16,22 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
 
 RUN corepack enable \
  && corepack prepare pnpm@9.15.4 --activate \
- && pnpm --version
+ && pnpm --version \
+ && npm install --global @oresoftware/f2e@0.3.0 \
+ && flags2env --help >/dev/null
 
 COPY remote/libs/telemetry-node /app/remote/libs/telemetry-node
 COPY remote/deployments/web-scraper-service/package.json \
      remote/deployments/web-scraper-service/pnpm-lock.yaml \
-     remote/deployments/web-scraper-service/tsconfig.json ./
+     remote/deployments/web-scraper-service/tsconfig.json \
+     remote/deployments/web-scraper-service/.cli-flags.toml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
 COPY remote/deployments/web-scraper-service/src ./src
 COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
+ && flags2env audit .cli-flags.toml \
  && node --import tsx --test \
       tests/sensitive-field-policy.test.ts \
       tests/sensitive-field-wiring.test.ts \
@@ -52,10 +56,13 @@ ENV NODE_ENV=production \
 # into the runtime startup path.
 COPY --from=builder /app/remote/libs/telemetry-node /app/remote/libs/telemetry-node
 COPY --from=builder /app/remote/deployments/web-scraper-service/package.json ./
+COPY --from=builder /app/remote/deployments/web-scraper-service/.cli-flags.toml ./
 COPY --from=builder /app/remote/deployments/web-scraper-service/node_modules ./node_modules
 COPY --from=builder /app/remote/deployments/web-scraper-service/dist ./dist
+COPY --from=builder /usr/local/lib/node_modules/@oresoftware/f2e /usr/local/lib/node_modules/@oresoftware/f2e
+COPY --from=builder /usr/local/bin/flags2env /usr/local/bin/flags2env
 
 EXPOSE 8097
 
 USER pwuser
-CMD ["node", "dist/server.js"]
+CMD ["node", "dist/entrypoint.js"]
