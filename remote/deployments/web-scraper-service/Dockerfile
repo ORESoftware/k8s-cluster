@@ -61,4 +61,4 @@ COPY --from=builder /app/remote/deployments/web-scraper-service/dist ./dist
 EXPOSE 8097
 
 USER pwuser
-CMD ["node", "dist/scraper-supervisor.js"]
+CMD ["node", "dist/scraper-entrypoint.js"]
