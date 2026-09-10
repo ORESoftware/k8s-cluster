@@ -1,6 +1,6 @@
 # Canonical CLI/environment contract for dd-web-scraper.
 # Auditable with:
-#   npx --yes @oresoftware/f2e@0.3.0 audit .cli-flags.toml
+#   pnpm run flags:audit
 #
 # Secrets are deliberately environment/secret-store only and are NOT exposed as
 # CLI flags (to avoid shell history / process-list leakage):
@@ -80,6 +80,13 @@ aliases = ["max-timeout-ms"]
 type = "integer"
 default = 60000
 help = "Maximum caller-selectable scrape timeout in milliseconds."
+
+[flags.max_total_timeout_ms]
+env = "SCRAPER_MAX_TOTAL_TIMEOUT_MS"
+aliases = ["max-total-timeout-ms"]
+type = "integer"
+default = 120000
+help = "Maximum wall-clock budget for the complete local/provider fallback ladder."
 
 [flags.dns_timeout_ms]
 env = "SCRAPER_DNS_TIMEOUT_MS"
@@ -363,7 +370,7 @@ help = "HTTPS Apify API base URL."
 env = "SCRAPER_APIFY_TIMEOUT_MS"
 aliases = ["apify-timeout-ms"]
 type = "integer"
-default = 90000
+default = 60000
 help = "Hard timeout for one synchronous Apify fallback run."
 
 [flags.apify_max_concurrent]
