@@ -21,7 +21,8 @@ RUN corepack enable \
 COPY remote/libs/telemetry-node /app/remote/libs/telemetry-node
 COPY remote/deployments/web-scraper-service/package.json \
      remote/deployments/web-scraper-service/pnpm-lock.yaml \
-     remote/deployments/web-scraper-service/tsconfig.json ./
+     remote/deployments/web-scraper-service/tsconfig.json \
+     remote/deployments/web-scraper-service/.cli-flags.toml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
@@ -29,6 +30,8 @@ COPY remote/deployments/web-scraper-service/src ./src
 COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
  && node --import tsx --test \
+      tests/apify-fallback.test.ts \
+      tests/scrape-fallback.test.ts \
       tests/sensitive-field-policy.test.ts \
       tests/sensitive-field-wiring.test.ts \
       tests/sensitive-field-policy.integration-plan.test.ts \
@@ -52,6 +55,7 @@ ENV NODE_ENV=production \
 # into the runtime startup path.
 COPY --from=builder /app/remote/libs/telemetry-node /app/remote/libs/telemetry-node
 COPY --from=builder /app/remote/deployments/web-scraper-service/package.json ./
+COPY --from=builder /app/remote/deployments/web-scraper-service/.cli-flags.toml ./
 COPY --from=builder /app/remote/deployments/web-scraper-service/node_modules ./node_modules
 COPY --from=builder /app/remote/deployments/web-scraper-service/dist ./dist
 
