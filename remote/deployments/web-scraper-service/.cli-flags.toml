@@ -120,3 +120,10 @@ aliases = ["apify-max-per-minute"]
 type = "integer"
 default = 20
 help = "Maximum Apify fallback starts per minute."
+
+[flags.apify-max-response-bytes]
+env = "SCRAPER_APIFY_MAX_RESPONSE_BYTES"
+aliases = ["apify-max-response-bytes"]
+type = "integer"
+default = 2000000
+help = "Maximum Apify dataset response body accepted by the gateway."
