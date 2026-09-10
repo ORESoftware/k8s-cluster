@@ -13,7 +13,9 @@ for exactly those compliant browser workflows.
 This service is not an access-control bypass. Do not use it to evade login,
 paywall, CAPTCHA, blocking, or opt-out controls without the target owner's
 written authorization. Private/cluster/cloud-metadata targets stay blocked,
-and the deployment's egress policy is the final SSRF backstop.
+and the deployment's egress policy is the final SSRF backstop. The hosted
+fallback follows the same rule: a local policy denial is terminal and is never
+retried through Apify.
 
 ## Framework choice
 
@@ -35,7 +37,8 @@ Fastify and browser orchestration.
 ## Strategies
 
 - `auto`: chooses `playwright` for JavaScript rendering, `cheerio` for selector extraction, and
-  `native-fetch` for plain fetches.
+  `native-fetch` for plain fetches. On retryable failures it can move through the other local
+  Chromium adapter, optional Browserless, and finally Apify when the operator enables that path.
 - `native-fetch`: Node runtime `fetch`; title/text extraction runs in a parser worker.
 - `cheerio`: static HTML fetch plus jQuery-style selector extraction in a parser worker.
 - `jsdom`: static HTML fetch plus browser-like DOM APIs in a parser worker.
@@ -45,6 +48,64 @@ Fastify and browser orchestration.
 - `puppeteer`: pooled Chromium browser through Puppeteer.
 - `browserless`: Browserless Content API, configured with `BROWSERLESS_TOKEN` or a
   `BROWSERLESS_CONTENT_URL` that already includes a token.
+- `apify`: Apify Website Content Crawler through the synchronous Actor API. `APIFY_TOKEN` is
+  required. The token is sent in the `Authorization` header, never in the URL.
+
+Explicit strategy requests remain exact by default. To allow an explicit strategy such as
+`"strategy": "cheerio"` to fall back to Apify, the request must set `"externalFallback": true`.
+`auto` uses the operator setting `SCRAPER_APIFY_FALLBACK` instead.
+
+## Local-first fallback and Apify
+
+The resilience model borrows the useful parts of hosted crawler queues without outsourcing every
+request. `auto` starts with the normal in-house strategy, then tries the alternate local Chromium
+adapter. Browserless is added only when `SCRAPER_AUTO_BROWSERLESS=true` and configured. Apify is
+always the last rung and is added only when `SCRAPER_APIFY_FALLBACK=true` and `APIFY_TOKEN` exists.
+
+The fallback path is intentionally bounded:
+
+- `SCRAPER_MAX_TOTAL_TIMEOUT_MS` caps the whole ladder (default `120000`).
+- `SCRAPER_APIFY_TIMEOUT_MS` caps one synchronous Actor call (default `60000`, also bounded by the
+  request's per-attempt timeout).
+- `SCRAPER_APIFY_MAX_CONCURRENT` caps simultaneous paid provider calls (default `2`).
+- `SCRAPER_APIFY_MAX_RESPONSE_BYTES` caps the returned dataset JSON (default 4 MiB, hard-clamped to
+  8 MiB by the service).
+- The Actor input is `maxCrawlDepth=0`, `maxCrawlPages=1`, `respectRobotsTxtFile=true`, with sitemap
+  and `llms.txt` expansion disabled.
+- Caller `Authorization`, `Cookie`, proxy credentials, and other scrape headers are never forwarded
+  to Apify. Only the service User-Agent is supplied to the Actor.
+- The final URL reported by Apify is run through the same URL/SSRF validation before the response is
+  returned.
+- A caller-supplied per-request proxy is treated as an egress constraint, so `auto` will not leave it
+  behind for a hosted provider unless the caller explicitly sets `externalFallback=true`.
+- Selector extraction fails closed when the Actor does not return real HTML; the service does not
+  pretend reconstructed text/Markdown has the original DOM.
+
+Policy failures do not enter the retry ladder. `robots.txt` denials, private-network/metadata
+blocks, disallowed credentials/headers, invalid proxy policy, and other client-policy failures stop
+immediately. CAPTCHA detection also remains diagnostic/authorized-test-only; detecting a challenge
+does not automatically send the same page to a hosted provider.
+
+Successful responses include an `attempts` array with strategy, result, duration, and a bounded
+failure class (`timeout`, `network`, `browser`, `extraction`, `provider`, or `unknown`) for failed
+attempts. Raw provider/network error strings are not copied into that history. Prometheus exposes
+`dd_web_scraper_fallback_total`, `dd_web_scraper_apify_active`, `dd_web_scraper_apify_queue`, and
+`dd_web_scraper_apify_limit`.
+
+## flags-2-env configuration contract
+
+`.cli-flags.toml` is the canonical non-secret CLI/environment inventory for the scraper and follows
+`flags-2-env` (`@oresoftware/f2e`). Run:
+
+```bash
+pnpm run flags:audit
+```
+
+The audit command is pinned to `@oresoftware/f2e@0.3.0`. The TOML is shipped in the runtime image so
+operators can inspect the same contract that CI/source uses. Secret-bearing values are intentionally
+**not** exposed as CLI flags because argv can leak through shell history or process listings. Keep
+`SERVER_AUTH_SECRET`, `BROWSERLESS_TOKEN`, `BROWSERLESS_CONTENT_URL`, `SCRAPER_PROXIES`,
+`SCRAPER_CAPTCHA_API_KEY`, and `APIFY_TOKEN` in the environment/secret store.
 
 ## Business contact extraction
 
@@ -131,8 +192,8 @@ A proxy that fails a request is put on a `SCRAPER_PROXY_COOLDOWN_MS` cooldown an
 skipped until it expires (if every proxy is cooling down, the pool degrades to
 reusing one rather than dropping the scrape). Proxy applies to `native-fetch`,
 `cheerio`, `jsdom`, `linkedom` (via an undici `ProxyAgent`, HTTP/HTTPS only),
-`playwright`, and `puppeteer` (which also accept SOCKS). `browserless` manages its
-own egress and is left untouched.
+`playwright`, and `puppeteer` (which also accept SOCKS). `browserless` and `apify`
+manage their own egress and do not consume the local proxy pool.
 
 Per request:
 
@@ -198,6 +259,9 @@ and `type`.
   `SCRAPER_CAPTCHA_MAX_CONCURRENT` caps simultaneous solves — excess challenges are reported as detected-only
   (`captcha.error = "captcha solver concurrency limit reached"`) rather than
   queued. Keep auto-solve scoped to trusted target sets.
+- **Provider cost amplification.** The Apify path is one page/zero depth and is
+  separately concurrency-, response-, attempt-, and total-time-bounded. Keep
+  `SCRAPER_APIFY_MAX_CONCURRENT` small and monitor `dd_web_scraper_fallback_total`.
 - **Per-request proxy.** `"proxy"` lets an authenticated caller route through an
   arbitrary proxy; the proxy host is re-resolved and rejected if it lands on a
   private/cluster address (unless `SCRAPER_ALLOW_PRIVATE_NETWORKS=true`). Set
@@ -283,9 +347,10 @@ only for a tightly controlled internal use case.
 Security defaults:
 
 - `SERVER_AUTH_SECRET` is required unless `SCRAPER_ALLOW_UNAUTHENTICATED=true`.
-- Redirect targets and browser subresource requests are rechecked against the same network policy.
+- Redirect targets, browser subresource requests, and provider-reported final URLs are rechecked
+  against the same network policy.
 - URL credentials and sensitive outbound headers such as `Authorization` and `Cookie` are blocked
   unless explicitly enabled with `SCRAPER_ALLOW_URL_CREDENTIALS=true` or
-  `SCRAPER_ALLOW_SENSITIVE_HEADERS=true`.
+  `SCRAPER_ALLOW_SENSITIVE_HEADERS=true`; those caller credentials are never forwarded to Apify.
 - Parser workers use `resourceLimits`; Kubernetes currently sets
   `SCRAPER_PARSER_WORKER_MEMORY_MB=128`.
