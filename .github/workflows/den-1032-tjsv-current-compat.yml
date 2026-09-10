@@ -1,0 +1,134 @@
+name: DEN-1032 current TJSV compatibility hardening
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/den-1032-tjsv-current-compat.yml'
+      - 'contracts/local-k8s-platform/**'
+      - 'scripts/local-k8s/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-1032-current-tjsv-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  compatibility:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      TJSV_SHA: 8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
+      TJSV_EVIDENCE_DIR: ${{ runner.temp }}/den-1032-current-tjsv-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source-ref.outputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify exact source
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git diff --check
+
+      - name: Set up Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install exact current TJSV candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install \
+            --no-save \
+            --package-lock=false \
+            --no-audit \
+            --no-fund \
+            "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz"
+          ./node_modules/.bin/tjsv doctor
+
+      - name: Re-run peer-authority deterministic and drift checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TJSV_EVIDENCE_DIR"
+          node scripts/local-k8s/test_tjsv_failclosed.mjs
+
+      - name: Re-run five-runtime current-input boundary gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/local-k8s/test_language_boundaries.mjs
+
+      - name: Attack current-input boundary provenance and identity binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/local-k8s/test_language_boundaries_current_tjsv.mjs
+
+      - name: Check JavaScript syntax and source integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check scripts/local-k8s/test_tjsv_failclosed.mjs
+          node --check scripts/local-k8s/test_language_boundaries.mjs
+          node --check scripts/local-k8s/test_language_boundaries_current_tjsv.mjs
+          test ! -e package-lock.json
+          git diff --check
+
+      - name: Upload current-TJSV compatibility evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-1032-current-tjsv-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.TJSV_EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record compatibility summary
+        if: success()
+        shell: bash
+        run: |
+          {
+            echo '## DEN-1032 current TJSV compatibility'
+            echo
+            echo "- exact candidate: \`${TJSV_SHA}\`"
+            echo '- independent TypeSpec / authored JSON Schema convergence: passed'
+            echo '- deterministic authored-authority drift checks: passed'
+            echo '- five required runtimes (Rust/TS/Dart/Go/Gleam): passed'
+            echo '- missing current path: stopped fail-closed'
+            echo '- tampered Contract IR identity: stopped fail-closed'
+            echo '- runtime target identity mismatch: stopped fail-closed'
+            echo '- parity receipt mismatch: stopped fail-closed'
+            echo '- runtime evidence Contract IR mismatch: stopped fail-closed'
+            echo '- duplicate required runtime identity: stopped fail-closed'
+          } >> "$GITHUB_STEP_SUMMARY"

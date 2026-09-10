@@ -4,17 +4,15 @@ import test from 'node:test';
 import {
   buildProviderDiagnostics,
   createProviderDiagnosticsFetch,
-  installProviderDiagnostics,
+  createProviderState,
+  formatProviderDiagnosticsLine,
   providerFailureCode,
   providerForRequest,
   recordProviderWarning,
 } from './provider-diagnostics-bridge.mjs';
 
 function state() {
-  return {
-    brave: { requests: 0, failures: 0, failureCodes: {}, pendingFailureWarnings: 0 },
-    serper: { requests: 0, failures: 0, failureCodes: {}, pendingFailureWarnings: 0 },
-  };
+  return createProviderState();
 }
 
 test('provider request matching is exact and excludes arbitrary URLs', () => {
@@ -114,30 +112,38 @@ test('non-provider traffic is passed through without diagnostic mutation', async
   assert.deepEqual(buildProviderDiagnostics(diagnostics).providers.map((item) => item.requests), [0, 0]);
 });
 
-test('installed bridge emits diagnostics only after a pipeline report', async () => {
-  const lines = [];
-  const target = {
-    fetch: async () => new Response('{}', { status: 200 }),
-    console: {
-      log: (...args) => lines.push(args.join(' ')),
-      warn: (...args) => lines.push(args.join(' ')),
-    },
-  };
-  assert.equal(installProviderDiagnostics({ target }), true);
-  assert.equal(installProviderDiagnostics({ target }), false);
-
-  await target.fetch('https://google.serper.dev/search');
-  target.console.warn('[benefactor-pipeline] provider=serper search_failed ResponseLimitError');
-  target.console.log('ordinary log');
-  target.console.log('BENEFACTOR_PIPELINE_REPORT {"reportDigest":"sha256:synthetic"}');
-
-  assert.equal(lines.filter((line) => line.startsWith('BENEFACTOR_PROVIDER_DIAGNOSTICS ')).length, 1);
-  const diagnostic = JSON.parse(
-    lines.find((line) => line.startsWith('BENEFACTOR_PROVIDER_DIAGNOSTICS ')).split(' ', 2)[1],
+test('explicit diagnostics formatting emits a bounded line without replacing globals', async () => {
+  const diagnostics = createProviderState();
+  const originalGlobalFetch = globalThis.fetch;
+  const originalConsoleLog = console.log;
+  const originalConsoleWarn = console.warn;
+  const wrapped = createProviderDiagnosticsFetch(
+    async () => new Response('{}', { status: 200 }),
+    diagnostics,
   );
-  assert.deepEqual(diagnostic.providers.find((item) => item.provider === 'serper').failureCodes, {
-    response_limit: 1,
+
+  await wrapped('https://google.serper.dev/search');
+  assert.equal(
+    recordProviderWarning(
+      diagnostics,
+      '[benefactor-pipeline] provider=serper search_failed ResponseLimitError',
+    ),
+    true,
+  );
+
+  const prefix = 'BENEFACTOR_PROVIDER_DIAGNOSTICS ';
+  const line = formatProviderDiagnosticsLine(diagnostics);
+  assert.ok(line.startsWith(prefix));
+  const diagnostic = JSON.parse(line.slice(prefix.length));
+  assert.deepEqual(diagnostic.providers.find((item) => item.provider === 'serper'), {
+    provider: 'serper',
+    requests: 1,
+    successes: 0,
+    failures: 1,
+    failureCodes: { response_limit: 1 },
   });
-  const serialized = JSON.stringify(diagnostic);
-  assert.doesNotMatch(serialized, /synthetic|sensitive|quota|query|url/i);
+  assert.doesNotMatch(JSON.stringify(diagnostic), /sensitive|quota|query|url/i);
+  assert.equal(globalThis.fetch, originalGlobalFetch);
+  assert.equal(console.log, originalConsoleLog);
+  assert.equal(console.warn, originalConsoleWarn);
 });

@@ -1,6 +1,4 @@
 const PROVIDER_DIAGNOSTICS_VERSION = 'benefactor.provider-diagnostics.v1';
-const INSTALL_MARKER = Symbol.for('benefactor.providerDiagnostics.installed');
-const STATE_MARKER = Symbol.for('benefactor.providerDiagnostics.state');
 
 const PROVIDERS = Object.freeze({
   brave: {
@@ -31,7 +29,7 @@ function createProviderRecord() {
   };
 }
 
-function createProviderState() {
+export function createProviderState() {
   return {
     brave: createProviderRecord(),
     serper: createProviderRecord(),
@@ -184,32 +182,6 @@ export function buildProviderDiagnostics(state = createProviderState()) {
   };
 }
 
-export function installProviderDiagnostics({ target = globalThis } = {}) {
-  if (target[INSTALL_MARKER]) return false;
-  const state = createProviderState();
-  const originalFetch = target.fetch;
-  if (typeof originalFetch !== 'function') throw new TypeError('global fetch is unavailable');
-  target.fetch = createProviderDiagnosticsFetch(originalFetch.bind(target), state);
-
-  const originalWarn = target.console?.warn?.bind(target.console);
-  if (typeof originalWarn === 'function') {
-    target.console.warn = (...args) => {
-      originalWarn(...args);
-      recordProviderWarning(state, args.map((value) => String(value)).join(' '));
-    };
-  }
-
-  const originalLog = target.console?.log?.bind(target.console);
-  if (typeof originalLog === 'function') {
-    target.console.log = (...args) => {
-      originalLog(...args);
-      if (typeof args[0] === 'string' && args[0].startsWith('BENEFACTOR_PIPELINE_REPORT ')) {
-        originalLog(`BENEFACTOR_PROVIDER_DIAGNOSTICS ${JSON.stringify(buildProviderDiagnostics(state))}`);
-      }
-    };
-  }
-
-  target[STATE_MARKER] = state;
-  target[INSTALL_MARKER] = true;
-  return true;
+export function formatProviderDiagnosticsLine(state = createProviderState()) {
+  return `BENEFACTOR_PROVIDER_DIAGNOSTICS ${JSON.stringify(buildProviderDiagnostics(state))}`;
 }
