@@ -14,7 +14,8 @@
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
     "test": "pnpm run build && node --test test/*.test.mjs && node --import tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "flags:audit": "pnpm dlx @oresoftware/f2e@0.3.0 audit .cli-flags.toml"
   },
   "dependencies": {
     "@dd/telemetry": "file:../../libs/telemetry-node",
