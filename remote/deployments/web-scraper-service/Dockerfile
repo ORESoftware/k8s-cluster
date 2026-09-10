@@ -18,6 +18,13 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     PUPPETEER_SKIP_DOWNLOAD=true
 
+# The pinned flags2env package builds its Node binding with node-gyp during
+# installation. Keep compiler tooling in the builder stage only so the final
+# scraper runtime remains unchanged and does not gain a compiler toolchain.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN corepack enable \
  && corepack prepare pnpm@9.15.4 --activate \
  && pnpm --version \
