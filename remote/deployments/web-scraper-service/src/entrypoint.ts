@@ -57,9 +57,7 @@ child.on('error', (error) => {
   process.exitCode = 1;
 });
 child.on('exit', (code, signal) => {
-  if (signal) {
-    process.kill(process.pid, signal);
-    return;
-  }
-  process.exitCode = code ?? 1;
+  // Once the child has shut down, exit the launcher too. Do not re-signal this
+  // process: its own SIGTERM/SIGINT handler would catch that signal again.
+  process.exitCode = code ?? (signal ? 128 : 1);
 });
