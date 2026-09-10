@@ -78,6 +78,17 @@ jobs:
             "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz"
           ./node_modules/.bin/tjsv doctor
 
+      - name: Produce exact current-TJSV peer-authority receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/tjsv check \
+            --typespec=contracts/local-k8s-platform/main.tsp \
+            --schema=contracts/local-k8s-platform/authored.schema.json \
+            --instances=contracts/local-k8s-platform/instances \
+            --report="$TJSV_EVIDENCE_DIR/tjsv-report.json" \
+            --quiet
+
       - name: Re-run peer-authority deterministic and drift checks
         shell: bash
         run: |
