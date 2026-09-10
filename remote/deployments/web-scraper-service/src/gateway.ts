@@ -1,7 +1,5 @@
 import Fastify, { type FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-import { parseStructured } from '@oresoftware/f2e';
 
 type ScrapeBody = {
   requestId?: string;
@@ -43,27 +41,6 @@ type ApifyItem = {
   };
 };
 
-const flagsPath = fileURLToPath(new URL('../.cli-flags.toml', import.meta.url));
-const parsedFlags = parseStructured(process.argv, { configPath: flagsPath });
-if (parsedFlags.errors.length > 0 || parsedFlags.unknownOptions.length > 0) {
-  throw new Error(
-    [
-      ...parsedFlags.errors,
-      ...parsedFlags.unknownOptions.map((flag) => `unknown option: ${flag}`),
-    ].join('; '),
-  );
-}
-if (parsedFlags.isHelpMenu) {
-  parsedFlags.printTable(process.stdout);
-  process.exit(0);
-}
-Object.assign(process.env, {
-  ...parsedFlags.dotenv,
-  ...process.env,
-  ...parsedFlags.dotenvOverrides,
-  ...parsedFlags.providedFlags,
-});
-
 const externalHost = process.env.HOST ?? '0.0.0.0';
 const externalPort = readPositiveInt('PORT', 8097);
 const internalPort = readPositiveInt('SCRAPER_INTERNAL_PORT', 18097);
@@ -79,6 +56,7 @@ const apifyConfig = {
   timeoutMs: Math.min(readPositiveInt('SCRAPER_APIFY_TIMEOUT_MS', 90_000), 300_000),
   maxConcurrent: readPositiveInt('SCRAPER_APIFY_MAX_CONCURRENT', 2),
   maxPerMinute: readPositiveInt('SCRAPER_APIFY_MAX_PER_MINUTE', 20),
+  maxResponseBytes: Math.min(readPositiveInt('SCRAPER_APIFY_MAX_RESPONSE_BYTES', 2_000_000), 10_000_000),
 };
 
 let activeApifyCalls = 0;
@@ -238,11 +216,12 @@ async function scrapeWithApify(
       signal: controller.signal,
     });
     if (!response.ok) {
-      const text = await response.text().catch(() => '');
+      const text = await readLimitedText(response, Math.min(apifyConfig.maxResponseBytes, 16_384));
       throw new Error(`Apify Actor returned ${response.status}: ${text.slice(0, 300)}`);
     }
 
-    const value = (await response.json()) as unknown;
+    const textPayload = await readLimitedText(response, apifyConfig.maxResponseBytes);
+    const value = JSON.parse(textPayload) as unknown;
     if (!Array.isArray(value) || value.length === 0 || !isRecord(value[0])) {
       throw new Error('Apify Actor returned no dataset item');
     }
@@ -256,16 +235,20 @@ async function scrapeWithApify(
       ...(body.includeHtml === true && item.html ? { html: item.html } : {}),
     };
 
+    // Keep the existing strategy enum stable for strict clients. Provider
+    // provenance is additive under fallback/executionProvider.
+    const localStrategy = failure?.strategy ?? body.strategy ?? 'native-fetch';
     return {
       ok: true,
       requestId: body.requestId ?? failure?.requestId ?? randomUUID(),
-      strategy: 'apify',
+      strategy: localStrategy,
       requestedStrategy: body.strategy ?? failure?.requestedStrategy ?? 'auto',
       url: body.url,
       finalUrl,
       durationMs: Date.now() - startedAt,
       truncated: false,
       extraction,
+      executionProvider: 'apify',
       fallback: {
         provider: 'apify',
         actor: apifyConfig.actor,
@@ -277,6 +260,27 @@ async function scrapeWithApify(
     clearTimeout(timeout);
     activeApifyCalls -= 1;
   }
+}
+
+async function readLimitedText(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    const remaining = maxBytes - bytes;
+    if (remaining <= 0 || value.byteLength > remaining) {
+      if (remaining > 0) chunks.push(value.slice(0, remaining));
+      await reader.cancel().catch(() => undefined);
+      throw new Error(`Apify response exceeded ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+    bytes += value.byteLength;
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function acquireApifyBudget(): void {
