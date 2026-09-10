@@ -37,6 +37,17 @@ import {
 } from './captcha.js';
 import { captchaAutoSolveAllowed } from './scrape-policy.js';
 import { registerBrowserAgentRoutes, closeAllSessions } from './browser-agent.js';
+import {
+  defaultApifyActorId,
+  defaultApifyApiBaseUrl,
+  fetchWithApifyFallback,
+  isApifyConfigured as hasApifyToken,
+} from './apify-fallback.js';
+import {
+  buildStrategyAttemptPlan,
+  classifyScrapeAttemptFailure,
+  type ScrapeAttemptFailureClass,
+} from './scrape-fallback.js';
 
 const STRATEGIES = [
   'native-fetch',
@@ -46,6 +57,7 @@ const STRATEGIES = [
   'playwright',
   'puppeteer',
   'browserless',
+  'apify',
 ] as const;
 
 type StrategyName = (typeof STRATEGIES)[number];
@@ -66,6 +78,8 @@ const strategyAliases: Record<string, StrategyInput> = {
   puppeteer: 'puppeteer',
   browserless: 'browserless',
   'browserless.io': 'browserless',
+  apify: 'apify',
+  'apify.com': 'apify',
 };
 
 const serverStartedAt = new Date().toISOString();
@@ -99,6 +113,7 @@ const config = {
   parserWorkerMemoryMb: readNumberEnv('SCRAPER_PARSER_WORKER_MEMORY_MB', 128),
   maxTimeoutMs: readNumberEnv('SCRAPER_MAX_TIMEOUT_MS', 60_000),
   defaultTimeoutMs: readNumberEnv('SCRAPER_DEFAULT_TIMEOUT_MS', 30_000),
+  maxTotalTimeoutMs: readNumberEnv('SCRAPER_MAX_TOTAL_TIMEOUT_MS', 120_000),
   dnsTimeoutMs: readNumberEnv('SCRAPER_DNS_TIMEOUT_MS', 5_000),
   maxRedirects: readNumberEnv('SCRAPER_MAX_REDIRECTS', 5),
   maxHtmlChars: readNumberEnv('SCRAPER_MAX_HTML_CHARS', 1_000_000),
@@ -143,6 +158,18 @@ const config = {
   captchaTimeoutMs: readNumberEnv('SCRAPER_CAPTCHA_TIMEOUT_MS', 120_000),
   captchaMaxAttempts: readNumberEnv('SCRAPER_CAPTCHA_MAX_ATTEMPTS', 2),
   captchaMaxConcurrent: readNumberEnv('SCRAPER_CAPTCHA_MAX_CONCURRENT', 2),
+  apifyFallback: readBooleanEnv('SCRAPER_APIFY_FALLBACK', false),
+  apifyToken: process.env.APIFY_TOKEN ?? null,
+  apifyActorId: process.env.APIFY_ACTOR_ID ?? defaultApifyActorId(),
+  apifyApiBaseUrl: process.env.APIFY_API_BASE_URL ?? defaultApifyApiBaseUrl(),
+  apifyTimeoutMs: readNumberEnv('SCRAPER_APIFY_TIMEOUT_MS', 60_000),
+  apifyMaxConcurrent: readNumberEnv('SCRAPER_APIFY_MAX_CONCURRENT', 2),
+  apifyMaxResponseBytes: clampNumber(
+    readNumberEnv('SCRAPER_APIFY_MAX_RESPONSE_BYTES', 4_194_304),
+    65_536,
+    8_388_608,
+  ),
+  apifyUseProxy: readBooleanEnv('SCRAPER_APIFY_USE_PROXY', true),
 };
 
 const proxyPool = new ProxyPool(config.proxies, config.proxyRotation, config.proxyCooldownMs);
@@ -194,6 +221,7 @@ const ScrapeRequestSchema = z.object({
   detectCaptcha: z.boolean().optional(),
   solveCaptcha: z.boolean().optional(),
   respectRobots: z.boolean().optional(),
+  externalFallback: z.boolean().optional(),
 });
 
 type ScrapeRequest = z.infer<typeof ScrapeRequestSchema>;
@@ -268,11 +296,19 @@ type ExtractionWorkerResponse =
   | { ok: true; extraction: ExtractionResult }
   | { ok: false; error: string };
 
+type ScrapeAttempt = {
+  strategy: StrategyName;
+  status: ScrapeResultStatus;
+  durationMs: number;
+  failureClass?: ScrapeAttemptFailureClass;
+};
+
 type ScrapeResponse = {
   ok: true;
   requestId: string;
   strategy: StrategyName;
   requestedStrategy: StrategyInput;
+  attempts: ScrapeAttempt[];
   url: string;
   finalUrl: string;
   status?: number;
@@ -320,8 +356,14 @@ type StatusDescriptor = {
   parserWorkerMemoryMb: number;
   blockPrivateNetworks: boolean;
   maxRedirects: number;
+  maxTotalTimeoutMs: number;
   allowSensitiveHeaders: boolean;
   browserlessConfigured: boolean;
+  apifyConfigured: boolean;
+  apifyFallbackEnabled: boolean;
+  apifyMaxConcurrent: number;
+  apifyActive: number;
+  apifyQueued: number;
   browserHeadless: boolean;
   captureFailureScreenshots: boolean;
   failureScreenshotQuality: number;
@@ -398,6 +440,7 @@ const metrics = {
   total: new Map<string, number>(),
   durationSumMs: new Map<StrategyName, number>(),
   durationCount: new Map<StrategyName, number>(),
+  fallback: new Map<string, number>(),
   captcha: new Map<string, number>(),
   robotsChecks: 0,
   robotsDenials: 0,
@@ -420,6 +463,7 @@ let playwrightBrowserPromise: Promise<PlaywrightBrowser> | null = null;
 let puppeteerBrowser: PuppeteerBrowser | null = null;
 let puppeteerBrowserPromise: Promise<PuppeteerBrowser> | null = null;
 const parserWorkerSemaphore = new Semaphore(config.parserWorkerConcurrency);
+const apifySemaphore = new Semaphore(config.apifyMaxConcurrent);
 let activeCaptchaSolves = 0;
 const robotsCache = new Map<string, { body: string; expiresAt: number }>();
 const originNextRequestAt = new Map<string, number>();
@@ -561,21 +605,24 @@ fastify.post('/scrape', async (request, reply) => {
   try {
     const result = await runScrape(parsed.data, requestId, requestedStrategy, strategy);
     const durationMs = Date.now() - startedAt;
-    recordMetric(strategy, 'ok', durationMs);
+    recordMetric(result.strategy, 'ok', durationMs);
     return { ...result, durationMs };
   } catch (error) {
     const durationMs = Date.now() - startedAt;
-    recordMetric(strategy, 'error', durationMs);
+    const attempts = getScrapeAttempts(error);
+    const failedStrategy = attempts.at(-1)?.strategy ?? strategy;
+    recordMetric(failedStrategy, 'error', durationMs);
     const message = error instanceof Error ? error.message : String(error);
     const failureScreenshot = getFailureScreenshot(error);
     const statusCode = isClientPolicyError(message) ? 400 : 500;
     return reply.code(statusCode).send({
       ok: false,
       requestId,
-      strategy,
+      strategy: failedStrategy,
       requestedStrategy,
       durationMs,
       error: message,
+      ...(attempts.length > 0 ? { attempts } : {}),
       ...(failureScreenshot ? { failureScreenshot } : {}),
     });
   } finally {
@@ -590,49 +637,116 @@ async function runScrape(
   strategy: StrategyName,
 ): Promise<Omit<ScrapeResponse, 'durationMs'>> {
   const targetUrl = await validateTargetUrl(input.url);
-  const ctx = await createScrapeContext(input, targetUrl, strategy);
-  await enforceResponsibleScrapingPolicy(input, targetUrl, ctx);
-  let fetched: FetchedDocument;
-  try {
-    fetched = await fetchByStrategy(input, targetUrl, strategy, ctx);
-  } catch (error) {
-    reportProxyOutcome(ctx, false);
-    throw error;
-  }
+  const plan = buildStrategyAttemptPlan({
+    primary: strategy,
+    requestedStrategy,
+    autoUseBrowserless: config.autoUseBrowserless,
+    browserlessConfigured: isBrowserlessConfigured(),
+    apifyFallbackEnabled: config.apifyFallback,
+    apifyConfigured: isApifyProviderConfigured(),
+    // A caller-selected proxy is an explicit egress constraint. Do not silently
+    // leave it behind for a hosted provider unless the caller explicitly asks.
+    externalFallback:
+      input.proxy && input.externalFallback !== true ? false : input.externalFallback,
+  }) as StrategyName[];
+  const attempts: ScrapeAttempt[] = [];
+  const deadlineAt = Date.now() + config.maxTotalTimeoutMs;
+  let policyEnforced = false;
+  let previousStrategy: StrategyName | undefined;
 
-  // Non-browser strategies can detect a challenge but cannot solve it (no page
-  // to inject into); surface the detection so callers can retry via a browser.
-  if (!ctx.captcha && shouldDetectCaptcha(input)) {
-    ctx.captcha = detectionToOutcome(detectCaptcha(fetched.html));
-    if (ctx.captcha.detected) {
-      recordCaptchaMetric('detected', ctx.captcha.type);
+  for (const attemptStrategy of plan) {
+    if (previousStrategy) {
+      recordFallbackMetric(previousStrategy, attemptStrategy);
+    }
+    previousStrategy = attemptStrategy;
+
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs < 500) {
+      throw attachScrapeAttempts(
+        new Error(`scrape fallback budget exhausted after ${config.maxTotalTimeoutMs}ms`),
+        attempts,
+      );
+    }
+    const attemptInput: ScrapeRequest = {
+      ...input,
+      timeoutMs: Math.min(getTimeoutMs(input), remainingMs),
+    };
+    const attemptStartedAt = Date.now();
+    let ctx: ScrapeContext | undefined;
+    let proxyReported = false;
+    try {
+      ctx = await createScrapeContext(attemptInput, targetUrl, attemptStrategy);
+      if (!policyEnforced) {
+        await enforceResponsibleScrapingPolicy(attemptInput, targetUrl, ctx);
+        policyEnforced = true;
+      }
+
+      const fetched = await fetchByStrategy(attemptInput, targetUrl, attemptStrategy, ctx);
+
+      // Non-browser strategies can detect a challenge but cannot solve it (no page
+      // to inject into); surface the detection so callers can choose an authorized
+      // browser flow. Hosted fallbacks never turn a detected challenge into a bypass.
+      if (!ctx.captcha && shouldDetectCaptcha(attemptInput)) {
+        ctx.captcha = detectionToOutcome(detectCaptcha(fetched.html));
+        if (ctx.captcha.detected) {
+          recordCaptchaMetric('detected', ctx.captcha.type);
+        }
+      }
+
+      // Score proxy health off the response (block/challenge pages still "fetch ok").
+      reportProxyOutcome(ctx, isHealthyProxyResponse(fetched, ctx));
+      proxyReported = true;
+
+      let extraction: ExtractionResult;
+      try {
+        extraction = await extractDocument(
+          fetched.html,
+          fetched.finalUrl,
+          attemptInput,
+          attemptStrategy,
+        );
+      } catch (error) {
+        throw attachFailureScreenshot(error, fetched.failureScreenshot);
+      }
+
+      attempts.push({
+        strategy: attemptStrategy,
+        status: 'ok',
+        durationMs: Date.now() - attemptStartedAt,
+      });
+      return {
+        ok: true,
+        requestId,
+        strategy: attemptStrategy,
+        requestedStrategy,
+        attempts,
+        url: targetUrl.toString(),
+        finalUrl: fetched.finalUrl,
+        status: fetched.status,
+        contentType: fetched.contentType,
+        truncated: fetched.truncated,
+        extraction,
+        ...(ctx.proxy ? { proxy: proxyInfo(ctx) } : {}),
+        ...(ctx.captcha?.detected ? { captcha: ctx.captcha } : {}),
+      };
+    } catch (error) {
+      if (ctx && !proxyReported) {
+        reportProxyOutcome(ctx, false);
+      }
+      attempts.push({
+        strategy: attemptStrategy,
+        status: 'error',
+        durationMs: Date.now() - attemptStartedAt,
+        failureClass: classifyScrapeAttemptFailure(error),
+      });
+      const message = error instanceof Error ? error.message : String(error);
+      if (isClientPolicyError(message) || attemptStrategy === plan.at(-1)) {
+        throw attachScrapeAttempts(error, attempts);
+      }
     }
   }
 
-  // Score proxy health off the response (block/challenge pages still "fetch ok").
-  reportProxyOutcome(ctx, isHealthyProxyResponse(fetched, ctx));
-
-  let extraction: ExtractionResult;
-  try {
-    extraction = await extractDocument(fetched.html, fetched.finalUrl, input, strategy);
-  } catch (error) {
-    throw attachFailureScreenshot(error, fetched.failureScreenshot);
-  }
-
-  return {
-    ok: true,
-    requestId,
-    strategy,
-    requestedStrategy,
-    url: targetUrl.toString(),
-    finalUrl: fetched.finalUrl,
-    status: fetched.status,
-    contentType: fetched.contentType,
-    truncated: fetched.truncated,
-    extraction,
-    ...(ctx.proxy ? { proxy: proxyInfo(ctx) } : {}),
-    ...(ctx.captcha?.detected ? { captcha: ctx.captcha } : {}),
-  };
+  throw attachScrapeAttempts(new Error('scrape attempt plan was empty'), attempts);
 }
 
 async function fetchByStrategy(
@@ -653,7 +767,37 @@ async function fetchByStrategy(
       return fetchWithPuppeteer(input, targetUrl, ctx);
     case 'browserless':
       return fetchWithBrowserless(input, targetUrl);
+    case 'apify':
+      return fetchWithApify(input, targetUrl);
   }
+}
+
+async function fetchWithApify(
+  input: ScrapeRequest,
+  targetUrl: URL,
+): Promise<FetchedDocument> {
+  return apifySemaphore.run(async () => {
+    const fetched = await fetchWithApifyFallback(
+      {
+        targetUrl,
+        maxHtmlChars: getMaxHtmlChars(input),
+        userAgent: effectiveUserAgent(input),
+        requiresHtml: Boolean(input.selector || input.selectors),
+      },
+      {
+        token: config.apifyToken,
+        actorId: config.apifyActorId,
+        apiBaseUrl: config.apifyApiBaseUrl,
+        timeoutMs: Math.min(config.apifyTimeoutMs, getTimeoutMs(input)),
+        maxResponseBytes: config.apifyMaxResponseBytes,
+        useApifyProxy: config.apifyUseProxy,
+      },
+    );
+    // Treat provider output as untrusted. Re-apply the same URL/SSRF policy to
+    // the final URL the Actor reports before any caller receives it.
+    const finalUrl = await validateTargetUrl(fetched.finalUrl);
+    return { ...fetched, finalUrl: finalUrl.toString() };
+  });
 }
 
 async function fetchStaticDocument(
@@ -905,8 +1049,8 @@ async function createScrapeContext(
   targetUrl: URL,
   strategy: StrategyName,
 ): Promise<ScrapeContext> {
-  // browserless manages its own egress; refuse a proxy there rather than
-  // silently ignoring it and reporting a proxy that was never applied.
+  // Hosted providers manage their own egress; refuse a caller proxy there rather
+  // than silently ignoring it and reporting a proxy that was never applied.
   if (!strategyUsesProxy(strategy)) {
     if (input.proxy) {
       throw new Error(`the ${strategy} strategy does not support proxy rotation`);
@@ -921,7 +1065,7 @@ async function createScrapeContext(
 }
 
 function strategyUsesProxy(strategy: StrategyName): boolean {
-  return strategy !== 'browserless';
+  return strategy !== 'browserless' && strategy !== 'apify';
 }
 
 /**
@@ -1484,6 +1628,19 @@ class ScrapeFailureError extends Error {
   }
 }
 
+class ScrapeAttemptsError extends Error {
+  readonly attempts: ScrapeAttempt[];
+  readonly failureScreenshot?: FailureScreenshot;
+
+  constructor(error: unknown, attempts: ScrapeAttempt[]) {
+    super(error instanceof Error ? error.message : String(error));
+    this.name = error instanceof Error ? error.name : 'ScrapeAttemptsError';
+    this.stack = error instanceof Error ? error.stack : this.stack;
+    this.attempts = attempts.map((attempt) => ({ ...attempt }));
+    this.failureScreenshot = getFailureScreenshot(error);
+  }
+}
+
 function attachFailureScreenshot(error: unknown, screenshot?: FailureScreenshot): Error {
   if (!screenshot) {
     return error instanceof Error ? error : new Error(String(error));
@@ -1494,7 +1651,19 @@ function attachFailureScreenshot(error: unknown, screenshot?: FailureScreenshot)
   return new ScrapeFailureError(error, screenshot);
 }
 
+function attachScrapeAttempts(error: unknown, attempts: ScrapeAttempt[]): Error {
+  if (error instanceof ScrapeAttemptsError) {
+    return error;
+  }
+  return new ScrapeAttemptsError(error, attempts);
+}
+
+function getScrapeAttempts(error: unknown): ScrapeAttempt[] {
+  return error instanceof ScrapeAttemptsError ? error.attempts : [];
+}
+
 function getFailureScreenshot(error: unknown): FailureScreenshot | undefined {
+  if (error instanceof ScrapeAttemptsError) return error.failureScreenshot;
   return error instanceof ScrapeFailureError ? error.failureScreenshot : undefined;
 }
 
@@ -1800,6 +1969,10 @@ function isBrowserlessConfigured(): boolean {
   }
 }
 
+function isApifyProviderConfigured(): boolean {
+  return hasApifyToken({ token: config.apifyToken });
+}
+
 function getBrowserlessContentUrl(): string {
   const raw =
     config.browserlessContentUrl ?? `${config.browserlessEndpoint.replace(/\/$/, '')}/content`;
@@ -1944,6 +2117,11 @@ function recordMetric(
   metrics.durationCount.set(strategy, (metrics.durationCount.get(strategy) ?? 0) + 1);
 }
 
+function recordFallbackMetric(from: StrategyName, to: StrategyName): void {
+  const key = `${from}:${to}`;
+  metrics.fallback.set(key, (metrics.fallback.get(key) ?? 0) + 1);
+}
+
 function renderMetrics(): string {
   const lines = [
     '# HELP dd_web_scraper_in_flight Current in-flight scrape requests.',
@@ -1982,6 +2160,15 @@ function renderMetrics(): string {
   }
 
   lines.push(
+    '# HELP dd_web_scraper_fallback_total Strategy-to-strategy fallback transitions.',
+    '# TYPE dd_web_scraper_fallback_total counter',
+  );
+  for (const [key, count] of metrics.fallback) {
+    const [from, to] = key.split(':');
+    lines.push(`dd_web_scraper_fallback_total{from="${from}",to="${to}"} ${count}`);
+  }
+
+  lines.push(
     '# HELP dd_web_scraper_parser_workers Active parser worker threads.',
     '# TYPE dd_web_scraper_parser_workers gauge',
     `dd_web_scraper_parser_workers ${parserWorkerSemaphore.activeCount}`,
@@ -1994,6 +2181,15 @@ function renderMetrics(): string {
     '# HELP dd_web_scraper_parser_worker_memory_mb Per-worker V8 old generation memory cap.',
     '# TYPE dd_web_scraper_parser_worker_memory_mb gauge',
     `dd_web_scraper_parser_worker_memory_mb ${config.parserWorkerMemoryMb}`,
+    '# HELP dd_web_scraper_apify_active Active paid Apify fallback calls.',
+    '# TYPE dd_web_scraper_apify_active gauge',
+    `dd_web_scraper_apify_active ${apifySemaphore.activeCount}`,
+    '# HELP dd_web_scraper_apify_queue Queued Apify fallback calls.',
+    '# TYPE dd_web_scraper_apify_queue gauge',
+    `dd_web_scraper_apify_queue ${apifySemaphore.queuedCount}`,
+    '# HELP dd_web_scraper_apify_limit Configured Apify fallback concurrency.',
+    '# TYPE dd_web_scraper_apify_limit gauge',
+    `dd_web_scraper_apify_limit ${config.apifyMaxConcurrent}`,
   );
 
   const proxyStats = proxyPool.stats();
@@ -2064,8 +2260,13 @@ function strategiesDescriptor(): StrategiesDescriptor {
     },
     strategies: STRATEGIES.map((strategy) => ({
       name: strategy,
-      available: strategy !== 'browserless' || isBrowserlessConfigured(),
-      supportsJavaScript: ['playwright', 'puppeteer', 'browserless'].includes(strategy),
+      available:
+        strategy === 'browserless'
+          ? isBrowserlessConfigured()
+          : strategy === 'apify'
+            ? isApifyProviderConfigured()
+            : true,
+      supportsJavaScript: ['playwright', 'puppeteer', 'browserless', 'apify'].includes(strategy),
       supportsSelectors: strategy !== 'native-fetch',
     })),
   };
@@ -2083,8 +2284,14 @@ function statusDescriptor(): StatusDescriptor {
     parserWorkerMemoryMb: config.parserWorkerMemoryMb,
     blockPrivateNetworks: !config.allowPrivateNetworks,
     maxRedirects: config.maxRedirects,
+    maxTotalTimeoutMs: config.maxTotalTimeoutMs,
     allowSensitiveHeaders: config.allowSensitiveHeaders,
     browserlessConfigured: isBrowserlessConfigured(),
+    apifyConfigured: isApifyProviderConfigured(),
+    apifyFallbackEnabled: config.apifyFallback,
+    apifyMaxConcurrent: config.apifyMaxConcurrent,
+    apifyActive: apifySemaphore.activeCount,
+    apifyQueued: apifySemaphore.queuedCount,
     browserHeadless: config.browserHeadless,
     captureFailureScreenshots: config.captureFailureScreenshots,
     failureScreenshotQuality: config.failureScreenshotQuality,
@@ -2192,6 +2399,9 @@ async function main(): Promise<void> {
     fastify.log.warn(
       'SCRAPER_ALLOW_UNAUTHENTICATED=true; POST /scrape will accept unauthenticated requests',
     );
+  }
+  if (config.apifyFallback && !isApifyProviderConfigured()) {
+    fastify.log.warn('SCRAPER_APIFY_FALLBACK=true but APIFY_TOKEN is not configured; fallback is disabled');
   }
   await fastify.listen({ host: config.host, port: config.port });
 }
