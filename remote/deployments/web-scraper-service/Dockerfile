@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1.7
 
 ARG PLAYWRIGHT_VERSION=1.56.0
+ARG FLAGS2ENV_REV=333c2ace93c362d274171ab0e0edf613d96a8e59
+ARG TJSV_REV=8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
 
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS builder
+ARG FLAGS2ENV_REV
+ARG TJSV_REV
 
 # Build from the repository root because @dd/telemetry is a pinned file
 # dependency in the private remote/libs submodule:
@@ -16,7 +20,8 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
 
 RUN corepack enable \
  && corepack prepare pnpm@9.15.4 --activate \
- && pnpm --version
+ && pnpm --version \
+ && npm install --global "https://github.com/flags-2-env/flags-2-env/archive/${FLAGS2ENV_REV}.tar.gz"
 
 COPY remote/libs/telemetry-node /app/remote/libs/telemetry-node
 COPY remote/deployments/web-scraper-service/package.json \
@@ -26,11 +31,20 @@ COPY remote/deployments/web-scraper-service/package.json \
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
+COPY remote/deployments/web-scraper-service/contracts ./contracts
 COPY remote/deployments/web-scraper-service/src ./src
 COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
+ && flags2env audit .cli-flags.toml \
+ && pnpm dlx --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" tjsv check \
+      --typespec=contracts/scraper-fallback.tsp \
+      --schema=contracts/scraper-fallback.schema.json \
+      --instances=contracts/instances \
+      --report=/tmp/dd-web-scraper-contract-report.json \
+      --quiet \
  && node --import tsx --test \
       tests/apify-fallback.test.ts \
+      tests/scraper-contract-fixtures.test.ts \
       tests/sensitive-field-policy.test.ts \
       tests/sensitive-field-wiring.test.ts \
       tests/sensitive-field-policy.integration-plan.test.ts \
@@ -57,6 +71,8 @@ COPY --from=builder /app/remote/deployments/web-scraper-service/package.json ./
 COPY --from=builder /app/remote/deployments/web-scraper-service/.cli-flags.toml ./
 COPY --from=builder /app/remote/deployments/web-scraper-service/node_modules ./node_modules
 COPY --from=builder /app/remote/deployments/web-scraper-service/dist ./dist
+COPY --from=builder /usr/local/lib/node_modules/@oresoftware/f2e /usr/local/lib/node_modules/@oresoftware/f2e
+COPY --from=builder /usr/local/bin/flags2env /usr/local/bin/flags2env
 
 EXPOSE 8097
 
