@@ -2,6 +2,8 @@ import { spawnSync } from 'node:child_process';
 
 import { initTelemetry } from '@dd/telemetry';
 
+import { assertTrustedProviderEndpoints } from './runtime-config-guard.js';
+
 const cliArgs = process.argv.slice(2);
 const parsed = spawnSync('flags2env', ['__dd_web_scraper__', ...cliArgs], {
   cwd: process.cwd(),
@@ -53,6 +55,10 @@ try {
 for (const [key, value] of Object.entries(overrides)) {
   process.env[key] = value;
 }
+
+// Validate credential-bearing external endpoints before telemetry, network
+// listeners, browser processes, or the local core can be started.
+assertTrustedProviderEndpoints();
 
 const telemetry = initTelemetry('dd-web-scraper-supervisor');
 let telemetryClosing = false;
