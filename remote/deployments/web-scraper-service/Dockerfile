@@ -36,6 +36,8 @@ COPY remote/deployments/web-scraper-service/src ./src
 COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
  && flags2env audit .cli-flags.toml \
+ && APIFY_FALLBACK_ENABLED=true flags2env __dd_web_scraper__ --port=8098 >/tmp/dd-web-scraper-flags.json \
+ && node -e "const fs=require('node:fs');const v=JSON.parse(fs.readFileSync('/tmp/dd-web-scraper-flags.json','utf8'));if(v.PORT!=='8098'||v.APIFY_FALLBACK_ENABLED!=='true')process.exit(1)" \
  && pnpm dlx --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" tjsv check \
       --typespec=contracts/scraper-fallback.tsp \
       --schema=contracts/scraper-fallback.schema.json \
@@ -44,6 +46,8 @@ RUN pnpm run build \
       --quiet \
  && node --import tsx --test \
       tests/apify-fallback.test.ts \
+      tests/flags-runtime.test.ts \
+      tests/runtime-config-guard.test.ts \
       tests/scraper-contract-fixtures.test.ts \
       tests/sensitive-field-policy.test.ts \
       tests/sensitive-field-wiring.test.ts \
