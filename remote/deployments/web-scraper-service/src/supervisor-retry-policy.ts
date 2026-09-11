@@ -126,3 +126,30 @@ export function buildLocalRetryPlan(input: LocalRetryPlanInput): LocalScrapeStra
 export function remainingBudgetMs(startedAtMs: number, nowMs: number, maxTotalMs: number): number {
   return Math.max(0, maxTotalMs - Math.max(0, nowMs - startedAtMs));
 }
+
+/**
+ * Cap one local or provider attempt by the remaining wall-clock budget.
+ * Returning zero is an explicit stop signal: callers must not start a new
+ * attempt when less than the runtime's minimum meaningful timeout remains.
+ */
+export function boundedAttemptTimeoutMs(
+  requestedTimeoutMs: number,
+  remainingMs: number,
+  minimumTimeoutMs = 500,
+): number {
+  for (const [name, value] of [
+    ['requestedTimeoutMs', requestedTimeoutMs],
+    ['remainingMs', remainingMs],
+    ['minimumTimeoutMs', minimumTimeoutMs],
+  ] as const) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new TypeError(`${name} must be a finite non-negative number`);
+    }
+  }
+  if (minimumTimeoutMs === 0) {
+    throw new TypeError('minimumTimeoutMs must be greater than zero');
+  }
+
+  const bounded = Math.floor(Math.min(requestedTimeoutMs, remainingMs));
+  return bounded >= Math.ceil(minimumTimeoutMs) ? bounded : 0;
+}
