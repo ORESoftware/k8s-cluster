@@ -1,0 +1,18 @@
+{
+  "name": "tor-server-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser end-to-end tests (Playwright + Puppeteer) that surf the web through the tor-server onion proxy.",
+  "scripts": {
+    "setup": "playwright install chromium",
+    "test": "npm run test:puppeteer && npm run test:playwright",
+    "test:puppeteer": "node --test --test-timeout=180000 puppeteer/*.test.mjs",
+    "test:playwright": "playwright test --config=playwright/playwright.config.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "playwright": "^1.48.0",
+    "puppeteer": "^23.0.0"
+  }
+}
