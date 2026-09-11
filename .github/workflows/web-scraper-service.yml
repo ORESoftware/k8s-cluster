@@ -146,12 +146,15 @@ jobs:
           pnpm run config:audit
           pnpm run contracts:check
 
-      - name: Run focused retry, fallback, and cancellation regressions
+      - name: Run focused retry, fallback, cancellation, and budget regressions
         working-directory: remote/deployments/web-scraper-service
         run: >-
           node --import tsx --test
           tests/supervisor-retry-policy.test.ts
           tests/supervisor-retry-runner.test.ts
+          tests/supervisor-retry-request.test.ts
+          tests/supervisor-provider-budget.test.ts
+          tests/supervisor-retry-invariants.test.ts
           tests/apify-fallback.test.ts
 
       - name: Run the complete service test suite with Chromium available
