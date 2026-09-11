@@ -1,0 +1,90 @@
+name: web scraper service admission
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/web-scraper-service.yml'
+      - 'remote/deployments/web-scraper-service/**'
+      - 'remote/libs/telemetry-node/**'
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/web-scraper-service.yml'
+      - 'remote/deployments/web-scraper-service/**'
+      - 'remote/libs/telemetry-node/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-scraper-service-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  contracts-and-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out exact source head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+          show-progress: false
+
+      - name: Validate this workflow
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/web-scraper-service.yml
+
+      - name: Install pnpm declared by the service
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.4
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/deployments/web-scraper-service/pnpm-lock.yaml
+
+      - name: Install immutable service dependencies
+        working-directory: remote/deployments/web-scraper-service
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium for the real browser-agent integration test
+        working-directory: remote/deployments/web-scraper-service
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Type-check and build
+        working-directory: remote/deployments/web-scraper-service
+        run: |
+          set -euo pipefail
+          pnpm run typecheck
+          pnpm run build
+
+      - name: Audit flags/env configuration and authored contracts
+        working-directory: remote/deployments/web-scraper-service
+        run: |
+          set -euo pipefail
+          pnpm run config:audit
+          pnpm run contracts:check
+
+      - name: Run focused retry, fallback, and cancellation regressions
+        working-directory: remote/deployments/web-scraper-service
+        run: >-
+          node --import tsx --test
+          tests/supervisor-retry-policy.test.ts
+          tests/supervisor-retry-runner.test.ts
+          tests/apify-fallback.test.ts
+
+      - name: Run the complete service test suite with Chromium available
+        working-directory: remote/deployments/web-scraper-service
+        run: pnpm run test
