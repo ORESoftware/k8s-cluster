@@ -18,7 +18,9 @@ ARG TYPESPEC_ASSET_EMITTER_VERSION
 #     -t dd-web-scraper:dev .
 WORKDIR /app/remote/deployments/web-scraper-service
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+ENV FLAGS2ENV_HOME=/opt/flags2env \
+    PATH=/opt/flags2env/bin:${PATH} \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 \
     PUPPETEER_SKIP_DOWNLOAD=true
 
@@ -29,10 +31,15 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential \
  && rm -rf /var/lib/apt/lists/*
 
+# npm's default global prefix differs across base images and Corepack setups.
+# Use an explicit application-owned prefix so the exact tested flags2env binary
+# and native binding can be copied into the runtime image deterministically.
 RUN corepack enable \
  && corepack prepare pnpm@9.15.4 --activate \
  && pnpm --version \
- && npm install --global "https://github.com/flags-2-env/flags-2-env/archive/${FLAGS2ENV_REV}.tar.gz"
+ && npm install --global --prefix "${FLAGS2ENV_HOME}" \
+      "https://github.com/flags-2-env/flags-2-env/archive/${FLAGS2ENV_REV}.tar.gz" \
+ && flags2env --version
 
 COPY remote/libs/telemetry-node /app/remote/libs/telemetry-node
 COPY remote/deployments/web-scraper-service/package.json \
@@ -82,7 +89,9 @@ FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS runtime
 
 WORKDIR /app/remote/deployments/web-scraper-service
 
-ENV NODE_ENV=production \
+ENV FLAGS2ENV_HOME=/opt/flags2env \
+    PATH=/opt/flags2env/bin:${PATH} \
+    NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8097 \
     HOME=/tmp \
@@ -99,8 +108,7 @@ COPY --from=builder /app/remote/deployments/web-scraper-service/package.json ./
 COPY --from=builder /app/remote/deployments/web-scraper-service/.cli-flags.toml ./
 COPY --from=builder /app/remote/deployments/web-scraper-service/node_modules ./node_modules
 COPY --from=builder /app/remote/deployments/web-scraper-service/dist ./dist
-COPY --from=builder /usr/local/lib/node_modules/@oresoftware/f2e /usr/local/lib/node_modules/@oresoftware/f2e
-COPY --from=builder /usr/local/bin/flags2env /usr/local/bin/flags2env
+COPY --from=builder /opt/flags2env /opt/flags2env
 
 EXPOSE 8097
 
