@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "google-chat-exact-window-binding.v1",
+  "space": "spaces/AAQAoHKdzvI",
+  "displayName": "alex-alex-me",
+  "requestedWindow": {
+    "dateStartInclusive": "2026-08-02",
+    "dateEndInclusive": "2026-09-10",
+    "timezoneConvention": "America/New_York"
+  },
+  "status": "incomplete_fail_closed",
+  "controller": "ORESoftware/my-ai#141",
+  "evidence": [
+    {
+      "kind": "github_issue",
+      "ref": "ORESoftware/k8s-cluster#1404",
+      "scope": "2026-08-02 through 2026-08-23 content-free per-message ledger"
+    },
+    {
+      "kind": "merged_pull_request",
+      "ref": "ORESoftware/k8s-cluster#1438",
+      "scope": "2026-08-04 cutoff through 2026-08-28 content-free delta"
+    },
+    {
+      "kind": "github_issue",
+      "ref": "ORESoftware/my-ai#119",
+      "scope": "independent 2026-08-08 through 2026-09-08 review"
+    },
+    {
+      "kind": "github_actions_run",
+      "ref": "ORESoftware/k8s-cluster/actions/runs/34315973761",
+      "scope": "protected live source retrieval through 2026-09-09; Linear mutation stopped at workspace issue limit"
+    },
+    {
+      "kind": "merged_pull_request",
+      "ref": "ORESoftware/k8s-cluster#1552",
+      "scope": "preserve explicit reconciliation gaps when Linear issue creation is capped"
+    },
+    {
+      "kind": "merged_pull_request",
+      "ref": "flags-2-env/flags-2-env#16",
+      "mergeCommit": "333c2ace93c362d274171ab0e0edf613d96a8e59",
+      "scope": "deterministic root-TOML env discovery, value-free manifest.env, CLI/env ownership checks, and key-only env/enc + env/dec reconciliation"
+    }
+  ],
+  "tail": {
+    "recordCount": 13,
+    "immutableGoogleChatSourceIdsBound": false,
+    "records": [
+      {"id":"S9-01","date":"2026-09-09","classification":"actionable","owner":"chapter-publishing/cp-monorepo#5"},
+      {"id":"S9-02","date":"2026-09-09","classification":"actionable","owner":"ORESoftware/my-ai#142"},
+      {"id":"S9-03","date":"2026-09-09","classification":"coordination_meta","owner":"ORESoftware/.github#185; ORESoftware/my-ai#130"},
+      {"id":"S9-04","date":"2026-09-09","classification":"actionable","owner":"ores-chat/.github#7"},
+      {"id":"S9-05","date":"2026-09-09","classification":"actionable","owner":"ORESoftware/my-ai#143"},
+      {"id":"S9-06","date":"2026-09-09","classification":"coordination_quality","owner":"existing PR-readiness/recovery controllers"},
+      {"id":"S9-07","date":"2026-09-09","classification":"linked_existing","owner":"ores-otel/ores-otel-interfaces#1; ores-otel/ores.otel.log#64"},
+      {"id":"S9-08","date":"2026-09-09","classification":"linked_existing_consumer_follow_up","owner":"flags-2-env/flags-2-env#16; ORESoftware/ores-cli#52; zed-pkg/.github#87"},
+      {"id":"S10-01","date":"2026-09-10","classification":"context_status_recap","owner":"canonical open product issues/PRs named by recap"},
+      {"id":"S10-02","date":"2026-09-10","classification":"linked_existing_implementation","owner":"flags-2-env/flags-2-env#16","implementationCommit":"333c2ace93c362d274171ab0e0edf613d96a8e59"},
+      {"id":"S10-03","date":"2026-09-10","classification":"actionable","owner":"ORESoftware/k8s-cluster#1559"},
+      {"id":"S10-04","date":"2026-09-10","classification":"coordination_quality","owner":"active PR-readiness/recovery controllers"},
+      {"id":"S10-05","date":"2026-09-10","classification":"actionable_follow_up_deduplicated","owner":"zed-pkg/.github#87"}
+    ]
+  },
+  "blockers": [
+    {"code":"sep10_source_identity_unbound","detail":"Protected bridge rerun is required to bind Sep 10 tail records to immutable Google Chat source IDs/hashes and terminating pagination evidence."},
+    {"code":"attachment_review_incomplete","detail":"ORESoftware/my-ai#121 tracks three image-only historical inputs whose bytes were not returned by the bridge."},
+    {"code":"linear_issue_limit","detail":"Linear workspace issue creation is capped; ORESoftware/k8s-cluster#1552 preserves gaps without fabricating ownership."},
+    {"code":"implementation_evidence_incomplete","detail":"Canonical child issues without exact tested implementation PRs remain open implementation gaps."}
+  ],
+  "completionInvariant": {
+    "unownedActionableCandidatesMustEqual": 0,
+    "duplicateOwnershipMustEqual": 0,
+    "silentDropsAllowed": false,
+    "auditPullRequestCountsAsFeatureImplementation": false,
+    "credentialOrPrivateContactBodiesPublished": false
+  }
+}
