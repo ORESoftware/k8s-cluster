@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "planId": "google-chat-import-plan:aaaaaaaaaaaaaaaaaaaaaaaa",
+  "source": {
+    "spaceName": "spaces/AAQAoHKdzvI",
+    "windowStartInclusive": "2026-08-24T00:00:00.000Z",
+    "windowEndExclusive": "2026-09-08T00:00:00.000Z"
+  },
+  "counts": {
+    "scanned": 0,
+    "actionable": 0,
+    "covered": 0,
+    "excluded": 0,
+    "quarantined": 0,
+    "gaps": 0,
+    "candidates": {
+      "total": 0,
+      "actionable": 0,
+      "covered": 0,
+      "excluded": 0,
+      "quarantined": 0,
+      "gaps": 0
+    },
+    "complete": true
+  },
+  "dispositions": []
+}

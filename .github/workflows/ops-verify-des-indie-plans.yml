@@ -6,6 +6,7 @@ on:
     paths:
       - .github/workflows/ops-verify-des-indie-plans.yml
       - scripts/ops/run_des_indie_browser_workflows.sh
+      - scripts/ops/verify_des_indie_plans.sh
       - remote/argocd/dd-next-runtime/dd-build-server-gha-continuity.patch.yaml
       - remote/deployments/build-server-rs/src/gha_workflow.rs
       - remote/deployments/build-server-rs/src/profiles.rs

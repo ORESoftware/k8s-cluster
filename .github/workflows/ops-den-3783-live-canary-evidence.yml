@@ -1,0 +1,182 @@
+name: DEN-3783 live canary evidence
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ops-den-3783-live-canary-evidence.yml'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: den-3783-live-canary-evidence
+  cancel-in-progress: true
+
+jobs:
+  evidence:
+    name: resolve exact-main live smoke runs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MERGE_SHA: 368e2ea2497d43701a8bca1f44dd294430589c70
+      BROWSER_PARENT_WORKFLOW: browser-mcp-external-smoke.yml
+      BROWSER_CHILD_WORKFLOW: browser-mcp-public-e2e.yml
+      ATHLETO_WORKFLOW: athleto-ui-tests.yml
+    steps:
+      - name: Resolve exact-main push runs
+        id: parents
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          runs='[]'
+          for _ in $(seq 1 90); do
+            runs="$(
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${MERGE_SHA}&event=push&per_page=100" |
+                jq -c '[.workflow_runs[] | {
+                  id,
+                  name,
+                  workflow_id,
+                  head_sha,
+                  head_branch,
+                  event,
+                  status,
+                  conclusion,
+                  created_at,
+                  html_url
+                }]'
+            )"
+            browser_count="$(jq --arg name 'browser mcp external smoke' '[.[] | select(.name == $name)] | length' <<<"$runs")"
+            athleto_count="$(jq --arg name 'athleto ui tests' '[.[] | select(.name == $name)] | length' <<<"$runs")"
+            if [[ "$browser_count" == 1 && "$athleto_count" == 1 ]]; then
+              break
+            fi
+            if (( browser_count > 1 || athleto_count > 1 )); then
+              echo 'ambiguous exact-main push runs' >&2
+              jq . <<<"$runs" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+
+          browser="$(jq -c --arg name 'browser mcp external smoke' '[.[] | select(.name == $name)] | if length == 1 then .[0] else error("missing browser parent") end' <<<"$runs")"
+          athleto="$(jq -c --arg name 'athleto ui tests' '[.[] | select(.name == $name)] | if length == 1 then .[0] else error("missing athleto run") end' <<<"$runs")"
+
+          printf 'browser_id=%s\n' "$(jq -r .id <<<"$browser")" >> "$GITHUB_OUTPUT"
+          printf 'browser_created_at=%s\n' "$(jq -r .created_at <<<"$browser")" >> "$GITHUB_OUTPUT"
+          printf 'athleto_id=%s\n' "$(jq -r .id <<<"$athleto")" >> "$GITHUB_OUTPUT"
+          jq -n --argjson browser "$browser" --argjson athleto "$athleto" '{browser_parent:$browser,athleto:$athleto}' |
+            tee "$RUNNER_TEMP/parent-runs.json" |
+            tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Await parent run conclusions
+        id: conclusions
+        env:
+          BROWSER_ID: ${{ steps.parents.outputs.browser_id }}
+          ATHLETO_ID: ${{ steps.parents.outputs.athleto_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 100); do
+            browser="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BROWSER_ID}")"
+            athleto="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ATHLETO_ID}")"
+            browser_status="$(jq -r .status <<<"$browser")"
+            athleto_status="$(jq -r .status <<<"$athleto")"
+            if [[ "$browser_status" == completed && "$athleto_status" == completed ]]; then
+              break
+            fi
+            sleep 5
+          done
+
+          browser="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BROWSER_ID}")"
+          athleto="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${ATHLETO_ID}")"
+          jq -n \
+            --argjson browser "$browser" \
+            --argjson athleto "$athleto" \
+            '{
+              browser_parent: ($browser | {id,name,head_sha,head_branch,event,status,conclusion,created_at,updated_at,html_url}),
+              athleto: ($athleto | {id,name,head_sha,head_branch,event,status,conclusion,created_at,updated_at,html_url})
+            }' |
+            tee "$RUNNER_TEMP/parent-conclusions.json" |
+            tee -a "$GITHUB_STEP_SUMMARY"
+
+          test "$(jq -r .status <<<"$browser")" = completed
+          test "$(jq -r .status <<<"$athleto")" = completed
+          printf 'browser_conclusion=%s\n' "$(jq -r .conclusion <<<"$browser")" >> "$GITHUB_OUTPUT"
+          printf 'athleto_conclusion=%s\n' "$(jq -r .conclusion <<<"$athleto")" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve and await protected Browser MCP child
+        id: child
+        env:
+          BROWSER_CREATED_AT: ${{ steps.parents.outputs.browser_created_at }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidates='[]'
+          for _ in $(seq 1 100); do
+            candidates="$(
+              gh api \
+                "repos/${GITHUB_REPOSITORY}/actions/workflows/${BROWSER_CHILD_WORKFLOW}/runs?event=workflow_dispatch&branch=main&per_page=100" |
+                jq -c \
+                  --arg sha "$MERGE_SHA" \
+                  --arg created "$BROWSER_CREATED_AT" \
+                  '[.workflow_runs[] | select(
+                    .head_sha == $sha and
+                    .head_branch == "main" and
+                    .event == "workflow_dispatch" and
+                    .created_at >= $created
+                  ) | {
+                    id,
+                    name,
+                    head_sha,
+                    head_branch,
+                    event,
+                    status,
+                    conclusion,
+                    created_at,
+                    updated_at,
+                    html_url
+                  }]'
+            )"
+            count="$(jq -r length <<<"$candidates")"
+            if [[ "$count" == 1 ]]; then
+              child_id="$(jq -r '.[0].id' <<<"$candidates")"
+              child="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${child_id}")"
+              if [[ "$(jq -r .status <<<"$child")" == completed ]]; then
+                break
+              fi
+            elif (( count > 1 )); then
+              echo 'ambiguous Browser MCP protected child runs' >&2
+              jq . <<<"$candidates" >&2
+              exit 1
+            fi
+            sleep 5
+          done
+
+          test "$(jq -r length <<<"$candidates")" = 1
+          child_id="$(jq -r '.[0].id' <<<"$candidates")"
+          child="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${child_id}")"
+          jq '{id,name,head_sha,head_branch,event,status,conclusion,created_at,updated_at,html_url}' <<<"$child" |
+            tee "$RUNNER_TEMP/browser-child.json" |
+            tee -a "$GITHUB_STEP_SUMMARY"
+          test "$(jq -r .status <<<"$child")" = completed
+          printf 'child_conclusion=%s\n' "$(jq -r .conclusion <<<"$child")" >> "$GITHUB_OUTPUT"
+
+      - name: Classify canary
+        shell: bash
+        env:
+          BROWSER_PARENT: ${{ steps.conclusions.outputs.browser_conclusion }}
+          BROWSER_CHILD: ${{ steps.child.outputs.child_conclusion }}
+          ATHLETO: ${{ steps.conclusions.outputs.athleto_conclusion }}
+        run: |
+          set -euo pipefail
+          printf 'browser_parent=%s\nbrowser_child=%s\nathleto=%s\n' \
+            "$BROWSER_PARENT" "$BROWSER_CHILD" "$ATHLETO" |
+            tee -a "$GITHUB_STEP_SUMMARY"
+          test "$BROWSER_PARENT" = success
+          test "$BROWSER_CHILD" = success
+          test "$ATHLETO" = success

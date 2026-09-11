@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: honeypot-rs
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: honeypot-rs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: honeypot-rs
+        app.kubernetes.io/component: deception-sensor
+    spec:
+      serviceAccountName: honeypot-rs
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: server
+          image: ghcr.io/oresoftware/honeypot.rs@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: BIND_ADDR
+              value: 0.0.0.0:8080
+            - name: PUBLIC_ORIGIN
+              value: https://admin.example.invalid
+            - name: LURE_GENERATION
+              value: replace-before-promotion
+            - name: TRUST_CLOUDFLARE_HEADERS
+              value: "false"
+            - name: TRUSTED_PROXY_CIDRS
+              value: ""
+            - name: MAX_REQUEST_BYTES
+              value: "8192"
+            - name: MAX_CONCURRENT_REQUESTS
+              value: "64"
+            - name: REQUEST_TIMEOUT_SECONDS
+              value: "3"
+            - name: HONEYTOKEN_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: honeypot-rs-runtime
+                  key: honeytoken-hmac-key
+            - name: PSEUDONYM_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: honeypot-rs-runtime
+                  key: pseudonym-hmac-key
+            - name: EVENT_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: honeypot-rs-runtime
+                  key: event-hmac-key
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+              ephemeral-storage: 16Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+              ephemeral-storage: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: honeypot-rs
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: honeypot-rs
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: honeypot-rs-runtime
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: dd-cluster-secrets
+  target:
+    name: honeypot-rs-runtime
+    creationPolicy: Owner
+    template:
+      type: Opaque
+  data:
+    - secretKey: honeytoken-hmac-key
+      remoteRef:
+        key: k8s/honeypot-rs/runtime
+        property: honeytoken-hmac-key
+    - secretKey: pseudonym-hmac-key
+      remoteRef:
+        key: k8s/honeypot-rs/runtime
+        property: pseudonym-hmac-key
+    - secretKey: event-hmac-key
+      remoteRef:
+        key: k8s/honeypot-rs/runtime
+        property: event-hmac-key
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: honeypot-rs-isolation
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: honeypot-rs
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflare-tunnel
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress: []

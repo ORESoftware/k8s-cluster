@@ -1,75 +1,69 @@
 # `remote/libs` submodule (k8s-libs-and-shared-defs)
 
-`remote/libs` is a **git submodule**, not plain files in this repo. It points at
-`git@github.com:ORESoftware/k8s-libs-and-shared-defs.git` and is **pinned to the
-`main` branch**. It holds the shared definitions consumed across the cluster:
+`remote/libs` is a **git submodule**, not copied source. It points at
+`git@github.com:ORESoftware/k8s-libs-and-shared-defs.git`, tracks `main`, and is
+pinned by the cluster superproject to one immutable commit.
 
-```
+```text
 remote/libs/
-├── async-java/                  # nested submodule -> async-java/async.java.git (branch master)
+├── async-java/                  # public nested submodule
 ├── browser/
 ├── cli-config-client-gleam/
-├── interfaces/                  # redis + shared interface schemas + generators
-├── nats/                        # subject-defs + generators
-├── pg-defs/                     # canonical schema.sql + multi-language generated adapters
+├── interfaces/
+├── nats/
+├── pg-defs/
 ├── runtime-config-client-gleam/
 ├── runtime-config-client-rs/
 └── wal-consumer-rs/
 ```
 
-> **Nested submodule:** `remote/libs/async-java` is itself a submodule, declared
-> in *the libs repo's* own `.gitmodules` (not this repo's). Any workflow that
-> needs the complete shared tree must initialize `remote/libs` recursively or
-> async-java will be empty.
+`remote/libs/async-java` is declared by the library repository's own
+`.gitmodules`. Any workflow that needs the complete shared tree must initialize
+`remote/libs` recursively.
 
-## Cloning / checking out
+## Local checkout
 
 ```bash
-# fresh clone of k8s-cluster, fully populated:
 git clone --recurse-submodules git@github.com:ORESoftware/k8s-cluster.git
-
-# already cloned, or after pulling a commit that bumps the pin:
 git submodule update --init --recursive remote/libs
 ```
 
-A non-recursive checkout can leave nested dependencies empty, which breaks
-contracts that traverse the complete shared tree. Rust path dependencies, the
-pg-defs checks, and runtime hostPath consumers must always use the exact
-superproject gitlink; never replace it with the current head of `main` during CI.
+Never use `--remote` in validation jobs. CI must test the exact mode-`160000`
+gitlink recorded by the cluster commit, not whichever commit is currently at a
+branch head.
 
-### Authentication boundaries
+## CI authentication boundary
 
-`k8s-libs-and-shared-defs` is private. CI uses a dedicated read-only deploy key,
-`K8S_LIBS_DEPLOY_KEY`, limited to that repository. It is deliberately separate
-from the cross-organization GitHub App used for `remote/deployments/*`.
+Repository checks no longer use `K8S_LIBS_DEPLOY_KEY`. Both the static-contract
+and private-deployment jobs now:
 
-- **Repository checks** — `actions/checkout` installs the narrow deploy key, then
-  runs this exact helper command:
+1. check out the cluster source without private submodules or persisted
+   credentials;
+2. resolve the exact `remote/libs` gitlink with `git ls-files --stage`;
+3. use `actions/create-github-app-token` with `K8S_SUBMODULE_APP_ID` and
+   `K8S_SUBMODULE_APP_PRIVATE_KEY`;
+4. request a token restricted to
+   `ORESoftware/k8s-libs-and-shared-defs` with only `contents:read`;
+5. check out that exact gitlink recursively at `remote/libs`; and
+6. verify the checked-out HEAD equals the superproject pin.
 
-  ```bash
-  SUBMODULE_AUTH_MODE=ssh bash scripts/ci/init-submodules-with-report.sh remote/libs
-  ```
+The same reviewed App credential pair is used for private deployment gitlinks,
+but each runtime token is owner- and repository-restricted. The authoritative
+repository set is
+`config/ci/k8s-submodule-github-app-allowlist.json`; it is the exact union of
+`remote/libs` and the private `remote/deployments/*` gitlinks.
 
-  The helper recursively initializes the exact mode-`160000` gitlink, verifies
-  the checkout SHA against the superproject pin, and reports a mismatch without
-  printing credentials.
-- **pg-defs checks** — `.github/actions/checkout-remote-libs` resolves the exact
-  gitlink SHA, checks out `ORESoftware/k8s-libs-and-shared-defs` at that commit
-  with `persist-credentials: false`, and verifies a clean checkout. A caller that
-  needs nested repositories must initialize only those reviewed nested paths.
-- **Deployment fleet checks** — owner-scoped, short-lived GitHub App installation
-  tokens are used for `remote/deployments/*`. Those tokens do not replace or
-  broaden `K8S_LIBS_DEPLOY_KEY`.
-- **Runtime node maintenance** — the node deploy key runs recursive submodule
-  initialization, including `remote/libs` → `async-java`.
+The App private key is never embedded in a Git URL, Git config, workflow log, or
+artifact. Installation tokens are short-lived and revoked by their owning
+workflow/action. A personal access token supplied in chat is not a CI credential
+source.
 
-Do not embed any deploy key, App token, or personal access token in a Git URL,
-Git config, workflow log, or artifact. Do not use `--remote` in validation jobs:
-consumers must test the exact commit recorded by the cluster superproject.
+The reusable `.github/actions/checkout-remote-libs` action may still be used by
+focused pg-defs workflows. It must resolve the same gitlink, check out the exact
+commit with `persist-credentials: false`, and initialize only explicitly
+reviewed nested repositories.
 
 ## Enforced integration contract
-
-The cluster checks both the git plumbing and the generated contracts:
 
 ```bash
 cd remote/tests
@@ -77,50 +71,45 @@ pnpm run test:cli:remote-libs-submodule-contract
 pnpm run test:cli:nats-subject-contract
 ```
 
-The submodule contract locks the canonical repository URL, `main` branch,
-gitlink mode and commit, nested `async-java` pin, required shared surfaces, the
-resolved Rust/Gleam consumer paths, and the deploy-key/helper checkout policy.
-The NATS contract runs the pinned generator in `--check` mode before comparing
-every tracked workload subject to the canonical schema model. Both run in
-`repo-checks.yml`.
+The submodule contract locks:
 
-## Bumping the pin (it tracks `main`)
+- the canonical repository URL and tracked branch;
+- gitlink mode and exact checkout commit;
+- recursive `async-java` initialization;
+- required shared contract surfaces;
+- Rust and Gleam path-dependency resolution;
+- repository-restricted App token creation; and
+- the absence of the obsolete deploy-key path.
 
-Because the submodule tracks `main`, advancing it to the latest reviewed libs
-commit is an explicit source change:
+The NATS contract runs the pinned generator in check mode before comparing
+tracked workload subjects with the canonical schema.
+
+## Bumping the pin
+
+Advancing the library is an explicit source change:
 
 ```bash
-git submodule update --remote remote/libs   # fast-forwards remote/libs to origin/main
-git -C remote/libs submodule update --init --recursive   # refresh nested async-java
+git submodule update --remote remote/libs
+git -C remote/libs submodule update --init --recursive
 git add remote/libs
 git commit -m "chore: bump remote/libs submodule to latest main"
 ```
 
-Committing the moved gitlink (`remote/libs`) is what records the new pin. That
-single-path change is also what fires `pg-defs-check.yml`, because pg-defs source
-no longer changes inside this repository.
+Review the new library commit before recording the moved gitlink. A validation
+or packaging job must never perform this update implicitly.
 
-## What changed in this repo when libs was extracted
+## Extraction history
 
-- `remote/libs` went from 514 tracked files to a single gitlink. History was
-  preserved via `git subtree split -P remote/libs` (142 commits) pushed to the
-  new repo's `main`.
-- The old `submodule "remote/libs/async-java"` entry was **removed** from this
-  repo's `.gitmodules`; async-java now lives one level down, inside the libs
-  repo's `.gitmodules`.
-- Rust/Gleam path dependencies are **unchanged** — the on-disk paths
-  (`remote/libs/pg-defs/...`, etc.) are identical once the submodule is checked
-  out, so no consumer manifest needed editing.
-- Repository checks gained a dedicated deploy-key helper with recursive pin
-  verification. The standalone pg-defs workflow gained the reusable
-  `.github/actions/checkout-remote-libs` exact-gitlink action, and its trigger
-  watches the `remote/libs` gitlink.
+- `remote/libs` moved from copied files to one gitlink while preserving its
+  upstream history.
+- `remote/libs/async-java` moved into the library repository's `.gitmodules`.
+- Existing Rust and Gleam on-disk dependency paths remained unchanged.
+- Repository checks now use the same fail-closed, repository-restricted GitHub
+  App model as other private source checks.
 
-## Migrations
+## Database migration boundary
 
-The libs repo uses [`dpm` (declarative-postgres-migrate)](https://github.com/declarative-migrations/declarative-postgres-migrate.rs)
-for Postgres migrations: `pg-defs/schema/schema.sql` is the declarative source and
-`remote/libs/pg-defs/scripts/dpm.sh {diff|verify|review|apply}` converges a live
-database onto it with reviewable SQL. See `pg-defs/readme.md` in the libs repo.
-The historical caveat about `generate.mjs --check` failing on `smallint` was fixed
-upstream; the check passes on the current pin.
+The library repository uses `dpm` (`declarative-postgres-migrate`) for Postgres
+migrations. `pg-defs/schema/schema.sql` is the declarative source, and
+`remote/libs/pg-defs/scripts/dpm.sh {diff|verify|review|apply}` produces
+reviewable convergence SQL. Migration application remains human reviewed.

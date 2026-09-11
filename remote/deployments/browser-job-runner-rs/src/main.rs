@@ -1,3 +1,5 @@
+mod metering;
+
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -17,6 +19,9 @@ use axum::{
     Json, Router,
 };
 use base64::Engine as _;
+use metering::{
+    AcceptanceResult, MeteringConfig, NoticeDisposition, RunMetering, RunOutcome, UsageContext,
+};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::{process::Command, sync::Mutex, time::sleep};
@@ -105,6 +110,8 @@ struct Config {
     pool_slug: String,
     pool_subject: String,
     pool_request_timeout_ms: u64,
+
+    metering: MeteringConfig,
 }
 
 #[derive(Clone)]
@@ -116,6 +123,7 @@ struct TrackedJob {
     deadline_ms: u128,
     result_subject: String,
     events_subject: String,
+    metering: Option<RunMetering>,
 }
 
 #[derive(Default)]
@@ -128,6 +136,16 @@ struct Metrics {
     pool_dispatched_total: AtomicU64,
     pool_failures_total: AtomicU64,
     fallback_total: AtomicU64,
+    metering_recorded_total: AtomicU64,
+    metering_replayed_total: AtomicU64,
+    metering_failures_total: AtomicU64,
+    metering_context_missing_total: AtomicU64,
+    metering_completion_total: AtomicU64,
+    metering_event_publish_failures_total: AtomicU64,
+    metering_notice_dry_run_total: AtomicU64,
+    metering_notice_published_total: AtomicU64,
+    metering_notice_publish_failures_total: AtomicU64,
+    metering_notice_suppressed_total: AtomicU64,
 }
 
 #[derive(Clone)]
@@ -138,6 +156,7 @@ struct AppState {
     job_counter: Arc<AtomicU64>,
     server_started_at: Arc<String>,
     nats: Arc<Mutex<Option<NatsClient>>>,
+    metering_store: Arc<Mutex<Option<async_nats::jetstream::kv::Store>>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -154,6 +173,7 @@ struct JobRequest {
     extra_headers: Option<Value>,
     capture_final_screenshot: Option<bool>,
     fail_on_console_error: Option<bool>,
+    metering: Option<UsageContext>,
 }
 
 fn env_string(name: &str) -> Option<String> {
@@ -257,6 +277,8 @@ fn config_from_env() -> Config {
             "BROWSER_JOB_POOL_REQUEST_TIMEOUT_MS",
             max_lifetime_seconds * 1000 + 30_000,
         ),
+
+        metering: MeteringConfig::from_env(),
     }
 }
 
@@ -296,6 +318,13 @@ fn request_is_authorized(headers: &HeaderMap, config: &Config) -> bool {
 }
 
 fn validate_job(request: &JobRequest, config: &Config) -> Result<String, String> {
+    match request.metering.as_ref() {
+        Some(context) => context.validate()?,
+        None if config.metering.enabled && config.metering.require_context => {
+            return Err("metering context is required".to_string());
+        }
+        None => {}
+    }
     let engine = normalize_engine(
         request.engine.as_deref().unwrap_or(&config.default_engine),
         &config.default_engine,
@@ -506,16 +535,18 @@ async fn run_tracker_loop(state: AppState) {
         }
 
         for id in &finished {
-            let mut jobs = state.jobs.lock().await;
-            if jobs.remove(id).is_some() {
+            let completed = state.jobs.lock().await.remove(id);
+            if let Some(job) = completed {
                 state.metrics.completed_total.fetch_add(1, Ordering::Relaxed);
+                queue_metering_completion(&state, &job, RunOutcome::Completed, None);
             }
         }
         for (id, container_name) in &overruns {
             force_remove(&state.config, container_name).await;
-            let mut jobs = state.jobs.lock().await;
-            if jobs.remove(id).is_some() {
+            let overrun = state.jobs.lock().await.remove(id);
+            if let Some(job) = overrun {
                 state.metrics.killed_total.fetch_add(1, Ordering::Relaxed);
+                queue_metering_completion(&state, &job, RunOutcome::TimedOut, None);
                 tracing::error!("browser-job killed overrun job={id} container={container_name}");
             }
         }
@@ -534,9 +565,31 @@ async fn connect_nats_loop(state: AppState) {
             .await
         {
             Ok(client) => {
-                *state.nats.lock().await = Some(client);
+                *state.nats.lock().await = Some(client.clone());
                 tracing::info!("dd-browser-job-runner connected to NATS at {}", state.config.nats_url);
-                return;
+                if !state.config.metering.enabled {
+                    return;
+                }
+                loop {
+                    match metering::initialize_store(&client, &state.config.metering).await {
+                        Ok(store) => {
+                            *state.metering_store.lock().await = Some(store);
+                            tracing::info!(
+                                bucket = %state.config.metering.kv_bucket,
+                                policy_count = state.config.metering.policy_count(),
+                                "browser-job metering storage ready"
+                            );
+                            return;
+                        }
+                        Err(error) => {
+                            state.metrics.metering_failures_total.fetch_add(1, Ordering::Relaxed);
+                            tracing::error!(
+                                "browser-job metering storage unavailable; execution remains enabled and notices remain disabled: {error}"
+                            );
+                            sleep(Duration::from_secs(5)).await;
+                        }
+                    }
+                }
             }
             Err(error) => {
                 attempt = attempt.saturating_add(1);
@@ -547,6 +600,122 @@ async fn connect_nats_loop(state: AppState) {
             }
         }
     }
+}
+
+fn queue_metering_acceptance(state: &AppState, tracked: &TrackedJob) {
+    if !state.config.metering.enabled {
+        return;
+    }
+    let Some(run) = tracked.metering.clone() else {
+        state.metrics.metering_context_missing_total.fetch_add(1, Ordering::Relaxed);
+        return;
+    };
+    let state = state.clone();
+    tokio::spawn(async move {
+        let store = state.metering_store.lock().await.clone();
+        let client = state.nats.lock().await.clone();
+        let (Some(store), Some(client)) = (store, client) else {
+            state.metrics.metering_failures_total.fetch_add(1, Ordering::Relaxed);
+            tracing::error!(
+                job_id = %run.run_id,
+                "browser-job metering skipped because durable storage is not ready; notice suppressed"
+            );
+            return;
+        };
+
+        match metering::record_acceptance(&store, &client, &state.config.metering, &run).await {
+            Ok(result) => observe_acceptance_result(&state, &run, result),
+            Err(error) => {
+                state.metrics.metering_failures_total.fetch_add(1, Ordering::Relaxed);
+                tracing::error!(
+                    job_id = %run.run_id,
+                    "browser-job usage record failed; execution remains enabled and notice suppressed: {error}"
+                );
+            }
+        }
+    });
+}
+
+fn observe_acceptance_result(state: &AppState, run: &RunMetering, result: AcceptanceResult) {
+    if result.replayed {
+        state.metrics.metering_replayed_total.fetch_add(1, Ordering::Relaxed);
+    } else {
+        state.metrics.metering_recorded_total.fetch_add(1, Ordering::Relaxed);
+        if !result.event_published {
+            state.metrics.metering_event_publish_failures_total.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    match result.notice {
+        NoticeDisposition::NotDue => {}
+        NoticeDisposition::Suppressed => {
+            state.metrics.metering_notice_suppressed_total.fetch_add(1, Ordering::Relaxed);
+        }
+        NoticeDisposition::DryRun => {
+            state.metrics.metering_notice_dry_run_total.fetch_add(1, Ordering::Relaxed);
+        }
+        NoticeDisposition::Published => {
+            state.metrics.metering_notice_published_total.fetch_add(1, Ordering::Relaxed);
+        }
+        NoticeDisposition::PublishFailed => {
+            state.metrics.metering_notice_publish_failures_total.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    tracing::info!(
+        job_id = %run.run_id,
+        total_runs = result.total_runs,
+        replayed = result.replayed,
+        notice = ?result.notice,
+        "browser-job usage record processed"
+    );
+}
+
+fn queue_metering_completion(
+    state: &AppState,
+    tracked: &TrackedJob,
+    outcome: RunOutcome,
+    screenshots_emitted: Option<u64>,
+) {
+    if !state.config.metering.enabled {
+        return;
+    }
+    let Some(run) = tracked.metering.clone() else {
+        return;
+    };
+    let state = state.clone();
+    tokio::spawn(async move {
+        let store = state.metering_store.lock().await.clone();
+        let client = state.nats.lock().await.clone();
+        let (Some(store), Some(client)) = (store, client) else {
+            state.metrics.metering_failures_total.fetch_add(1, Ordering::Relaxed);
+            return;
+        };
+        let finished_at_ms = now_ms().min(u64::MAX as u128) as u64;
+        match metering::record_completion(
+            &store,
+            &client,
+            &state.config.metering,
+            &run,
+            finished_at_ms,
+            outcome,
+            screenshots_emitted,
+        )
+        .await
+        {
+            Ok(published) => {
+                state.metrics.metering_completion_total.fetch_add(1, Ordering::Relaxed);
+                if !published {
+                    state.metrics.metering_event_publish_failures_total.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            Err(error) => {
+                state.metrics.metering_failures_total.fetch_add(1, Ordering::Relaxed);
+                tracing::error!(
+                    job_id = %run.run_id,
+                    "browser-job completion metering failed: {error}"
+                );
+            }
+        }
+    });
 }
 
 // Ask dd-container-pool to run the scenario on a warm worker. Returns the
@@ -649,6 +818,16 @@ async fn process_job(state: AppState, tracked: TrackedJob, spec: Value, max_ms: 
                     publish_run_result(&client, &tracked, &result, &state.config).await;
                     state.metrics.pool_dispatched_total.fetch_add(1, Ordering::Relaxed);
                     state.metrics.completed_total.fetch_add(1, Ordering::Relaxed);
+                    let outcome = if result.get("ok").and_then(Value::as_bool) == Some(true) {
+                        RunOutcome::Succeeded
+                    } else {
+                        RunOutcome::Failed
+                    };
+                    let screenshots = result
+                        .get("screenshots")
+                        .and_then(Value::as_array)
+                        .map(|values| values.len() as u64);
+                    queue_metering_completion(&state, &tracked, outcome, screenshots);
                     return;
                 }
                 Err(reason) => {
@@ -683,6 +862,7 @@ async fn fallback_spawn(state: &AppState, tracked: &TrackedJob, spec: &Value, ma
                 let failed = failed_result_value(tracked, "browser job fallback concurrency limit reached");
                 publish_run_result(&client, tracked, &failed, &state.config).await;
             }
+            queue_metering_completion(state, tracked, RunOutcome::Rejected, None);
             tracing::error!("browser-job fallback rejected job={} (concurrency limit)", tracked.job_id);
             return;
         }
@@ -704,6 +884,7 @@ async fn fallback_spawn(state: &AppState, tracked: &TrackedJob, spec: &Value, ma
                 let failed = failed_result_value(tracked, &format!("fallback spawn failed: {error}"));
                 publish_run_result(&client, tracked, &failed, &state.config).await;
             }
+            queue_metering_completion(state, tracked, RunOutcome::Failed, None);
         }
     }
 }
@@ -731,6 +912,11 @@ fn service_descriptor(state: &AppState) -> Value {
         },
         "maxLifetimeSeconds": state.config.max_lifetime_seconds,
         "allowEvaluate": state.config.allow_evaluate,
+        "metering": {
+            "enabled": state.config.metering.enabled,
+            "requireContext": state.config.metering.require_context,
+            "schema": metering::RUN_EVENT_SCHEMA,
+        },
     })
 }
 
@@ -749,6 +935,7 @@ fn tools_descriptor(state: &AppState) -> Value {
 async fn status_descriptor(state: &AppState) -> Value {
     let in_flight = state.jobs.lock().await.len();
     let nats_connected = state.nats.lock().await.is_some();
+    let metering_storage_ready = state.metering_store.lock().await.is_some();
     json!({
         "ok": true,
         "service": "dd-browser-job-runner",
@@ -767,6 +954,10 @@ async fn status_descriptor(state: &AppState) -> Value {
         "poolEnabled": state.config.pool_enabled,
         "poolSlug": state.config.pool_slug,
         "poolSubject": state.config.pool_subject,
+        "meteringEnabled": state.config.metering.enabled,
+        "meteringStorageReady": metering_storage_ready,
+        "meteringPolicyCount": state.config.metering.policy_count(),
+        "meteringRequireContext": state.config.metering.require_context,
         "spawnedTotal": state.metrics.spawned_total.load(Ordering::Relaxed),
         "poolDispatchedTotal": state.metrics.pool_dispatched_total.load(Ordering::Relaxed),
         "poolFailuresTotal": state.metrics.pool_failures_total.load(Ordering::Relaxed),
@@ -835,6 +1026,36 @@ fn render_metrics(state: &AppState, in_flight: usize) -> String {
     lines.push("# HELP browser_job_fallback_total Total jobs spawned via the direct nerdctl fallback.".to_string());
     lines.push("# TYPE browser_job_fallback_total counter".to_string());
     lines.push(format!("browser_job_fallback_total {}", m.fallback_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_recorded_total Total durable, content-free usage records accepted.".to_string());
+    lines.push("# TYPE browser_job_metering_recorded_total counter".to_string());
+    lines.push(format!("browser_job_metering_recorded_total {}", m.metering_recorded_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_replayed_total Total replayed run identifiers ignored by quota counting.".to_string());
+    lines.push("# TYPE browser_job_metering_replayed_total counter".to_string());
+    lines.push(format!("browser_job_metering_replayed_total {}", m.metering_replayed_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_failures_total Total durable metering failures; browser execution remains fail-open.".to_string());
+    lines.push("# TYPE browser_job_metering_failures_total counter".to_string());
+    lines.push(format!("browser_job_metering_failures_total {}", m.metering_failures_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_context_missing_total Total accepted runs without optional metering identity context.".to_string());
+    lines.push("# TYPE browser_job_metering_context_missing_total counter".to_string());
+    lines.push(format!("browser_job_metering_context_missing_total {}", m.metering_context_missing_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_completion_total Total immutable completion records stored.".to_string());
+    lines.push("# TYPE browser_job_metering_completion_total counter".to_string());
+    lines.push(format!("browser_job_metering_completion_total {}", m.metering_completion_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_event_publish_failures_total Total NATS usage fanout failures after durable storage.".to_string());
+    lines.push("# TYPE browser_job_metering_event_publish_failures_total counter".to_string());
+    lines.push(format!("browser_job_metering_event_publish_failures_total {}", m.metering_event_publish_failures_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_notice_dry_run_total Total upgrade notices claimed in dry-run mode.".to_string());
+    lines.push("# TYPE browser_job_metering_notice_dry_run_total counter".to_string());
+    lines.push(format!("browser_job_metering_notice_dry_run_total {}", m.metering_notice_dry_run_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_notice_published_total Total idempotently claimed upgrade notices published to the mail abstraction.".to_string());
+    lines.push("# TYPE browser_job_metering_notice_published_total counter".to_string());
+    lines.push(format!("browser_job_metering_notice_published_total {}", m.metering_notice_published_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_notice_publish_failures_total Total claimed notices that could not be published; claims remain closed to duplicates.".to_string());
+    lines.push("# TYPE browser_job_metering_notice_publish_failures_total counter".to_string());
+    lines.push(format!("browser_job_metering_notice_publish_failures_total {}", m.metering_notice_publish_failures_total.load(Ordering::Relaxed)));
+    lines.push("# HELP browser_job_metering_notice_suppressed_total Total usage evaluations suppressed by tenant/product policy.".to_string());
+    lines.push("# TYPE browser_job_metering_notice_suppressed_total counter".to_string());
+    lines.push(format!("browser_job_metering_notice_suppressed_total {}", m.metering_notice_suppressed_total.load(Ordering::Relaxed)));
     format!("{}\n", lines.join("\n"))
 }
 
@@ -890,12 +1111,20 @@ async fn handle_run(
         deadline_ms,
         result_subject: result_subject.clone(),
         events_subject: events_subject.clone(),
+        metering: request.metering.clone().map(|context| RunMetering {
+            context,
+            run_id: job_id.clone(),
+            started_at_ms: started_ms.min(u64::MAX as u128) as u64,
+            steps_requested: request.steps.len() as u64,
+            timeout_budget_ms: max_ms,
+        }),
     };
 
     let spec = build_job_spec(&request, &engine, &job_id, max_ms);
 
     // POST /run is async: accept the job, then drive pool-first / nerdctl-fallback
     // in the background. The result always lands on resultSubject (+ fanout).
+    queue_metering_acceptance(&state, &tracked);
     tokio::spawn(process_job(state.clone(), tracked, spec, max_ms));
 
     (
@@ -1010,6 +1239,7 @@ async fn main() {
                 .unwrap_or_else(|_| "0".to_string()),
         ),
         nats: Arc::new(Mutex::new(None)),
+        metering_store: Arc::new(Mutex::new(None)),
     };
 
     tokio::spawn(run_tracker_loop(state.clone()));
@@ -1139,6 +1369,15 @@ mod tests {
         "BROWSER_JOB_POOL_SLUG",
         "BROWSER_JOB_POOL_SUBJECT",
         "BROWSER_JOB_POOL_REQUEST_TIMEOUT_MS",
+        "BROWSER_JOB_METERING_ENABLED",
+        "BROWSER_JOB_REQUIRE_METERING_CONTEXT",
+        "BROWSER_JOB_METERING_USAGE_SUBJECT",
+        "BROWSER_JOB_METERING_KV_BUCKET",
+        "BROWSER_JOB_METERING_PERIOD_SECONDS",
+        "BROWSER_JOB_METERING_MAX_RUN_IDS_PER_PERIOD",
+        "BROWSER_JOB_METERING_POLICIES_JSON",
+        "BROWSER_JOB_CONTACT_EMAIL_SUBJECT",
+        "BROWSER_JOB_CONTACT_NATS_SECRET",
     ];
 
     fn clear_config_env() -> Vec<EnvGuard> {
@@ -1158,6 +1397,7 @@ mod tests {
             deadline_ms: 61_000,
             result_subject: "dd.remote.browser_jobs.abc123.result".to_string(),
             events_subject: "dd.remote.browser_jobs.abc123.events".to_string(),
+            metering: None,
         }
     }
 
@@ -1215,6 +1455,7 @@ mod tests {
             pool_slug: "browser-jobs".to_string(),
             pool_subject: "dd.remote.container_pool.browser-jobs.requests".to_string(),
             pool_request_timeout_ms: 570_000,
+            metering: MeteringConfig::disabled(),
         }
     }
 
@@ -1226,6 +1467,7 @@ mod tests {
             job_counter: Arc::new(AtomicU64::new(0)),
             server_started_at: Arc::new("0".to_string()),
             nats: Arc::new(Mutex::new(None::<NatsClient>)),
+            metering_store: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -1241,6 +1483,16 @@ mod tests {
             extra_headers: None,
             capture_final_screenshot: None,
             fail_on_console_error: None,
+            metering: None,
+        }
+    }
+
+    fn usage_context() -> UsageContext {
+        UsageContext {
+            tenant_id: "tenant_01".to_string(),
+            actor_id: "actor_01".to_string(),
+            automation_id: "automation_01".to_string(),
+            product_id: "browser_runner".to_string(),
         }
     }
 
@@ -1257,6 +1509,7 @@ mod tests {
             deadline_ms: 222,
             result_subject: "dd.remote.browser_jobs.job-xyz.result".to_string(),
             events_subject: "dd.remote.browser_jobs.job-xyz.events".to_string(),
+            metering: None,
         }
     }
 
@@ -1653,6 +1906,26 @@ mod tests {
         assert_eq!(validate_job(&req, &config), Ok("playwright".to_string()));
     }
 
+    #[test]
+    fn validate_job_can_require_safe_opaque_metering_context() {
+        let mut config = base_config();
+        config.metering.enabled = true;
+        config.metering.require_context = true;
+
+        let missing = job_request(vec![goto_step("https://example.com")]);
+        assert_eq!(
+            validate_job(&missing, &config),
+            Err("metering context is required".to_string())
+        );
+
+        let mut valid = job_request(vec![goto_step("https://example.com")]);
+        valid.metering = Some(usage_context());
+        assert!(validate_job(&valid, &config).is_ok());
+
+        valid.metering.as_mut().unwrap().actor_id = "person@example.com".to_string();
+        assert!(validate_job(&valid, &config).is_err());
+    }
+
     // ---- build_job_spec ---------------------------------------------------
 
     #[test]
@@ -1666,6 +1939,7 @@ mod tests {
         req.extra_headers = Some(json!({ "x-test": "1" }));
         req.capture_final_screenshot = Some(true);
         req.fail_on_console_error = Some(false);
+        req.metering = Some(usage_context());
 
         let spec = build_job_spec(&req, "playwright", "job-abc", 5000);
         assert_eq!(spec["jobId"], json!("job-abc"));
@@ -1680,6 +1954,11 @@ mod tests {
         assert_eq!(spec["captureFinalScreenshot"], json!(true));
         assert_eq!(spec["failOnConsoleError"], json!(false));
         assert_eq!(spec["maxMs"], json!(5000));
+        assert!(spec.get("metering").is_none());
+        let serialized = spec.to_string();
+        assert!(!serialized.contains("tenant_01"));
+        assert!(!serialized.contains("actor_01"));
+        assert!(!serialized.contains("automation_01"));
     }
 
     #[test]
@@ -1709,7 +1988,13 @@ mod tests {
             "userAgent": "UA",
             "extraHeaders": { "a": "b" },
             "captureFinalScreenshot": true,
-            "failOnConsoleError": false
+            "failOnConsoleError": false,
+            "metering": {
+                "tenantId": "tenant_01",
+                "actorId": "actor_01",
+                "automationId": "automation_01",
+                "productId": "browser_runner"
+            }
         }))
         .expect("valid body should deserialize");
         assert_eq!(req.request_id.as_deref(), Some("r-9"));
@@ -1722,6 +2007,7 @@ mod tests {
         assert_eq!(req.fail_on_console_error, Some(false));
         assert!(req.viewport.is_some());
         assert!(req.extra_headers.is_some());
+        assert_eq!(req.metering.as_ref().unwrap(), &usage_context());
     }
 
     #[test]
@@ -1784,6 +2070,8 @@ mod tests {
         assert_eq!(d["pool"]["subject"], json!("dd.remote.container_pool.browser-jobs.requests"));
         assert_eq!(d["resultSubjectPrefix"], json!("dd.remote.browser_jobs"));
         assert_eq!(d["resultFanoutSubject"], json!("dd.remote.browser_jobs.results"));
+        assert_eq!(d["metering"]["enabled"], json!(false));
+        assert_eq!(d["metering"]["schema"], json!(metering::RUN_EVENT_SCHEMA));
     }
 
     #[test]
@@ -1796,6 +2084,8 @@ mod tests {
         assert!(out.contains("browser_job_spawned_total 3"));
         assert!(out.contains("browser_job_pool_dispatched_total 5"));
         assert!(out.contains("# TYPE browser_job_pool_failures_total counter"));
+        assert!(out.contains("# TYPE browser_job_metering_recorded_total counter"));
+        assert!(out.contains("# TYPE browser_job_metering_notice_published_total counter"));
         assert!(out.ends_with('\n'), "output ends with a trailing newline");
     }
 
@@ -1836,6 +2126,39 @@ mod tests {
         // max_ms = clamp(default_timeout 60000, [1000, 540000]).min(540*1000) = 60000.
         assert_eq!(body["maxMs"], json!(60_000));
         assert!(body["deadlineMs"].as_u64().unwrap() > 0);
+    }
+
+    #[tokio::test]
+    async fn handle_run_is_fail_open_when_metering_storage_is_unavailable() {
+        let mut config = base_config();
+        config.allow_unauthenticated = true;
+        config.pool_enabled = false;
+        config.nerdctl_bin = "/nonexistent/dd-nerdctl-for-tests".to_string();
+        config.metering.enabled = true;
+        config.metering.require_context = true;
+        let state = app_state(config);
+
+        let mut req = job_request(vec![goto_step("https://example.com")]);
+        req.metering = Some(usage_context());
+        let resp = handle_run(State(state.clone()), HeaderMap::new(), Json(req))
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+        for _ in 0..20 {
+            if state.metrics.metering_failures_total.load(Ordering::Relaxed) > 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            state.metrics.metering_failures_total.load(Ordering::Relaxed) >= 1,
+            "the missing durable store suppresses notices without rejecting execution"
+        );
+        assert_eq!(
+            state.metrics.metering_notice_published_total.load(Ordering::Relaxed),
+            0
+        );
     }
 
     #[tokio::test]

@@ -3,7 +3,7 @@ name: Namespace migration contract
 on:
   pull_request:
   push:
-    branches: [dev]
+    branches: [dev, main]
   workflow_dispatch:
 
 permissions:
@@ -88,7 +88,26 @@ jobs:
             tools/namespace_migration.py \
             tools/test_namespace_migration.py \
             tools/namespace_manifest.py \
-            tools/test_namespace_manifest.py
+            tools/test_namespace_manifest.py \
+            tests/namespace_migration_workflow_test.py
+
+      - name: Verify workflow exact-head and post-merge coverage
+        run: python3 tests/namespace_migration_workflow_test.py
+
+      - name: Generate exact-head inventory before deriving the manifest
+        run: |
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+
+      - name: Render deterministic manifest candidate for diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/namespace_manifest.py render \
+            --root . \
+            > artifacts/namespace-migration-manifest.generated.json
 
       - name: Run classifier and manifest adversarial tests
         run: |
@@ -101,13 +120,6 @@ jobs:
             --root . \
             --format json \
             > artifacts/namespace-contract-report.json
-
-      - name: Generate complete read-only inventory
-        run: |
-          python3 tools/namespace_migration.py inventory \
-            --root . \
-            --format json \
-            > artifacts/namespace-inventory.json
 
       - name: Validate deterministic plaintext migration manifest
         shell: bash
@@ -188,6 +200,7 @@ jobs:
           name: namespace-migration-evidence
           path: |
             artifacts/namespace-source-ref.json
+            artifacts/namespace-migration-manifest.generated.json
             artifacts/namespace-contract-report.json
             artifacts/namespace-inventory.json
             artifacts/namespace-manifest-report.json

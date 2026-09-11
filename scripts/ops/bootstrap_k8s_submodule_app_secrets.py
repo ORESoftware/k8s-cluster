@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Select a read-only GitHub App for private k8s submodule checkout.
+"""Select one read-only GitHub App for private k8s submodule checkout.
 
 This program runs only on the protected administration host. It reuses the
 repository's protected-source scanner to inspect readable Kubernetes Secret
@@ -9,10 +9,10 @@ Parameter Store values. Candidate values are never printed.
 A credential pair is accepted only when GitHub proves all of the following:
 
 * the GitHub App's configured repository permissions are read-only;
-* the App is installed for the requested private repository;
-* the minted installation token is restricted to exactly that repository;
-* the token grants ``contents:read`` and no write permission; and
-* the validation token is revoked before the process exits.
+* the same App and private key are installed for every requested repository;
+* each minted installation token is restricted to exactly one requested repo;
+* every token grants ``contents:read`` and no write permission; and
+* every validation token is revoked before the process continues.
 
 The selected App ID and private key are written only to caller-provided
 mode-0600 files. Evidence contains identifiers, source names, counts, and a
@@ -29,7 +29,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import select_hypesiege_github_app_from_protected_sources as protected
 
@@ -37,20 +37,41 @@ MAX_PAIR_ATTEMPTS = 1024
 
 
 @dataclass(frozen=True)
+class TargetRepository:
+    owner: str
+    repo: str
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.owner}/{self.repo}"
+
+
+@dataclass(frozen=True)
+class ValidatedRepository:
+    full_name: str
+    installation_id: int
+    token_permissions: dict[str, str]
+
+
+@dataclass(frozen=True)
 class ValidatedPair:
     app_id: protected.AppIdCandidate
     private_key: protected.KeyCandidate
     app_slug: str
-    installation_id: int
     app_permissions: dict[str, str]
-    token_permissions: dict[str, str]
+    repositories: tuple[ValidatedRepository, ...]
     score: int
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--region", default=os.environ.get("AWS_REGION", "us-east-1"))
-    parser.add_argument("--target-repository")
+    parser.add_argument(
+        "--target-repository",
+        action="append",
+        dest="target_repositories",
+        help="owner/name repository to validate; repeat for every required repository",
+    )
     parser.add_argument("--app-id-out", type=Path)
     parser.add_argument("--private-key-out", type=Path)
     parser.add_argument("--evidence-out", type=Path)
@@ -80,11 +101,113 @@ def permission_set_is_read_only(permissions: dict[str, str]) -> bool:
     )
 
 
+def parse_target_repositories(values: Sequence[str]) -> tuple[TargetRepository, ...]:
+    if not values:
+        raise ValueError("at least one --target-repository is required")
+
+    targets: list[TargetRepository] = []
+    seen: set[str] = set()
+    for value in values:
+        if value.count("/") != 1:
+            raise ValueError("--target-repository must use owner/name form")
+        owner, repo = value.split("/", 1)
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", owner):
+            raise ValueError(f"invalid target repository owner: {owner!r}")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", repo):
+            raise ValueError(f"invalid target repository name: {repo!r}")
+        full_name = f"{owner}/{repo}"
+        identity = full_name.casefold()
+        if identity in seen:
+            raise ValueError(f"duplicate target repository: {full_name}")
+        seen.add(identity)
+        targets.append(TargetRepository(owner=owner, repo=repo))
+
+    return tuple(targets)
+
+
+def validate_repository(
+    app_jwt: str,
+    target: TargetRepository,
+) -> ValidatedRepository | None:
+    status, installation = protected.request_json(
+        "GET",
+        f"/repos/{target.owner}/{target.repo}/installation",
+        app_jwt,
+    )
+    if status != 200 or not isinstance(installation, dict):
+        return None
+    installation_id = installation.get("id")
+    account = installation.get("account")
+    if (
+        not isinstance(installation_id, int)
+        or installation_id <= 0
+        or not isinstance(account, dict)
+        or str(account.get("login", "")).casefold() != target.owner.casefold()
+    ):
+        return None
+
+    status, token_document = protected.request_json(
+        "POST",
+        f"/app/installations/{installation_id}/access_tokens",
+        app_jwt,
+        {
+            "repositories": [target.repo],
+            "permissions": {"contents": "read"},
+        },
+    )
+    if status != 201 or not isinstance(token_document, dict):
+        return None
+    token = token_document.get("token")
+    token_permissions = normalize_permissions(token_document.get("permissions"))
+    if (
+        not isinstance(token, str)
+        or not token
+        or token_permissions is None
+        or not permission_set_is_read_only(token_permissions)
+    ):
+        return None
+
+    try:
+        status, repo_document = protected.request_json(
+            "GET",
+            f"/repos/{target.owner}/{target.repo}",
+            token,
+        )
+        if status != 200 or not isinstance(repo_document, dict):
+            return None
+        if str(repo_document.get("full_name", "")).casefold() != target.full_name.casefold():
+            return None
+
+        status, repositories = protected.request_json(
+            "GET",
+            "/installation/repositories?per_page=100",
+            token,
+        )
+        if status != 200 or not isinstance(repositories, dict):
+            return None
+        full_names = sorted(
+            str(item.get("full_name"))
+            for item in repositories.get("repositories", [])
+            if isinstance(item, dict)
+        )
+        if repositories.get("total_count") != 1:
+            return None
+        if full_names != [target.full_name]:
+            return None
+    finally:
+        protected.request_json("DELETE", "/installation/token", token)
+
+    return ValidatedRepository(
+        full_name=target.full_name,
+        installation_id=installation_id,
+        token_permissions=token_permissions,
+    )
+
+
 def validate_pair(
     app_id: protected.AppIdCandidate,
     private_key: protected.KeyCandidate,
-    target_owner: str,
-    target_repo: str,
+    targets: tuple[TargetRepository, ...],
     directory: Path,
 ) -> ValidatedPair | None:
     try:
@@ -108,71 +231,12 @@ def validate_pair(
     ):
         return None
 
-    status, installation = protected.request_json(
-        "GET",
-        f"/repos/{target_owner}/{target_repo}/installation",
-        app_jwt,
-    )
-    if status != 200 or not isinstance(installation, dict):
-        return None
-    installation_id = installation.get("id")
-    account = installation.get("account")
-    if (
-        not isinstance(installation_id, int)
-        or installation_id <= 0
-        or not isinstance(account, dict)
-        or str(account.get("login", "")).casefold() != target_owner.casefold()
-    ):
-        return None
-
-    status, token_document = protected.request_json(
-        "POST",
-        f"/app/installations/{installation_id}/access_tokens",
-        app_jwt,
-        {
-            "repositories": [target_repo],
-            "permissions": {"contents": "read"},
-        },
-    )
-    if status != 201 or not isinstance(token_document, dict):
-        return None
-    token = token_document.get("token")
-    token_permissions = normalize_permissions(token_document.get("permissions"))
-    if (
-        not isinstance(token, str)
-        or not token
-        or token_permissions is None
-        or not permission_set_is_read_only(token_permissions)
-    ):
-        return None
-
-    try:
-        status, repo_document = protected.request_json(
-            "GET",
-            f"/repos/{target_owner}/{target_repo}",
-            token,
-        )
-        if status != 200 or not isinstance(repo_document, dict):
+    repositories: list[ValidatedRepository] = []
+    for target in targets:
+        validated_repository = validate_repository(app_jwt, target)
+        if validated_repository is None:
             return None
-
-        status, repositories = protected.request_json(
-            "GET",
-            "/installation/repositories?per_page=100",
-            token,
-        )
-        if status != 200 or not isinstance(repositories, dict):
-            return None
-        full_names = sorted(
-            str(item.get("full_name"))
-            for item in repositories.get("repositories", [])
-            if isinstance(item, dict)
-        )
-        if repositories.get("total_count") != 1:
-            return None
-        if full_names != [f"{target_owner}/{target_repo}"]:
-            return None
-    finally:
-        protected.request_json("DELETE", "/installation/token", token)
+        repositories.append(validated_repository)
 
     sources = app_id.sources | private_key.sources
     shared_sources = app_id.sources & private_key.sources
@@ -193,9 +257,8 @@ def validate_pair(
         app_id=app_id,
         private_key=private_key,
         app_slug=app_slug,
-        installation_id=installation_id,
         app_permissions=app_permissions,
-        token_permissions=token_permissions,
+        repositories=tuple(repositories),
         score=score,
     )
 
@@ -226,6 +289,30 @@ def self_test() -> None:
     assert not permission_set_is_read_only({"contents": "write", "metadata": "read"})
     assert not permission_set_is_read_only({"metadata": "read"})
     assert normalize("k8s-submodule GitHub App") == "k8ssubmodulegithubapp"
+
+    targets = parse_target_repositories(
+        [
+            "ORESoftware/k8s-libs-and-shared-defs",
+            "scintilla-run/gleam-lambda-runner",
+        ]
+    )
+    assert tuple(target.full_name for target in targets) == (
+        "ORESoftware/k8s-libs-and-shared-defs",
+        "scintilla-run/gleam-lambda-runner",
+    )
+    for invalid in (
+        [],
+        ["missing-slash"],
+        ["bad owner/repo"],
+        ["owner/repo", "OWNER/REPO"],
+    ):
+        try:
+            parse_target_repositories(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid targets unexpectedly accepted: {invalid!r}")
+
     print("k8s submodule App validator self-test: ok")
 
 
@@ -236,27 +323,23 @@ def main() -> int:
         return 0
 
     required = {
-        "--target-repository": args.target_repository,
+        "--target-repository": args.target_repositories,
         "--app-id-out": args.app_id_out,
         "--private-key-out": args.private_key_out,
         "--evidence-out": args.evidence_out,
     }
-    missing = [name for name, value in required.items() if value is None]
+    missing = [name for name, value in required.items() if not value]
     if missing:
         raise SystemExit(f"missing required arguments: {', '.join(missing)}")
 
-    assert isinstance(args.target_repository, str)
+    try:
+        targets = parse_target_repositories(args.target_repositories)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+
     assert isinstance(args.app_id_out, Path)
     assert isinstance(args.private_key_out, Path)
     assert isinstance(args.evidence_out, Path)
-
-    if "/" not in args.target_repository:
-        raise SystemExit("--target-repository must use owner/name form")
-    target_owner, target_repo = args.target_repository.split("/", 1)
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9-]{0,38}", target_owner):
-        raise SystemExit("invalid target repository owner")
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", target_repo):
-        raise SystemExit("invalid target repository name")
 
     app_ids: dict[str, protected.AppIdCandidate] = {}
     private_keys: dict[str, protected.KeyCandidate] = {}
@@ -322,17 +405,18 @@ def main() -> int:
             pair = validate_pair(
                 app_id,
                 private_key,
-                target_owner,
-                target_repo,
+                targets,
                 directory,
             )
             if pair is not None:
                 validated.append(pair)
 
+    target_names = [target.full_name for target in targets]
     if not validated:
         raise SystemExit(
-            "no globally read-only, single-repository GitHub App pair validated "
-            f"from app_ids={len(app_ids)} private_keys={len(private_keys)} "
+            "no globally read-only GitHub App pair validated for every target "
+            f"targets={json.dumps(target_names)} "
+            f"app_ids={len(app_ids)} private_keys={len(private_keys)} "
             f"candidate_sources={json.dumps(candidate_sources)}"
         )
 
@@ -360,19 +444,35 @@ def main() -> int:
 
     write_private(args.app_id_out, selected.app_id.value + "\n")
     write_private(args.private_key_out, selected.private_key.value)
+
+    installations = [
+        {
+            "repository": repository.full_name,
+            "installation_id": repository.installation_id,
+            "token_permissions": repository.token_permissions,
+            "repository_restriction_verified": True,
+        }
+        for repository in selected.repositories
+    ]
+    first_repository = selected.repositories[0]
     evidence = {
-        "schema_version": 1,
-        "target_repository": f"{target_owner}/{target_repo}",
+        "schema_version": 2,
+        # Backward-compatible single-target fields remain until every consumer
+        # has migrated to the explicit multi-repository evidence arrays.
+        "target_repository": first_repository.full_name,
+        "installation_id": first_repository.installation_id,
+        "token_permissions": first_repository.token_permissions,
+        "permissions": first_repository.token_permissions,
+        "target_repositories": target_names,
+        "installations": installations,
         "app_slug": selected.app_slug,
-        "installation_id": selected.installation_id,
         "app_permissions": selected.app_permissions,
-        "token_permissions": selected.token_permissions,
-        "permissions": selected.token_permissions,
         "repository_restriction_verified": True,
         "candidate_counts": {
             "app_ids": len(app_ids),
             "private_keys": len(private_keys),
             "validated_pairs": len(validated),
+            "validated_repositories": len(selected.repositories),
         },
         "credential_sources": {
             "app_id": sorted(selected.app_id.sources),
@@ -387,8 +487,8 @@ def main() -> int:
         json.dumps(evidence, indent=2, sort_keys=True) + "\n",
     )
     print(
-        "validated a read-only repository-restricted GitHub App "
-        f"app={selected.app_slug} installation={selected.installation_id}"
+        "validated one read-only repository-restricted GitHub App "
+        f"app={selected.app_slug} repositories={len(selected.repositories)}"
     )
     return 0
 

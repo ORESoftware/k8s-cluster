@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 GET_WORKFLOW = ROOT / ".github/workflows/ephemeral-google-chat-relay-get.yml"
 POST_WORKFLOW = ROOT / ".github/workflows/ephemeral-google-chat-relay.yml"
+CLEANUP_WORKFLOW = ROOT / ".github/workflows/ephemeral-google-chat-relay-cleanup.yml"
 
 
 def require(text: str, needle: str, description: str) -> None:
@@ -21,6 +22,7 @@ def forbid(text: str, needle: str, description: str) -> None:
 def main() -> None:
     get_workflow = GET_WORKFLOW.read_text(encoding="utf-8")
     post_workflow = POST_WORKFLOW.read_text(encoding="utf-8")
+    cleanup_workflow = CLEANUP_WORKFLOW.read_text(encoding="utf-8")
 
     require(
         get_workflow,
@@ -84,6 +86,58 @@ def main() -> None:
     forbid(post_workflow, "pull_request:", "automatic POST relay trigger")
     forbid(post_workflow, "CHAT_EXEC_URL", "live bridge URL in retired POST workflow")
     forbid(post_workflow, "curl ", "network call in retired POST workflow")
+
+    require(cleanup_workflow, "workflow_run:", "post-run cleanup trigger")
+    require(
+        cleanup_workflow,
+        "- Ephemeral encrypted Google Chat relay POST",
+        "exact upstream workflow binding",
+    )
+    require(cleanup_workflow, "types: [completed]", "terminal-only cleanup trigger")
+    require(
+        cleanup_workflow,
+        "head_repository.full_name == github.repository",
+        "same-repository trust boundary",
+    )
+    require(
+        cleanup_workflow,
+        "issues: write",
+        "least-privilege comment retirement permission",
+    )
+    require(
+        cleanup_workflow,
+        "--paginate --slurp",
+        "complete issue-comment pagination",
+    )
+    require(
+        cleanup_workflow,
+        "CHAT_RELAY_POST_PUBLIC_KEY protocol=3 run_id=${RELAY_RUN_ID}",
+        "run-bound public-key lookup",
+    )
+    require(
+        cleanup_workflow,
+        "CHAT_RELAY_POST_CIPHERTEXT run_id=${RELAY_RUN_ID}",
+        "run-bound ciphertext lookup",
+    )
+    require(cleanup_workflow, "--method PATCH", "in-place comment retirement")
+    require(
+        cleanup_workflow,
+        "issues/comments/${comment_id}",
+        "exact comment update endpoint",
+    )
+    require(
+        cleanup_workflow,
+        "Retired one-time relay public key",
+        "public-key retirement body",
+    )
+    require(
+        cleanup_workflow,
+        "Retired RSA ciphertext",
+        "ciphertext retirement body",
+    )
+    forbid(cleanup_workflow, "CHAT_BRIDGE_TOKEN", "bridge credential reference")
+    forbid(cleanup_workflow, "CHAT_EXEC_URL", "Apps Script endpoint access")
+    forbid(cleanup_workflow, "curl ", "network access outside GitHub issue cleanup")
 
     print("Google Chat relay workflow contract: PASS")
 

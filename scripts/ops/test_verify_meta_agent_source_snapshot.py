@@ -2,199 +2,309 @@
 from __future__ import annotations
 
 import base64
-from pathlib import Path
+import hashlib
+import importlib.util
+import json
+import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
+from typing import Any, Mapping
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+MODULE_PATH = Path(__file__).with_name("verify_meta_agent_source_snapshot.py")
+SPEC = importlib.util.spec_from_file_location("meta_agent_source_snapshot", MODULE_PATH)
+if SPEC is None or SPEC.loader is None:
+    raise RuntimeError(f"unable to load {MODULE_PATH}")
+MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = MODULE
+SPEC.loader.exec_module(MODULE)
 
-import verify_meta_agent_source_snapshot as verifier  # noqa: E402
+
+class FakeClient:
+    def __init__(
+        self,
+        *,
+        commit: Mapping[str, Any],
+        trees: Mapping[str, Mapping[str, Any]],
+        blobs: Mapping[str, Mapping[str, Any]],
+    ) -> None:
+        self._commit = commit
+        self._trees = dict(trees)
+        self._blobs = dict(blobs)
+
+    def commit(self, sha: str) -> Mapping[str, Any]:
+        if sha != self._commit["sha"]:
+            raise AssertionError(f"unexpected commit request {sha}")
+        return self._commit
+
+    def tree(self, sha: str) -> Mapping[str, Any]:
+        return self._trees[sha]
+
+    def blob(self, sha: str) -> Mapping[str, Any]:
+        return self._blobs[sha]
 
 
-class MetaAgentSourceSnapshotVerifierTests(unittest.TestCase):
-    def test_immutable_release_constants_are_exact(self) -> None:
-        self.assertEqual(
-            verifier.SOURCE_SHA,
-            "55ee15c190b7cfa4e075f6984c7cb551acd4b9d3",
+def run_git(cwd: Path, *arguments: str) -> str:
+    return subprocess.run(
+        ["git", *arguments],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def blob_payload(value: bytes) -> Mapping[str, Any]:
+    return {
+        "encoding": "base64",
+        "content": base64.b64encode(value).decode("ascii"),
+    }
+
+
+class SnapshotFixture:
+    SOURCE_SHA = "a" * 40
+    ROOT_TREE = "b" * 40
+    SCRIPTS_TREE = "c" * 40
+    FLEET_TREE = "d" * 40
+    ASSETS_TREE = "e" * 40
+    PUBLISHER_BLOB = "f" * 40
+    PART_BLOBS = ("1" * 40, "2" * 40, "3" * 40)
+
+    def __init__(self, root: Path) -> None:
+        repository = root / "source"
+        repository.mkdir()
+        run_git(repository, "init", "--quiet", "-b", "main")
+        run_git(repository, "config", "user.name", "Meta Agent Test")
+        run_git(repository, "config", "user.email", "meta-agent-test@example.invalid")
+        (repository / "README.md").write_text("baseline\n", encoding="utf-8")
+        run_git(repository, "add", "README.md")
+        run_git(repository, "commit", "--quiet", "-m", "baseline")
+        self.main_sha = run_git(repository, "rev-parse", "HEAD")
+
+        run_git(repository, "checkout", "--quiet", "-b", "agent/test-feature")
+        (repository / "README.md").write_text("feature\n", encoding="utf-8")
+        run_git(repository, "commit", "--quiet", "-am", "feature")
+        self.feature_sha = run_git(repository, "rev-parse", "HEAD")
+        run_git(repository, "checkout", "--quiet", "main")
+
+        bundle_path = root / "fixture.bundle"
+        run_git(
+            repository,
+            "bundle",
+            "create",
+            str(bundle_path),
+            "refs/heads/main",
+            "refs/heads/agent/test-feature",
         )
-        self.assertEqual(
-            verifier.BUNDLE_SHA256,
-            "1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031",
+        self.bundle_bytes = bundle_path.read_bytes()
+        encoded = base64.b64encode(self.bundle_bytes)
+        split_one = len(encoded) // 3
+        split_two = 2 * len(encoded) // 3
+        self.parts = (
+            encoded[:split_one],
+            encoded[split_one:split_two],
+            encoded[split_two:],
         )
-        self.assertEqual(
-            verifier.PUBLISHER_SHA256,
-            "e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278",
-        )
-        self.assertEqual(
-            verifier.EXPECTED_HEADS,
-            {
-                "HEAD": "789d48039da232faed985d4f8de176959f117e08",
-                "refs/heads/main": "4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1",
-                "refs/heads/agent/den-1057-meta-agent-control-plane": "789d48039da232faed985d4f8de176959f117e08",
+        self.publisher_bytes = b"#!/usr/bin/env python3\nprint('fixture publisher')\n"
+
+    def client(self, *, truncated_assets: bool = False) -> FakeClient:
+        trees: dict[str, Mapping[str, Any]] = {
+            self.ROOT_TREE: {
+                "truncated": False,
+                "tree": [
+                    {"path": "scripts", "type": "tree", "sha": self.SCRIPTS_TREE},
+                    {"path": "README.md", "type": "blob", "sha": "9" * 40},
+                ],
             },
-        )
-        self.assertEqual(
-            verifier.EXPECTED_HEADS["HEAD"],
-            verifier.EXPECTED_HEADS[verifier.EXPECTED_FEATURE_REF],
-        )
-
-    def test_require_sha_accepts_only_lowercase_exact_sha(self) -> None:
-        sha = "a" * 40
-        self.assertEqual(
-            verifier.require_sha(sha, stage="test", label="sha"),
-            sha,
-        )
-        for invalid in (None, 42, "a" * 39, "A" * 40, "g" * 40, "a" * 41):
-            with self.subTest(invalid=invalid):
-                with self.assertRaises(verifier.SnapshotError):
-                    verifier.require_sha(invalid, stage="test", label="sha")
-
-    def test_asset_selection_is_lexical_exact_and_blob_only(self) -> None:
-        payload = {
-            "truncated": False,
-            "tree": [
-                {
-                    "path": "scripts/critical-org-fleet/assets/meta.part10",
-                    "type": "blob",
-                    "sha": "b" * 40,
-                },
-                {
-                    "path": "scripts/critical-org-fleet/assets/other.part00",
-                    "type": "blob",
-                    "sha": "c" * 40,
-                },
-                {
-                    "path": "scripts/critical-org-fleet/assets/meta.part02",
-                    "type": "blob",
-                    "sha": "a" * 40,
-                },
-            ],
+            self.SCRIPTS_TREE: {
+                "truncated": False,
+                "tree": [
+                    {
+                        "path": "critical-org-fleet",
+                        "type": "tree",
+                        "sha": self.FLEET_TREE,
+                    }
+                ],
+            },
+            self.FLEET_TREE: {
+                "truncated": False,
+                "tree": [
+                    {"path": "assets", "type": "tree", "sha": self.ASSETS_TREE},
+                    {
+                        "path": MODULE.PUBLISHER_NAME,
+                        "type": "blob",
+                        "sha": self.PUBLISHER_BLOB,
+                    },
+                ],
+            },
+            self.ASSETS_TREE: {
+                "truncated": truncated_assets,
+                "tree": [
+                    {
+                        "path": f"meta.part{index:02d}",
+                        "type": "blob",
+                        "sha": blob_sha,
+                    }
+                    for index, blob_sha in enumerate(self.PART_BLOBS)
+                ]
+                + [{"path": "ignored.txt", "type": "blob", "sha": "8" * 40}],
+            },
         }
-        self.assertEqual(
-            verifier.select_asset_entries(payload),
-            [
-                ("scripts/critical-org-fleet/assets/meta.part02", "a" * 40),
-                ("scripts/critical-org-fleet/assets/meta.part10", "b" * 40),
-            ],
+        blobs = {
+            **{
+                blob_sha: blob_payload(part)
+                for blob_sha, part in zip(self.PART_BLOBS, self.parts, strict=True)
+            },
+            self.PUBLISHER_BLOB: blob_payload(self.publisher_bytes),
+        }
+        return FakeClient(
+            commit={"sha": self.SOURCE_SHA, "tree": {"sha": self.ROOT_TREE}},
+            trees=trees,
+            blobs=blobs,
         )
 
-        payload["tree"][0]["type"] = "tree"
-        with self.assertRaisesRegex(verifier.SnapshotError, "not a blob"):
-            verifier.select_asset_entries(payload)
 
-    def test_asset_selection_rejects_truncation_empty_and_duplicates(self) -> None:
-        with self.assertRaisesRegex(verifier.SnapshotError, "truncated"):
-            verifier.select_asset_entries({"truncated": True, "tree": []})
-        with self.assertRaisesRegex(verifier.SnapshotError, "no sealed"):
-            verifier.select_asset_entries({"truncated": False, "tree": []})
-
-        duplicate = {
-            "truncated": False,
-            "tree": [
-                {
-                    "path": "scripts/critical-org-fleet/assets/meta.part00",
-                    "type": "blob",
-                    "sha": "a" * 40,
-                },
-                {
-                    "path": "scripts/critical-org-fleet/assets/meta.part00",
-                    "type": "blob",
-                    "sha": "b" * 40,
-                },
-            ],
-        }
-        with self.assertRaisesRegex(verifier.SnapshotError, "duplicate"):
-            verifier.select_asset_entries(duplicate)
-
-    def test_publisher_selection_requires_exactly_one_blob(self) -> None:
-        entry = {
-            "path": verifier.PUBLISHER_PATH,
-            "type": "blob",
-            "sha": "a" * 40,
-        }
-        self.assertEqual(
-            verifier.select_publisher_entry({"tree": [entry]}),
-            (verifier.PUBLISHER_PATH, "a" * 40),
-        )
-        for tree in ([], [entry, dict(entry)]):
-            with self.subTest(tree=tree):
-                with self.assertRaises(verifier.SnapshotError):
-                    verifier.select_publisher_entry({"tree": tree})
-
-    def test_github_blob_decode_verifies_transport_and_git_identity(self) -> None:
-        content = b"sealed-source-segment\n"
-        sha = verifier.git_blob_sha(content)
-        payload = {
-            "encoding": "base64",
-            "content": base64.b64encode(content).decode("ascii"),
-        }
-        self.assertEqual(
-            verifier.decode_github_blob(
-                payload,
-                expected_sha=sha,
-                stage="decode",
-                label="asset",
-            ),
-            content,
-        )
-
-        with self.assertRaisesRegex(verifier.SnapshotError, "identity mismatch"):
-            verifier.decode_github_blob(
-                payload,
-                expected_sha="f" * 40,
-                stage="decode",
-                label="asset",
-            )
-        with self.assertRaisesRegex(verifier.SnapshotError, "transport base64"):
-            verifier.decode_github_blob(
-                {"encoding": "base64", "content": "***"},
-                expected_sha=sha,
-                stage="decode",
-                label="asset",
+class MetaAgentSourceSnapshotTests(unittest.TestCase):
+    def test_reconstructs_two_layer_bundle_and_verifies_exact_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            fixture = SnapshotFixture(root)
+            output = root / "output"
+            expected_heads = {
+                "refs/heads/main": fixture.main_sha,
+                "refs/heads/agent/test-feature": fixture.feature_sha,
+            }
+            result = MODULE.reconstruct_and_verify(
+                client=fixture.client(),
+                source_sha=fixture.SOURCE_SHA,
+                expected_bundle_sha256=hashlib.sha256(fixture.bundle_bytes).hexdigest(),
+                expected_publisher_sha256=hashlib.sha256(
+                    fixture.publisher_bytes
+                ).hexdigest(),
+                expected_heads=expected_heads,
+                output_dir=output,
             )
 
-    def test_two_layer_bundle_decode_preserves_order_and_whitespace(self) -> None:
-        bundle = b"binary\x00git\nbundle\xff"
-        encoded = base64.b64encode(bundle)
-        parts = [encoded[:5] + b"\n", encoded[5:12], b"\n" + encoded[12:]]
-        self.assertEqual(verifier.decode_bundle_parts(parts), bundle)
-        with self.assertRaisesRegex(verifier.SnapshotError, "not valid base64"):
-            verifier.decode_bundle_parts([b"not***base64"])
-        with self.assertRaisesRegex(verifier.SnapshotError, "empty"):
-            verifier.decode_bundle_parts([])
+            self.assertEqual(result.asset_count, 3)
+            self.assertEqual(result.heads, expected_heads)
+            self.assertEqual(result.auxiliary_heads, {})
+            self.assertEqual(result.bundle_path.read_bytes(), fixture.bundle_bytes)
+            self.assertEqual(result.publisher_path.read_bytes(), fixture.publisher_bytes)
+            self.assertEqual(result.bundle_path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(result.publisher_path.stat().st_mode & 0o777, 0o600)
+            evidence = json.loads(result.sanitized_json())
+            self.assertEqual(evidence["status"], "verified")
+            self.assertEqual(evidence["asset_count"], 3)
+            self.assertEqual(evidence["auxiliary_heads"], {})
+            self.assertNotIn("token", result.sanitized_json().lower())
 
-    def test_bundle_head_parser_requires_exact_branches_and_symbolic_head(self) -> None:
-        output = "\n".join(
-            f"{sha} {ref}" for ref, sha in verifier.EXPECTED_HEADS.items()
+    def test_requires_exact_head_pseudo_ref_at_feature_sha(self) -> None:
+        expected = {
+            "refs/heads/main": "1" * 40,
+            "refs/heads/agent/feature": "2" * 40,
+        }
+        expected_auxiliary = {"HEAD": expected["refs/heads/agent/feature"]}
+        branches, auxiliary = MODULE.validate_bundle_heads(
+            {**expected, **expected_auxiliary}, expected, expected_auxiliary
         )
-        self.assertEqual(verifier.parse_bundle_heads(output), verifier.EXPECTED_HEADS)
+        self.assertEqual(branches, expected)
+        self.assertEqual(auxiliary, expected_auxiliary)
 
-        without_head = "\n".join(
-            f"{sha} {ref}"
-            for ref, sha in verifier.EXPECTED_HEADS.items()
-            if ref != "HEAD"
+    def test_rejects_missing_required_head_pseudo_ref(self) -> None:
+        expected = {
+            "refs/heads/main": "1" * 40,
+            "refs/heads/agent/feature": "2" * 40,
+        }
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "bundle auxiliary refs do not exactly match the reviewed auxiliary inventory",
+        ):
+            MODULE.validate_bundle_heads(
+                expected,
+                expected,
+                {"HEAD": expected["refs/heads/agent/feature"]},
+            )
+
+    def test_rejects_head_pseudo_ref_at_an_unreviewed_sha(self) -> None:
+        expected = {"refs/heads/main": "1" * 40}
+        unexpected = {"HEAD": "2" * 40}
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "auxiliary ref HEAD points outside the reviewed branch SHAs",
+        ):
+            MODULE.validate_bundle_heads(
+                {**expected, **unexpected}, expected, unexpected
+            )
+
+    def test_rejects_non_head_auxiliary_refs(self) -> None:
+        expected = {"refs/heads/main": "1" * 40}
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "unsupported auxiliary refs: refs/tags/not-publishable",
+        ):
+            MODULE.validate_bundle_heads(
+                {**expected, "refs/tags/not-publishable": "1" * 40},
+                expected,
+                {},
+            )
+
+    def test_rejects_truncated_bounded_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            fixture = SnapshotFixture(root)
+            with self.assertRaisesRegex(
+                MODULE.VerificationError, "assets tree response is truncated"
+            ):
+                MODULE.reconstruct_and_verify(
+                    client=fixture.client(truncated_assets=True),
+                    source_sha=fixture.SOURCE_SHA,
+                    expected_bundle_sha256=hashlib.sha256(
+                        fixture.bundle_bytes
+                    ).hexdigest(),
+                    expected_publisher_sha256=hashlib.sha256(
+                        fixture.publisher_bytes
+                    ).hexdigest(),
+                    expected_heads={
+                        "refs/heads/main": fixture.main_sha,
+                        "refs/heads/agent/test-feature": fixture.feature_sha,
+                    },
+                    output_dir=root / "output",
+                )
+
+    def test_rejects_exact_branch_ref_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            fixture = SnapshotFixture(root)
+            with self.assertRaisesRegex(
+                MODULE.VerificationError,
+                "bundle branch refs do not exactly match the reviewed branch inventory",
+            ):
+                MODULE.reconstruct_and_verify(
+                    client=fixture.client(),
+                    source_sha=fixture.SOURCE_SHA,
+                    expected_bundle_sha256=hashlib.sha256(
+                        fixture.bundle_bytes
+                    ).hexdigest(),
+                    expected_publisher_sha256=hashlib.sha256(
+                        fixture.publisher_bytes
+                    ).hexdigest(),
+                    expected_heads={"refs/heads/main": fixture.main_sha},
+                    output_dir=root / "output",
+                )
+
+    def test_parses_only_allowed_auxiliary_ref_names(self) -> None:
+        self.assertEqual(
+            MODULE.parse_expected_auxiliary_heads(["HEAD=" + "1" * 40]),
+            {"HEAD": "1" * 40},
         )
-        with self.assertRaisesRegex(verifier.SnapshotError, "bundle heads differ"):
-            verifier.parse_bundle_heads(without_head)
-
-        wrong_head = output.replace(
-            f"{verifier.EXPECTED_FEATURE} HEAD",
-            f"{'c' * 40} HEAD",
-        )
-        with self.assertRaisesRegex(verifier.SnapshotError, "bundle heads differ"):
-            verifier.parse_bundle_heads(wrong_head)
-
-        with self.assertRaisesRegex(verifier.SnapshotError, "bundle heads differ"):
-            verifier.parse_bundle_heads(output + f"\n{'c' * 40} refs/heads/extra")
-        with self.assertRaisesRegex(verifier.SnapshotError, "malformed"):
-            verifier.parse_bundle_heads("bad-line")
-
-    def test_workflow_token_preflight_rejects_absent_or_whitespace_values(self) -> None:
-        for token in ("", "with space", "line\nbreak"):
-            with self.subTest(token=token):
-                with self.assertRaises(verifier.SnapshotError):
-                    verifier.GitHubApi(token)
-        self.assertIsInstance(verifier.GitHubApi("workflow-token"), verifier.GitHubApi)
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "invalid or duplicate expected auxiliary ref",
+        ):
+            MODULE.parse_expected_auxiliary_heads(
+                ["refs/tags/not-allowed=" + "1" * 40]
+            )
 
 
 if __name__ == "__main__":

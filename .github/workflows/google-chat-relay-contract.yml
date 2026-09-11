@@ -3,6 +3,7 @@ name: Google Chat relay contract
 on:
   pull_request:
     paths:
+      - .github/workflows/ephemeral-google-chat-relay-cleanup.yml
       - .github/workflows/ephemeral-google-chat-relay-get.yml
       - .github/workflows/ephemeral-google-chat-relay.yml
       - .github/workflows/google-chat-relay-contract.yml

@@ -1,0 +1,71 @@
+name: Retire encrypted Google Chat relay coordination comments
+
+on:
+  workflow_run:
+    workflows:
+      - Ephemeral encrypted Google Chat relay POST
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: google-chat-relay-comment-cleanup-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  retire:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      RELAY_ISSUE: '86'
+    steps:
+      - name: Retire run-bound public key and ciphertext comments
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELAY_RUN_ID: ${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          RELAY_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          key_prefix="CHAT_RELAY_POST_PUBLIC_KEY protocol=3 run_id=${RELAY_RUN_ID} "
+          ciphertext_prefix="CHAT_RELAY_POST_CIPHERTEXT run_id=${RELAY_RUN_ID} "
+          matches="${RUNNER_TEMP}/relay-comment-matches.tsv"
+
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments?per_page=100" \
+            --jq ".[][] | select((.body | startswith(\"${key_prefix}\")) or (.body | startswith(\"${ciphertext_prefix}\"))) | [.id, (if (.body | startswith(\"${key_prefix}\")) then \"public-key\" else \"ciphertext\" end)] | @tsv" \
+            > "$matches"
+
+          retired=0
+          while IFS=$'\t' read -r comment_id kind; do
+            test -n "$comment_id" || continue
+            case "$kind" in
+              public-key)
+                body="Retired one-time relay public key for run ${RELAY_RUN_ID}; workflow conclusion=${RELAY_CONCLUSION}."
+                ;;
+              ciphertext)
+                body="Retired RSA ciphertext for relay run ${RELAY_RUN_ID}; workflow conclusion=${RELAY_CONCLUSION}."
+                ;;
+              *)
+                echo "Unexpected relay coordination comment kind." >&2
+                exit 1
+                ;;
+            esac
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" \
+              -f body="$body" >/dev/null
+            retired=$((retired + 1))
+          done < "$matches"
+
+          {
+            echo '### Google Chat relay coordination cleanup'
+            echo
+            echo "Run: ${RELAY_RUN_ID}"
+            echo "Conclusion: ${RELAY_CONCLUSION}"
+            echo "Retired comments: ${retired}"
+          } >> "$GITHUB_STEP_SUMMARY"

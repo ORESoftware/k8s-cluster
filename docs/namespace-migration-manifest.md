@@ -10,7 +10,7 @@ GitHub: [ORESoftware/k8s-cluster#1104](https://github.com/ORESoftware/k8s-cluste
 
 The manifest is generated deterministically from:
 
-- `artifacts/namespace-inventory.json`;
+- the exact-head namespace inventory rendered by `tools/namespace_migration.py inventory`;
 - `catalog/namespaces/owners.json`;
 - `catalog/namespaces/migration-rules.json`.
 
@@ -26,7 +26,7 @@ Every row is keyed by the exact tuple:
 
 The row ID is the SHA-256 of that canonical identity. Validation rejects duplicate IDs, duplicate identities, missing inventory identities, and manifest-only identities.
 
-The initial corrected inventory contains 1,134 rows. The count is an explicit test assertion so an inventory change requires an intentional manifest regeneration and review.
+The initial corrected inventory contained 1,134 rows. That historical number is not a permanent invariant: repository changes legitimately change the exact-head inventory. The current contract instead requires the generated inventory and committed manifest to have identical occurrence identities and counts. The latest certified PR-head evidence before this update contained 1,251 entries with zero diagnostics and no encoded staging files.
 
 ## Safety state
 
@@ -78,6 +78,7 @@ Validate schema presence, source digests, deterministic output, exact coverage, 
 ```bash
 python3 tools/namespace_manifest.py check --root . --format text
 python3 tools/test_namespace_manifest.py
+python3 tests/namespace_migration_workflow_test.py
 ```
 
 Render without writing:
@@ -87,4 +88,10 @@ python3 tools/namespace_manifest.py render --root . > /tmp/migration-manifest.js
 cmp /tmp/migration-manifest.json catalog/namespaces/migration-manifest.json
 ```
 
-Any change to inventory, registry, rules, generator, schema, or manifest must pass the exact-head source workflow and an independent credential-free canary from a `*-test` organization. Provider-backed tests remain a later gated phase and must use test-scoped identities rather than account-wide credentials.
+## CI certification boundary
+
+The namespace migration workflow must certify pull-request heads and both `dev` and `main` push commits. `main` coverage is intentional: a final merge commit can combine two individually green histories into a tree that neither PR-head run tested.
+
+The workflow checks out the selected exact source SHA, renders the exact-head inventory before deriving a manifest candidate, runs classifier and manifest adversarial tests, validates the committed canonical manifest, applies the PR new-reference ratchet, and uploads the exact-source inventory plus rendered manifest candidate as evidence.
+
+Any change to inventory, registry, rules, generator, schema, manifest, or repository text that can affect namespace discovery must pass this exact-head workflow. An independent credential-free canary from a `*-test` organization remains the additional cross-repository acceptance boundary. Provider-backed tests remain a later gated phase and must use test-scoped identities rather than account-wide credentials.

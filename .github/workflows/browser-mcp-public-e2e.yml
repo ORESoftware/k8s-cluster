@@ -9,23 +9,16 @@ on:
       - 'remote/deployments/web-scraper-service/**'
       - 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml'
       - 'remote/tests/general/browser-mcp-public-e2e.test.ts'
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/browser-mcp-public-e2e.yml'
-      - 'scripts/verify-browser-mcp.sh'
-      - 'remote/deployments/browser-mcp-rs/**'
-      - 'remote/deployments/web-scraper-service/**'
-      - 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml'
-      - 'remote/tests/general/browser-mcp-public-e2e.test.ts'
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
 concurrency:
-  group: browser-mcp-public-oauth-e2e-${{ github.event_name }}-${{ github.ref }}
+  # Pull requests validate independently. The external smoke workflow is the
+  # sole live caller, so all protected dispatches and result publications share
+  # one lock.
+  group: browser-mcp-public-oauth-e2e-${{ github.event_name == 'pull_request' && github.ref || 'live' }}
   cancel-in-progress: false
 
 jobs:
@@ -397,13 +390,29 @@ jobs:
         run: |
           set -euo pipefail
           cp "$RESULT_FILE" "$RUNNER_TEMP/result.json"
-          git fetch origin "$RESULTS_BRANCH" || true
-          if git show-ref --verify --quiet "refs/remotes/origin/$RESULTS_BRANCH"; then
-            git switch --force-create "$RESULTS_BRANCH" "origin/$RESULTS_BRANCH"
-          else
-            git switch --orphan "$RESULTS_BRANCH"
-            git rm -rf .
-          fi
+
+          set +e
+          git ls-remote --exit-code --heads origin \
+            "refs/heads/$RESULTS_BRANCH" >/dev/null 2>&1
+          lookup_status=$?
+          set -e
+
+          case "$lookup_status" in
+            0)
+              git fetch --no-tags origin \
+                "+refs/heads/$RESULTS_BRANCH:refs/remotes/origin/$RESULTS_BRANCH"
+              git switch --force-create "$RESULTS_BRANCH" \
+                "origin/$RESULTS_BRANCH"
+              ;;
+            2)
+              git switch --orphan "$RESULTS_BRANCH"
+              git rm -rf --ignore-unmatch .
+              ;;
+            *)
+              echo 'unable to determine sanitized results branch state' >&2
+              exit "$lookup_status"
+              ;;
+          esac
 
           mkdir -p browser-mcp
           jq \
@@ -425,5 +434,5 @@ jobs:
             echo 'sanitized result is unchanged'
           else
             git commit -m 'DEN-405 publish sanitized Browser MCP verification'
-            git push origin "HEAD:$RESULTS_BRANCH"
+            git push origin "HEAD:refs/heads/$RESULTS_BRANCH"
           fi

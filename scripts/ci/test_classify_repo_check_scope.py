@@ -183,6 +183,39 @@ class RepoCheckScopeTests(unittest.TestCase):
             result["reason"],
         )
 
+    def test_den_533_google_chat_cleanup_contract_is_credential_free(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+                ".github/workflows/google-chat-relay-contract.yml",
+                "scripts/ci/classify_repo_check_scope.py",
+                "scripts/ci/test_classify_repo_check_scope.py",
+                "tools/google-chat-space-export/test_relay_workflows.py",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertTrue(result["credential_free_contract_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual(
+            "credential_free_contract_only_no_private_gitlinks",
+            result["reason"],
+        )
+
+    def test_den_533_cleanup_mixed_with_unknown_requires_private_contracts(self):
+        result = MODULE.classify(
+            "pull_request",
+            [
+                ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+                ".github/workflows/google-chat-relay-contract.yml",
+                "tools/google-chat-space-export/test_relay_workflows.py",
+                "README.md",
+            ],
+        )
+        self.assertFalse(result["governance_only"])
+        self.assertFalse(result["credential_free_contract_only"])
+        self.assertTrue(result["private_contracts_required"])
+
     def test_scheduled_live_smoke_contract_is_credential_free(self):
         result = MODULE.classify(
             "pull_request",

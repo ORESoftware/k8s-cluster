@@ -1,0 +1,2929 @@
+{
+  "schemaVersion": "google-chat-reconciliation-delta.v1",
+  "space": "spaces/AAQAoHKdzvI",
+  "displayName": "alex-alex-me",
+  "sourceExport": {
+    "exportedAt": "2026-08-28T21:50:42Z",
+    "totalMessages": 1455,
+    "messagesSince2026-08-02": 305,
+    "bridgeVersion": "1.0.1"
+  },
+  "delta": {
+    "afterExclusive": "2026-08-04T21:21:07.950927Z",
+    "throughInclusive": "2026-08-28T21:43:57.106495Z",
+    "recordCount": 259,
+    "dispositionCounts": {
+      "mapped-existing": 157,
+      "mapped-existing-secret-quarantined": 80,
+      "quarantined-private-contact": 10,
+      "excluded-empty": 3,
+      "skip-non-actionable": 7,
+      "mapped-existing-reference": 2
+    },
+    "uniqueLinearIssueIds": [
+      "DEN-1230",
+      "DEN-1604",
+      "DEN-1906",
+      "DEN-2308",
+      "DEN-27",
+      "DEN-2758",
+      "DEN-2790",
+      "DEN-2794",
+      "DEN-3043",
+      "DEN-3175",
+      "DEN-3443",
+      "DEN-3920",
+      "DEN-3945",
+      "DEN-3971",
+      "DEN-4048",
+      "DEN-4050",
+      "DEN-4051",
+      "DEN-4053",
+      "DEN-4055",
+      "DEN-4057",
+      "DEN-4058",
+      "DEN-4060",
+      "DEN-4062",
+      "DEN-4063",
+      "DEN-4064",
+      "DEN-4065",
+      "DEN-4066",
+      "DEN-4068",
+      "DEN-4069",
+      "DEN-4070",
+      "DEN-4071",
+      "DEN-4072",
+      "DEN-4074",
+      "DEN-4075",
+      "DEN-4076",
+      "DEN-4078",
+      "DEN-4079",
+      "DEN-4081",
+      "DEN-4083",
+      "DEN-4084",
+      "DEN-4085",
+      "DEN-4088",
+      "DEN-4090",
+      "DEN-4091",
+      "DEN-4093",
+      "DEN-4094",
+      "DEN-4095",
+      "DEN-4096",
+      "DEN-4098",
+      "DEN-4102",
+      "DEN-4107",
+      "DEN-4111",
+      "DEN-4112",
+      "DEN-4113",
+      "DEN-4114",
+      "DEN-4116",
+      "DEN-4117",
+      "DEN-4118",
+      "DEN-4119",
+      "DEN-4120",
+      "DEN-4121",
+      "DEN-4122",
+      "DEN-4124",
+      "DEN-4125",
+      "DEN-4126",
+      "DEN-4127",
+      "DEN-4128",
+      "DEN-4129",
+      "DEN-4131",
+      "DEN-4132",
+      "DEN-4133",
+      "DEN-4134",
+      "DEN-4135",
+      "DEN-4136",
+      "DEN-4137",
+      "DEN-4138",
+      "DEN-4139",
+      "DEN-4141",
+      "DEN-4143",
+      "DEN-4144",
+      "DEN-4145",
+      "DEN-4146",
+      "DEN-4147",
+      "DEN-4148",
+      "DEN-4149",
+      "DEN-4150",
+      "DEN-4151",
+      "DEN-4152",
+      "DEN-4153",
+      "DEN-4154",
+      "DEN-4155",
+      "DEN-4156",
+      "DEN-4157",
+      "DEN-4158",
+      "DEN-4159",
+      "DEN-4160",
+      "DEN-4161",
+      "DEN-4162",
+      "DEN-4163",
+      "DEN-4164",
+      "DEN-4165",
+      "DEN-4166",
+      "DEN-4167",
+      "DEN-4168",
+      "DEN-4169",
+      "DEN-4170",
+      "DEN-4171",
+      "DEN-4172",
+      "DEN-4173",
+      "DEN-4174",
+      "DEN-4175",
+      "DEN-4176",
+      "DEN-4211",
+      "DEN-4234",
+      "DEN-4238",
+      "DEN-4239",
+      "DEN-4240",
+      "DEN-4241",
+      "DEN-4242",
+      "DEN-4243",
+      "DEN-4244",
+      "DEN-4245",
+      "DEN-4246",
+      "DEN-4247",
+      "DEN-4248",
+      "DEN-4249",
+      "DEN-4250",
+      "DEN-4251",
+      "DEN-4255",
+      "DEN-4277",
+      "DEN-4278",
+      "DEN-4279",
+      "DEN-608",
+      "DEN-822",
+      "DEN-834"
+    ],
+    "needsNewIssueCount": 0,
+    "newImplementationPullRequests": [
+      "ORESoftware/.github#20"
+    ],
+    "newGitHubIssues": [
+      "ORESoftware/.github#18",
+      "ORESoftware/.github#19",
+      "ORESoftware/api-docs#6",
+      "ORESoftware/k8s-cluster#1437",
+      "3FA-app/3FA-desktop.rs#40",
+      "shared-auth/shared-auth-server.rs#100",
+      "claritas-viz/.github#17",
+      "praxonne/praxonne-wifi-vpn-desktop.rs#2",
+      "opto-sync/syncer.rs#11"
+    ]
+  },
+  "privacy": {
+    "containsMessageBodies": false,
+    "containsSenderIdentities": false,
+    "containsCredentials": false,
+    "containsContactValues": false,
+    "credentialBearingRecords": 80,
+    "privateContactRecords": 10,
+    "credentialIncidentIssueIds": [
+      "DEN-1230",
+      "DEN-27"
+    ]
+  },
+  "records": [
+    {
+      "ordinal": 47,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/TLdNTKUIKUU.TLdNTKUIKUU",
+      "createTime": "2026-08-04T23:35:07.611711Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4102"
+      ]
+    },
+    {
+      "ordinal": 48,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/H_LIRqwIaJ4.H_LIRqwIaJ4",
+      "createTime": "2026-08-05T01:09:14.905215Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4064"
+      ]
+    },
+    {
+      "ordinal": 49,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/xLnZ3YGXv6U.xLnZ3YGXv6U",
+      "createTime": "2026-08-05T01:47:56.202607Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4084",
+        "DEN-2794",
+        "DEN-1604"
+      ]
+    },
+    {
+      "ordinal": 50,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/PR5QScWVSdE.PR5QScWVSdE",
+      "createTime": "2026-08-05T02:44:03.539871Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 51,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/R4SRTQf5QCc.R4SRTQf5QCc",
+      "createTime": "2026-08-05T04:23:05.097327Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4071"
+      ]
+    },
+    {
+      "ordinal": 52,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/iCuag-SsG3w.iCuag-SsG3w",
+      "createTime": "2026-08-05T04:24:32.498799Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4071"
+      ]
+    },
+    {
+      "ordinal": 53,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/GGzf4haGrxY.GGzf4haGrxY",
+      "createTime": "2026-08-05T05:11:22.285855Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4062"
+      ]
+    },
+    {
+      "ordinal": 54,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/_Gf1M7qC-MI._Gf1M7qC-MI",
+      "createTime": "2026-08-05T05:12:37.869295Z",
+      "category": "monorepo-submodules",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4068"
+      ]
+    },
+    {
+      "ordinal": 55,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/EHE8JVBNXpU.EHE8JVBNXpU",
+      "createTime": "2026-08-05T05:29:49.703279Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4060"
+      ]
+    },
+    {
+      "ordinal": 56,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/chDVif3TgRE.chDVif3TgRE",
+      "createTime": "2026-08-05T13:43:25.279055Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4098"
+      ]
+    },
+    {
+      "ordinal": 57,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/i86jJXG1tvA.i86jJXG1tvA",
+      "createTime": "2026-08-05T14:22:30.153567Z",
+      "category": "akrion-soccer",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4135"
+      ]
+    },
+    {
+      "ordinal": 58,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/7zFM2hkFe5k.7zFM2hkFe5k",
+      "createTime": "2026-08-05T14:45:10.847903Z",
+      "category": "monorepo-submodules",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4116"
+      ]
+    },
+    {
+      "ordinal": 59,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/8ZdOWBTXiKE.8ZdOWBTXiKE",
+      "createTime": "2026-08-05T18:47:57.176975Z",
+      "category": "cloudflare-infra",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4074"
+      ]
+    },
+    {
+      "ordinal": 60,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/z61fB3CQbMA.z61fB3CQbMA",
+      "createTime": "2026-08-05T19:59:34.197951Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 61,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/nCz0Uvf1Nac.nCz0Uvf1Nac",
+      "createTime": "2026-08-05T20:30:35.300287Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 62,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/4WXv4BrxCiQ.4WXv4BrxCiQ",
+      "createTime": "2026-08-05T21:54:10.824367Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4134"
+      ]
+    },
+    {
+      "ordinal": 63,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/iKM9xOPjwKA.iKM9xOPjwKA",
+      "createTime": "2026-08-05T23:00:47.115727Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4069",
+        "DEN-4063"
+      ]
+    },
+    {
+      "ordinal": 64,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/yyxJ8XbpA1Q.yyxJ8XbpA1Q",
+      "createTime": "2026-08-05T23:00:57.527423Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4069"
+      ]
+    },
+    {
+      "ordinal": 65,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/-ro5W0Sz25o.A57hPxAepbQ",
+      "createTime": "2026-08-06T02:26:17.137103Z",
+      "category": "private-contact",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 66,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/-ro5W0Sz25o.P6ZA9vUNt7U",
+      "createTime": "2026-08-06T02:30:37.421023Z",
+      "category": "private-contact",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 67,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/RMT_8-5IhJY.RMT_8-5IhJY",
+      "createTime": "2026-08-06T03:41:24.336223Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4112"
+      ]
+    },
+    {
+      "ordinal": 68,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/rJKSJK0rkgM.rJKSJK0rkgM",
+      "createTime": "2026-08-06T03:44:26.214863Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 69,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/KP7PBLqepCA.KP7PBLqepCA",
+      "createTime": "2026-08-06T05:04:58.688559Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4126",
+        "DEN-4076",
+        "DEN-4134"
+      ]
+    },
+    {
+      "ordinal": 70,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/1jDgukL83tw.1jDgukL83tw",
+      "createTime": "2026-08-06T15:17:19.289023Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4051"
+      ]
+    },
+    {
+      "ordinal": 71,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/n3zRucFbJ0s.n3zRucFbJ0s",
+      "createTime": "2026-08-06T15:29:23.538047Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4096"
+      ]
+    },
+    {
+      "ordinal": 72,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/fMM6RzGqRBg.fMM6RzGqRBg",
+      "createTime": "2026-08-06T15:31:53.403199Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4129"
+      ]
+    },
+    {
+      "ordinal": 73,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/lkH0zAjWKcs.lkH0zAjWKcs",
+      "createTime": "2026-08-06T15:37:40.463007Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4072"
+      ]
+    },
+    {
+      "ordinal": 74,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/UE4Gq4hCS-o.UE4Gq4hCS-o",
+      "createTime": "2026-08-06T17:05:22.529311Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4094"
+      ]
+    },
+    {
+      "ordinal": 75,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/phF_m4WXqLk.phF_m4WXqLk",
+      "createTime": "2026-08-06T17:05:34.470047Z",
+      "category": "github-linear-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4137"
+      ]
+    },
+    {
+      "ordinal": 76,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/HmA6MwJBLQU.HmA6MwJBLQU",
+      "createTime": "2026-08-06T17:08:32.014319Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 77,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/tLYpLXh9h6k.tLYpLXh9h6k",
+      "createTime": "2026-08-06T17:12:50.419999Z",
+      "category": "github-linear-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4088"
+      ]
+    },
+    {
+      "ordinal": 78,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/j8R3_sxYauk.j8R3_sxYauk",
+      "createTime": "2026-08-06T17:14:25.939935Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4085"
+      ]
+    },
+    {
+      "ordinal": 79,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/oMzmKiQCk8I.oMzmKiQCk8I",
+      "createTime": "2026-08-06T17:36:52.210511Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4126",
+        "DEN-4076"
+      ]
+    },
+    {
+      "ordinal": 80,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/iSBq0Tw63Cg.iSBq0Tw63Cg",
+      "createTime": "2026-08-06T17:38:55.185455Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4128"
+      ]
+    },
+    {
+      "ordinal": 81,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/3sbxf4w_v4I.3sbxf4w_v4I",
+      "createTime": "2026-08-06T18:11:22.733343Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 82,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ygxnWm50Sxo.ygxnWm50Sxo",
+      "createTime": "2026-08-06T18:48:08.971775Z",
+      "category": "shared-auth-3fa",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4114"
+      ]
+    },
+    {
+      "ordinal": 83,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/_UZUJsme3eQ._UZUJsme3eQ",
+      "createTime": "2026-08-06T19:39:16.325279Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4107"
+      ]
+    },
+    {
+      "ordinal": 84,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/x0j562ZuGY4.x0j562ZuGY4",
+      "createTime": "2026-08-06T21:58:46.178607Z",
+      "category": "sonus-auris",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4066"
+      ]
+    },
+    {
+      "ordinal": 85,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/TkCXtdfLePA.TkCXtdfLePA",
+      "createTime": "2026-08-06T22:06:18.430143Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 86,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Z9dBouDIIy4.Z9dBouDIIy4",
+      "createTime": "2026-08-06T22:24:34.696911Z",
+      "category": "product-intake",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 87,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/pGrPeZSb5VE.pGrPeZSb5VE",
+      "createTime": "2026-08-06T22:26:05.818735Z",
+      "category": "sonus-auris",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4113"
+      ]
+    },
+    {
+      "ordinal": 88,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Bo4Rw4SIeN8.Bo4Rw4SIeN8",
+      "createTime": "2026-08-06T22:39:26.936783Z",
+      "category": "sonus-auris",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4144"
+      ]
+    },
+    {
+      "ordinal": 89,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/QNvBZ3mSsfU.QNvBZ3mSsfU",
+      "createTime": "2026-08-06T22:46:43.388447Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4125"
+      ]
+    },
+    {
+      "ordinal": 90,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/0w5hN24WDCg.0w5hN24WDCg",
+      "createTime": "2026-08-07T00:49:06.582703Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4111"
+      ]
+    },
+    {
+      "ordinal": 91,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Xj11Jg0VBFA.Xj11Jg0VBFA",
+      "createTime": "2026-08-07T00:54:29.113791Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4095"
+      ]
+    },
+    {
+      "ordinal": 92,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/DU-7mTn1sos.DU-7mTn1sos",
+      "createTime": "2026-08-07T01:15:34.540015Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4132",
+        "DEN-4079"
+      ]
+    },
+    {
+      "ordinal": 93,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/K4U4QrmttLk.K4U4QrmttLk",
+      "createTime": "2026-08-07T01:19:57.380175Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4132",
+        "DEN-4079"
+      ]
+    },
+    {
+      "ordinal": 94,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/OOhHVTgva-I.OOhHVTgva-I",
+      "createTime": "2026-08-07T02:50:13.394959Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4093"
+      ]
+    },
+    {
+      "ordinal": 95,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/nfjrIhj7dGw.nfjrIhj7dGw",
+      "createTime": "2026-08-07T04:51:17.518207Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 96,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/F1hpCFZboQI.F1hpCFZboQI",
+      "createTime": "2026-08-07T17:21:17.720847Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 97,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/n5vrgYyGCEE.n5vrgYyGCEE",
+      "createTime": "2026-08-07T18:03:39.981007Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4131"
+      ]
+    },
+    {
+      "ordinal": 98,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/jzJoIkrVKaI.jzJoIkrVKaI",
+      "createTime": "2026-08-07T18:52:32.619999Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 99,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/NVgLu_FS3ww.NVgLu_FS3ww",
+      "createTime": "2026-08-07T18:55:57.733375Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 100,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/GrcX4bdEhIs.GrcX4bdEhIs",
+      "createTime": "2026-08-07T18:59:06.047775Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 101,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/sduPhEUe4y0.sduPhEUe4y0",
+      "createTime": "2026-08-07T20:37:10.357279Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 102,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/P4rQ-w8OqQc.P4rQ-w8OqQc",
+      "createTime": "2026-08-07T20:38:16.621583Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4136"
+      ]
+    },
+    {
+      "ordinal": 103,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/0rhFf6jvOWU.0rhFf6jvOWU",
+      "createTime": "2026-08-07T21:26:50.743535Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 104,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/dJKwSuL8vNA.dJKwSuL8vNA",
+      "createTime": "2026-08-07T22:46:55.537791Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4081"
+      ]
+    },
+    {
+      "ordinal": 105,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/JOa79y9URWk.JOa79y9URWk",
+      "createTime": "2026-08-07T23:03:29.162623Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4121"
+      ]
+    },
+    {
+      "ordinal": 106,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/03WIXxGHBtE.03WIXxGHBtE",
+      "createTime": "2026-08-07T23:03:46.151263Z",
+      "category": "github-linear-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4065"
+      ]
+    },
+    {
+      "ordinal": 107,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/wK8YnYEPWWw.wK8YnYEPWWw",
+      "createTime": "2026-08-08T03:53:51.235551Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 108,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/b5M8VWJm9rU.b5M8VWJm9rU",
+      "createTime": "2026-08-08T14:56:20.436255Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4083"
+      ]
+    },
+    {
+      "ordinal": 109,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/8QblAx_oaGo.8QblAx_oaGo",
+      "createTime": "2026-08-08T16:02:58.259519Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4075"
+      ]
+    },
+    {
+      "ordinal": 110,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/MfEjOJaUz4U.MfEjOJaUz4U",
+      "createTime": "2026-08-08T16:17:33.737471Z",
+      "category": "github-linear-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4124"
+      ]
+    },
+    {
+      "ordinal": 111,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/HCNjeqNjknI.HCNjeqNjknI",
+      "createTime": "2026-08-08T16:55:41.343759Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 112,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/7NLnNiIaeTs.7NLnNiIaeTs",
+      "createTime": "2026-08-08T16:58:05.996847Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 113,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/qYwb_oGOM8o.qYwb_oGOM8o",
+      "createTime": "2026-08-08T17:05:31.968015Z",
+      "category": "mcp-ai",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4048"
+      ]
+    },
+    {
+      "ordinal": 114,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/lH-VkiJ1XWQ.lH-VkiJ1XWQ",
+      "createTime": "2026-08-08T17:38:45.793183Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 115,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Eja73Ax1nr0.Eja73Ax1nr0",
+      "createTime": "2026-08-08T19:49:03.480719Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4053"
+      ]
+    },
+    {
+      "ordinal": 116,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/YkUrEwdtX6s.YkUrEwdtX6s",
+      "createTime": "2026-08-08T20:47:26.825631Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4058"
+      ]
+    },
+    {
+      "ordinal": 117,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/NdS3DB4dKAU.NdS3DB4dKAU",
+      "createTime": "2026-08-08T20:50:23.146559Z",
+      "category": "mcp-ai",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4078"
+      ]
+    },
+    {
+      "ordinal": 118,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/WdeAzPFAg8s.WdeAzPFAg8s",
+      "createTime": "2026-08-08T21:12:46.824335Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4165"
+      ]
+    },
+    {
+      "ordinal": 119,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/LzWmpPcFd-I.LzWmpPcFd-I",
+      "createTime": "2026-08-08T21:18:52.933407Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-3175",
+        "DEN-3443"
+      ]
+    },
+    {
+      "ordinal": 120,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/wy2q8LZUEwM.wy2q8LZUEwM",
+      "createTime": "2026-08-08T21:19:20.345311Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 121,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/WolGPwlHU1U.WolGPwlHU1U",
+      "createTime": "2026-08-08T21:32:00.791519Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 122,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/z8BGhdhqC7I.z8BGhdhqC7I",
+      "createTime": "2026-08-08T21:34:05.300591Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 123,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/bKXDhL-CL8M.bKXDhL-CL8M",
+      "createTime": "2026-08-08T21:38:08.363263Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 124,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/XvdZuvU3GA8.XvdZuvU3GA8",
+      "createTime": "2026-08-08T22:03:26.391087Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 125,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/8FxuJWPujqg.8FxuJWPujqg",
+      "createTime": "2026-08-08T22:40:21.040831Z",
+      "category": "private-contact",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 126,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/RteUleA5cE0.RteUleA5cE0",
+      "createTime": "2026-08-08T23:01:36.255199Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 127,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/AJDqVdeGAjM.AJDqVdeGAjM",
+      "createTime": "2026-08-09T00:25:21.290111Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 128,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/92yzRyEx7fk.92yzRyEx7fk",
+      "createTime": "2026-08-09T00:32:31.645599Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 129,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/3kB9v0B6kpk.3kB9v0B6kpk",
+      "createTime": "2026-08-09T00:47:50.483583Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4141"
+      ]
+    },
+    {
+      "ordinal": 130,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/XM58LibSyy4.XM58LibSyy4",
+      "createTime": "2026-08-09T01:06:20.983791Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 131,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/CiFgToqnfMg.CiFgToqnfMg",
+      "createTime": "2026-08-09T04:14:04.548015Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4090"
+      ]
+    },
+    {
+      "ordinal": 132,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/9MpDTlTWy60.9MpDTlTWy60",
+      "createTime": "2026-08-09T04:23:13.216271Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4234",
+        "DEN-2790"
+      ]
+    },
+    {
+      "ordinal": 133,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/5Bo9ptEfJMk.5Bo9ptEfJMk",
+      "createTime": "2026-08-09T04:34:05.883119Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 134,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/8te7hbUULDY.8te7hbUULDY",
+      "createTime": "2026-08-09T05:18:05.161007Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4122"
+      ]
+    },
+    {
+      "ordinal": 135,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/hzAnASxDnSc.hzAnASxDnSc",
+      "createTime": "2026-08-09T06:10:27.585407Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 136,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/1W7ThFzREWg.1W7ThFzREWg",
+      "createTime": "2026-08-09T15:46:44.692303Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 137,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/YLfwzv9wBVU.YLfwzv9wBVU",
+      "createTime": "2026-08-09T16:27:43.768527Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 138,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/PQgcXN6ehhg.PQgcXN6ehhg",
+      "createTime": "2026-08-09T18:29:57.599055Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 139,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.IQVdS3eyE7A",
+      "createTime": "2026-08-09T20:26:29.630863Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4120"
+      ]
+    },
+    {
+      "ordinal": 140,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.5uQoPuuRYaE",
+      "createTime": "2026-08-09T20:26:39.204511Z",
+      "category": "private-contact",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 141,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.BP463unkNxk",
+      "createTime": "2026-08-09T20:32:02.835135Z",
+      "category": "private-contact",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 142,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/DUg37oDzRys.DUg37oDzRys",
+      "createTime": "2026-08-09T20:35:32.768159Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 143,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/gZAVWBYtaa4.gZAVWBYtaa4",
+      "createTime": "2026-08-09T20:49:42.502623Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4146"
+      ]
+    },
+    {
+      "ordinal": 144,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.9ftcIQ30-VM",
+      "createTime": "2026-08-09T21:15:15.131983Z",
+      "category": "private-contact",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 145,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/COUn1mn50Ek.COUn1mn50Ek",
+      "createTime": "2026-08-09T21:47:54.377759Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 146,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/L1sDa-O5Zqk.L1sDa-O5Zqk",
+      "createTime": "2026-08-10T00:09:10.933983Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 147,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/pRKhR9NdCZs.pRKhR9NdCZs",
+      "createTime": "2026-08-10T01:02:42.480447Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 148,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/kEdYKr_tGYk.kEdYKr_tGYk",
+      "createTime": "2026-08-10T05:35:36.918735Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 149,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/P43S8W2o_3g.P43S8W2o_3g",
+      "createTime": "2026-08-10T14:02:56.948767Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4138"
+      ]
+    },
+    {
+      "ordinal": 150,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/yOVFQlgQK2Y.yOVFQlgQK2Y",
+      "createTime": "2026-08-10T18:12:55.666415Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 151,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/PnQVoOkIBKQ.PnQVoOkIBKQ",
+      "createTime": "2026-08-10T19:39:59.114703Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 152,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/AsW4J6JzKRA.AsW4J6JzKRA",
+      "createTime": "2026-08-10T20:51:40.772767Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 153,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.lXAapFl7x3k",
+      "createTime": "2026-08-10T23:50:38.087727Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4250"
+      ]
+    },
+    {
+      "ordinal": 154,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.cD6I7dVuyJc",
+      "createTime": "2026-08-10T23:51:39.162543Z",
+      "category": "product-intake",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 155,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.fFLpW7lp82o",
+      "createTime": "2026-08-11T00:05:25.035167Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-822"
+      ]
+    },
+    {
+      "ordinal": 156,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/_wSvZkCNAOc._wSvZkCNAOc",
+      "createTime": "2026-08-11T00:15:33.530847Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 157,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/qF4NmMmYSCA.qF4NmMmYSCA",
+      "createTime": "2026-08-11T00:19:20.538527Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 158,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.ARfH0-riTy4",
+      "createTime": "2026-08-11T00:45:34.292959Z",
+      "category": "private-contact",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 159,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/CW0GJMi6E-4.CW0GJMi6E-4",
+      "createTime": "2026-08-11T01:06:27.158879Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 160,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/u3ADJ4KRWaM.u3ADJ4KRWaM",
+      "createTime": "2026-08-11T01:43:49.133743Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 161,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/x0ShxRTzD8I.x0ShxRTzD8I",
+      "createTime": "2026-08-11T01:47:06.231375Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-822"
+      ]
+    },
+    {
+      "ordinal": 162,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/BBInNFPF3cU.BBInNFPF3cU",
+      "createTime": "2026-08-11T02:01:08.508047Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 163,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/W1VXkgWuKTU.W1VXkgWuKTU",
+      "createTime": "2026-08-11T02:05:00.502479Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 164,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/4a1RtZ77A9Y.4a1RtZ77A9Y",
+      "createTime": "2026-08-11T17:53:28.151551Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 165,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Nax-wGBNQuQ.Nax-wGBNQuQ",
+      "createTime": "2026-08-11T20:15:39.288751Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4133"
+      ]
+    },
+    {
+      "ordinal": 166,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/4Xpo9He0Mdc.4Xpo9He0Mdc",
+      "createTime": "2026-08-11T20:18:09.893839Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 167,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ZfsFNgu6MiM.ZfsFNgu6MiM",
+      "createTime": "2026-08-12T00:45:31.187823Z",
+      "category": "shared-auth-3fa",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4118"
+      ]
+    },
+    {
+      "ordinal": 168,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/nbDELgDVPLM.nbDELgDVPLM",
+      "createTime": "2026-08-12T02:11:48.047823Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 169,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/vumXSXhsgB0.vumXSXhsgB0",
+      "createTime": "2026-08-12T02:13:17.551695Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 170,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/NBJtH1jsL_0.NBJtH1jsL_0",
+      "createTime": "2026-08-12T02:33:52.329439Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 171,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/qW6wjMploB4.qW6wjMploB4",
+      "createTime": "2026-08-12T03:03:16.645839Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 172,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Z6AzURNSkgM.Z6AzURNSkgM",
+      "createTime": "2026-08-12T03:03:33.928783Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 173,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ftf4ZemD8eY.ftf4ZemD8eY",
+      "createTime": "2026-08-12T03:55:30.520767Z",
+      "category": "shared-auth-3fa",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4118"
+      ]
+    },
+    {
+      "ordinal": 174,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/RpVV7hpX9z8.RpVV7hpX9z8",
+      "createTime": "2026-08-12T10:46:07.684079Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4117"
+      ]
+    },
+    {
+      "ordinal": 175,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.8Ef9irAWN1g",
+      "createTime": "2026-08-12T20:58:09.879711Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 176,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.N4KD_Rg90Ds",
+      "createTime": "2026-08-12T20:58:13.515839Z",
+      "category": "monorepo-submodules",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4279"
+      ]
+    },
+    {
+      "ordinal": 177,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/sHjTKgZwQeg.sHjTKgZwQeg",
+      "createTime": "2026-08-12T23:18:27.469263Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4091"
+      ]
+    },
+    {
+      "ordinal": 178,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/69juQXQLm0g.69juQXQLm0g",
+      "createTime": "2026-08-12T23:18:27.982751Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4127"
+      ]
+    },
+    {
+      "ordinal": 179,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/aKWiba3kGuU.aKWiba3kGuU",
+      "createTime": "2026-08-13T03:24:55.287951Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 180,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/emqno_gMZEA.emqno_gMZEA",
+      "createTime": "2026-08-13T18:32:46.138639Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 181,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/yFVmio0Yoqo.yFVmio0Yoqo",
+      "createTime": "2026-08-13T18:33:57.977327Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 182,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/TQaIsqdMthY.TQaIsqdMthY",
+      "createTime": "2026-08-14T05:08:08.880687Z",
+      "category": "cloudflare-infra",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4139"
+      ]
+    },
+    {
+      "ordinal": 183,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/l0q5iYYVce0.l0q5iYYVce0",
+      "createTime": "2026-08-14T18:02:14.177391Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4119"
+      ]
+    },
+    {
+      "ordinal": 184,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/6Zpqm6Nt1uo.6Zpqm6Nt1uo",
+      "createTime": "2026-08-14T18:02:53.685711Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4143"
+      ]
+    },
+    {
+      "ordinal": 185,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/YURg63Oe9qQ.YURg63Oe9qQ",
+      "createTime": "2026-08-14T20:13:59.812287Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4050"
+      ]
+    },
+    {
+      "ordinal": 186,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/aoPl6VSMHOM.aoPl6VSMHOM",
+      "createTime": "2026-08-14T21:23:15.349103Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4145"
+      ]
+    },
+    {
+      "ordinal": 187,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.f6sfVrdsLhQ",
+      "createTime": "2026-08-14T22:35:54.947855Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 188,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.6VhU36_1wxM",
+      "createTime": "2026-08-14T22:35:57.825711Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 189,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/nfmSw7st_JM.nfmSw7st_JM",
+      "createTime": "2026-08-15T09:48:48.626511Z",
+      "category": "empty",
+      "disposition": "excluded-empty",
+      "issueIds": []
+    },
+    {
+      "ordinal": 190,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/z9NmpK7PdUU.z9NmpK7PdUU",
+      "createTime": "2026-08-15T09:48:58.090303Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4070"
+      ]
+    },
+    {
+      "ordinal": 191,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/nUV3x-cvScM.nUV3x-cvScM",
+      "createTime": "2026-08-15T10:00:49.418287Z",
+      "category": "product-intake",
+      "disposition": "quarantined-private-contact",
+      "issueIds": [],
+      "sensitiveClass": "private-contact"
+    },
+    {
+      "ordinal": 192,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/2hlPEAmEZUA.2hlPEAmEZUA",
+      "createTime": "2026-08-16T16:09:56.720687Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4057"
+      ]
+    },
+    {
+      "ordinal": 193,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/PYT6wvnH-NM.PYT6wvnH-NM",
+      "createTime": "2026-08-17T21:29:24.135407Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4168"
+      ]
+    },
+    {
+      "ordinal": 194,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Iaohw-6FgyU.Iaohw-6FgyU",
+      "createTime": "2026-08-18T22:26:12.987743Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 195,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/EeXZWS7JfSI.EeXZWS7JfSI",
+      "createTime": "2026-08-18T22:32:36.062927Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4159"
+      ]
+    },
+    {
+      "ordinal": 196,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/9C1rRB67FH0.9C1rRB67FH0",
+      "createTime": "2026-08-19T00:02:12.810751Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 197,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/fyy2EdI_ZcY.fyy2EdI_ZcY",
+      "createTime": "2026-08-19T17:05:14.907007Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 198,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/mKBu2GyWMbs.mKBu2GyWMbs",
+      "createTime": "2026-08-19T18:11:28.071903Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 199,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/xvWRLxeDxsg.xvWRLxeDxsg",
+      "createTime": "2026-08-19T19:16:22.787567Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 200,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/c8taGVkI0pE.c8taGVkI0pE",
+      "createTime": "2026-08-19T20:01:58.323791Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4157"
+      ]
+    },
+    {
+      "ordinal": 201,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/iimN0dvvEkA.iimN0dvvEkA",
+      "createTime": "2026-08-19T20:23:10.673263Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 202,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/3msDs9FDcsQ.3msDs9FDcsQ",
+      "createTime": "2026-08-20T13:40:12.107567Z",
+      "category": "github-linear-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4174"
+      ]
+    },
+    {
+      "ordinal": 203,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/bE7XfAYqy8s.bE7XfAYqy8s",
+      "createTime": "2026-08-20T14:53:06.240047Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4150"
+      ]
+    },
+    {
+      "ordinal": 204,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/LMjPj7jKpj8.LMjPj7jKpj8",
+      "createTime": "2026-08-20T14:54:40.422767Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4150"
+      ]
+    },
+    {
+      "ordinal": 205,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/4Lt9u0DIsyY.4Lt9u0DIsyY",
+      "createTime": "2026-08-20T14:54:56.536719Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4150"
+      ]
+    },
+    {
+      "ordinal": 206,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/9a0tVRUJl-0.9a0tVRUJl-0",
+      "createTime": "2026-08-20T15:36:41.560639Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4173"
+      ]
+    },
+    {
+      "ordinal": 207,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/5eYGNmnVGj8.5eYGNmnVGj8",
+      "createTime": "2026-08-20T15:41:11.646783Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4150"
+      ]
+    },
+    {
+      "ordinal": 208,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/po7-9I1MmpQ.po7-9I1MmpQ",
+      "createTime": "2026-08-20T15:41:47.739695Z",
+      "category": "empty",
+      "disposition": "excluded-empty",
+      "issueIds": []
+    },
+    {
+      "ordinal": 209,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Sywl2AhHpW4.Sywl2AhHpW4",
+      "createTime": "2026-08-20T15:42:13.998367Z",
+      "category": "empty",
+      "disposition": "excluded-empty",
+      "issueIds": []
+    },
+    {
+      "ordinal": 210,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/5ri5ZmPL3Jg.5ri5ZmPL3Jg",
+      "createTime": "2026-08-20T16:10:55.789023Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4161"
+      ]
+    },
+    {
+      "ordinal": 211,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/-pQb4HPL_1w.-pQb4HPL_1w",
+      "createTime": "2026-08-21T12:55:15.349071Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4158"
+      ]
+    },
+    {
+      "ordinal": 212,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/7X1H3ZSJF00.7X1H3ZSJF00",
+      "createTime": "2026-08-21T12:55:42.568863Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4158"
+      ]
+    },
+    {
+      "ordinal": 213,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/BD7A-JX-Zmw.BD7A-JX-Zmw",
+      "createTime": "2026-08-21T12:55:49.143599Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4150"
+      ]
+    },
+    {
+      "ordinal": 214,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/7IeTVoeQ7bc.7IeTVoeQ7bc",
+      "createTime": "2026-08-21T12:55:55.850671Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4150"
+      ]
+    },
+    {
+      "ordinal": 215,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/dGecyLKgrqs.dGecyLKgrqs",
+      "createTime": "2026-08-21T15:13:07.398991Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4149"
+      ]
+    },
+    {
+      "ordinal": 216,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/VqEki15uKTM.VqEki15uKTM",
+      "createTime": "2026-08-21T20:24:17.736831Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4170"
+      ]
+    },
+    {
+      "ordinal": 217,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ajQukGZ9mAc.ajQukGZ9mAc",
+      "createTime": "2026-08-21T21:38:54.555567Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4164"
+      ]
+    },
+    {
+      "ordinal": 218,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/gM3wAmAlTXk.gM3wAmAlTXk",
+      "createTime": "2026-08-21T21:39:26.379551Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4149"
+      ]
+    },
+    {
+      "ordinal": 219,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/TYX3CzXPIK8.TYX3CzXPIK8",
+      "createTime": "2026-08-22T17:01:53.830719Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 220,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/zhXUarV3mjw.zhXUarV3mjw",
+      "createTime": "2026-08-22T17:36:52.711023Z",
+      "category": "ack",
+      "disposition": "skip-non-actionable",
+      "issueIds": []
+    },
+    {
+      "ordinal": 221,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/SvkoO3CvXTE.SvkoO3CvXTE",
+      "createTime": "2026-08-22T17:37:02.262511Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4156"
+      ]
+    },
+    {
+      "ordinal": 222,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/xE7rYHK0_NY.xE7rYHK0_NY",
+      "createTime": "2026-08-22T17:37:04.889935Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4172"
+      ]
+    },
+    {
+      "ordinal": 223,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/mh6NNUipO98.mh6NNUipO98",
+      "createTime": "2026-08-22T17:37:07.720335Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4148"
+      ]
+    },
+    {
+      "ordinal": 224,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/utSoAnTF-74.utSoAnTF-74",
+      "createTime": "2026-08-22T17:37:11.375887Z",
+      "category": "github-linear-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4162"
+      ]
+    },
+    {
+      "ordinal": 225,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/MlfxvrZaG1g.MlfxvrZaG1g",
+      "createTime": "2026-08-22T17:37:15.217071Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 226,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/SsxIboF1f6o.SsxIboF1f6o",
+      "createTime": "2026-08-22T18:59:28.452079Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4175"
+      ]
+    },
+    {
+      "ordinal": 227,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/fJekAwBY5jk.fJekAwBY5jk",
+      "createTime": "2026-08-22T19:09:28.770383Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 228,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/7Wto_8VP_YM.7Wto_8VP_YM",
+      "createTime": "2026-08-22T19:13:49.732095Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4147"
+      ]
+    },
+    {
+      "ordinal": 229,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/PQz8ZC_10xA.PQz8ZC_10xA",
+      "createTime": "2026-08-22T20:48:57.682095Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4171"
+      ]
+    },
+    {
+      "ordinal": 230,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Y-Upzlwdxrc.Y-Upzlwdxrc",
+      "createTime": "2026-08-22T20:49:03.219967Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4149"
+      ]
+    },
+    {
+      "ordinal": 231,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/B5bh0s7KVC4.B5bh0s7KVC4",
+      "createTime": "2026-08-22T21:10:21.408527Z",
+      "category": "sonus-auris",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4163"
+      ]
+    },
+    {
+      "ordinal": 232,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/cgVVpFQvQtg.cgVVpFQvQtg",
+      "createTime": "2026-08-22T23:22:11.529823Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4152"
+      ]
+    },
+    {
+      "ordinal": 233,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ivpAdKUQU0A.ivpAdKUQU0A",
+      "createTime": "2026-08-22T23:40:14.805999Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4166"
+      ]
+    },
+    {
+      "ordinal": 234,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ET6Na_Y6ERw.ET6Na_Y6ERw",
+      "createTime": "2026-08-22T23:40:58.942719Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4165"
+      ]
+    },
+    {
+      "ordinal": 235,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/5DZ12uPIygA.5DZ12uPIygA",
+      "createTime": "2026-08-22T23:44:20.490495Z",
+      "category": "nats-messaging",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4169"
+      ]
+    },
+    {
+      "ordinal": 236,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/aqwiE9DQGxg.aqwiE9DQGxg",
+      "createTime": "2026-08-22T23:50:44.935103Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4167"
+      ]
+    },
+    {
+      "ordinal": 237,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/kwMnos9ck1A.kwMnos9ck1A",
+      "createTime": "2026-08-23T00:22:09.632319Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4151"
+      ]
+    },
+    {
+      "ordinal": 238,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/rXS76LQ9XAI.rXS76LQ9XAI",
+      "createTime": "2026-08-23T00:27:08.109823Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 239,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/BCgFd1UjS5U.BCgFd1UjS5U",
+      "createTime": "2026-08-23T01:49:49.402927Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 240,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/UHc6XC7i-rY.UHc6XC7i-rY",
+      "createTime": "2026-08-23T17:02:40.341951Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4176"
+      ]
+    },
+    {
+      "ordinal": 241,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/1Am2cNudReU.1Am2cNudReU",
+      "createTime": "2026-08-23T21:34:07.621647Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 242,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/4qJAWnVdOdI.4qJAWnVdOdI",
+      "createTime": "2026-08-23T23:32:17.908767Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4154"
+      ]
+    },
+    {
+      "ordinal": 243,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/5PFleCgaA38.5PFleCgaA38",
+      "createTime": "2026-08-23T23:38:27.355375Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 244,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/cewj1ME1oFI.cewj1ME1oFI",
+      "createTime": "2026-08-24T00:08:23.976687Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 245,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/kpWmrhJ6T4s.kpWmrhJ6T4s",
+      "createTime": "2026-08-24T00:09:49.621871Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 246,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.Ii5lBG7Jcuc",
+      "createTime": "2026-08-24T01:24:23.980831Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4083",
+        "DEN-2308"
+      ]
+    },
+    {
+      "ordinal": 247,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.U1Wn_xwaZns",
+      "createTime": "2026-08-24T01:28:28.912575Z",
+      "category": "shared-auth-3fa",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4155"
+      ]
+    },
+    {
+      "ordinal": 248,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/OlIes3rdzVE.OlIes3rdzVE",
+      "createTime": "2026-08-24T01:28:34.009935Z",
+      "category": "shared-auth-3fa",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4155"
+      ]
+    },
+    {
+      "ordinal": 249,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/G8izkaD0Gl8.G8izkaD0Gl8",
+      "createTime": "2026-08-24T01:51:35.679039Z",
+      "category": "monorepo-submodules",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4160"
+      ]
+    },
+    {
+      "ordinal": 250,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/c9mbQy9AI_U.c9mbQy9AI_U",
+      "createTime": "2026-08-24T02:45:19.961935Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4153"
+      ]
+    },
+    {
+      "ordinal": 251,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/qFBa16iEy0A.qFBa16iEy0A",
+      "createTime": "2026-08-24T16:41:12.585039Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4245"
+      ]
+    },
+    {
+      "ordinal": 252,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Y6asqCbmQ7o.Y6asqCbmQ7o",
+      "createTime": "2026-08-24T17:58:36.777871Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4247"
+      ]
+    },
+    {
+      "ordinal": 253,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/fHs25GSz2_k.fHs25GSz2_k",
+      "createTime": "2026-08-24T18:51:42.578943Z",
+      "category": "nats-messaging",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4239"
+      ]
+    },
+    {
+      "ordinal": 254,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Frl6yHyiTAE.Frl6yHyiTAE",
+      "createTime": "2026-08-24T18:51:54.422847Z",
+      "category": "opto-sync",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4248"
+      ]
+    },
+    {
+      "ordinal": 255,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/lCGo7eUguLU.lCGo7eUguLU",
+      "createTime": "2026-08-24T19:08:46.990287Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 256,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/0pfuOVB_6-U.0pfuOVB_6-U",
+      "createTime": "2026-08-24T19:57:58.810319Z",
+      "category": "opto-sync",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4246"
+      ]
+    },
+    {
+      "ordinal": 257,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/S7N-u9ToAOY.S7N-u9ToAOY",
+      "createTime": "2026-08-24T20:28:13.110431Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4251"
+      ]
+    },
+    {
+      "ordinal": 258,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/audft90uoEo.audft90uoEo",
+      "createTime": "2026-08-24T20:29:25.103935Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 259,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/EqfwABgwqDY.EqfwABgwqDY",
+      "createTime": "2026-08-24T20:31:17.426399Z",
+      "category": "mcp-ai",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4243"
+      ]
+    },
+    {
+      "ordinal": 260,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/cGc7Ka1Vyx8.cGc7Ka1Vyx8",
+      "createTime": "2026-08-24T20:41:42.639375Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4242"
+      ]
+    },
+    {
+      "ordinal": 261,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/d2XtMzFgNxw.d2XtMzFgNxw",
+      "createTime": "2026-08-24T20:56:58.590287Z",
+      "category": "nats-messaging",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4241"
+      ]
+    },
+    {
+      "ordinal": 262,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/8nvjsogBb5k.8nvjsogBb5k",
+      "createTime": "2026-08-24T22:02:36.952127Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4238"
+      ]
+    },
+    {
+      "ordinal": 263,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/sggYMXNuLfQ.sggYMXNuLfQ",
+      "createTime": "2026-08-24T22:31:43.380079Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4249"
+      ]
+    },
+    {
+      "ordinal": 264,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/gb_OnxlfuN4.gb_OnxlfuN4",
+      "createTime": "2026-08-24T23:00:24.086047Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 265,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/lh_10xRL88E.lh_10xRL88E",
+      "createTime": "2026-08-24T23:59:11.208463Z",
+      "category": "k8s-ops",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4244"
+      ]
+    },
+    {
+      "ordinal": 266,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/GvvURmKTH7k.GvvURmKTH7k",
+      "createTime": "2026-08-25T00:56:14.562255Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4240"
+      ]
+    },
+    {
+      "ordinal": 267,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/iicf6mX8nRk.iicf6mX8nRk",
+      "createTime": "2026-08-25T16:02:04.198879Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 268,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/7ecrqDAoEqc.7ecrqDAoEqc",
+      "createTime": "2026-08-25T16:20:09.957135Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4278"
+      ]
+    },
+    {
+      "ordinal": 269,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/kyfDpPX-zH0.kyfDpPX-zH0",
+      "createTime": "2026-08-25T16:45:21.662527Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4277"
+      ]
+    },
+    {
+      "ordinal": 270,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/u2S6XCzhmD0.u2S6XCzhmD0",
+      "createTime": "2026-08-26T14:06:46.436559Z",
+      "category": "opto-sync",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4050",
+        "DEN-3971"
+      ]
+    },
+    {
+      "ordinal": 271,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/3doq1ZDJWOU.3doq1ZDJWOU",
+      "createTime": "2026-08-26T14:12:41.855215Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-834"
+      ]
+    },
+    {
+      "ordinal": 272,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/OZeGNpBfpyQ.OZeGNpBfpyQ",
+      "createTime": "2026-08-26T14:13:09.200831Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4050"
+      ]
+    },
+    {
+      "ordinal": 273,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/R4QaLjiM70A.R4QaLjiM70A",
+      "createTime": "2026-08-26T14:59:58.056223Z",
+      "category": "mcp-ai",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4246"
+      ]
+    },
+    {
+      "ordinal": 274,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/zjvzjrqRw_4.zjvzjrqRw_4",
+      "createTime": "2026-08-26T15:07:03.535615Z",
+      "category": "shared-auth-3fa",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4163"
+      ]
+    },
+    {
+      "ordinal": 275,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/k5QgTYddPLQ.k5QgTYddPLQ",
+      "createTime": "2026-08-26T17:28:02.756271Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    },
+    {
+      "ordinal": 276,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/NrrsF9LDBhc.NrrsF9LDBhc",
+      "createTime": "2026-08-27T15:25:52.800063Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-2308",
+        "DEN-2758"
+      ]
+    },
+    {
+      "ordinal": 277,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/v-L2YXK6r-U.v-L2YXK6r-U",
+      "createTime": "2026-08-27T16:22:06.573999Z",
+      "category": "pr-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4255"
+      ]
+    },
+    {
+      "ordinal": 278,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/hKJxCjS5X-Q.hKJxCjS5X-Q",
+      "createTime": "2026-08-27T16:46:56.126719Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4143"
+      ]
+    },
+    {
+      "ordinal": 279,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/9YnthEru_Ik.9YnthEru_Ik",
+      "createTime": "2026-08-27T16:59:40.883183Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4167"
+      ]
+    },
+    {
+      "ordinal": 280,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/mpj-2AEaHbY.mpj-2AEaHbY",
+      "createTime": "2026-08-27T17:02:05.218687Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4096",
+        "DEN-3945"
+      ]
+    },
+    {
+      "ordinal": 281,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/adyK87tsF_I.adyK87tsF_I",
+      "createTime": "2026-08-27T21:15:10.143135Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-822"
+      ]
+    },
+    {
+      "ordinal": 282,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/KfvmWkHE9cE.KfvmWkHE9cE",
+      "createTime": "2026-08-27T23:07:11.081823Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4096",
+        "DEN-3945"
+      ]
+    },
+    {
+      "ordinal": 283,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/BV-GRu4qrio.BV-GRu4qrio",
+      "createTime": "2026-08-28T14:41:09.922879Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing-reference",
+      "issueIds": [
+        "DEN-4211"
+      ]
+    },
+    {
+      "ordinal": 284,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/M9qsbHxSrHA.M9qsbHxSrHA",
+      "createTime": "2026-08-28T14:42:52.218767Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4211"
+      ]
+    },
+    {
+      "ordinal": 285,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/fGlYD-ONuY8.fGlYD-ONuY8",
+      "createTime": "2026-08-28T14:42:59.439647Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing-reference",
+      "issueIds": [
+        "DEN-4211"
+      ]
+    },
+    {
+      "ordinal": 286,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/_qhd6VQMkFA._qhd6VQMkFA",
+      "createTime": "2026-08-28T15:01:29.246015Z",
+      "category": "sonus-auris",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4279"
+      ]
+    },
+    {
+      "ordinal": 287,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/gy789ibYCiI.gy789ibYCiI",
+      "createTime": "2026-08-28T15:21:51.628847Z",
+      "category": "fiducia",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-608"
+      ]
+    },
+    {
+      "ordinal": 288,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/tMdKETg9O58.tMdKETg9O58",
+      "createTime": "2026-08-28T15:36:17.631631Z",
+      "category": "opto-sync",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4078",
+        "DEN-4165"
+      ]
+    },
+    {
+      "ordinal": 289,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/BXFQkrV_RRg.BXFQkrV_RRg",
+      "createTime": "2026-08-28T16:35:59.100271Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4078"
+      ]
+    },
+    {
+      "ordinal": 290,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/_oUe_XNHjYg._oUe_XNHjYg",
+      "createTime": "2026-08-28T17:04:54.894607Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4078",
+        "DEN-3043"
+      ]
+    },
+    {
+      "ordinal": 291,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/kVSD6txmJ1U.kVSD6txmJ1U",
+      "createTime": "2026-08-28T17:42:53.315663Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4083"
+      ]
+    },
+    {
+      "ordinal": 292,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/LCK9-OMk5ck.LCK9-OMk5ck",
+      "createTime": "2026-08-28T17:43:24.806703Z",
+      "category": "product-intake",
+      "disposition": "skip-non-actionable",
+      "issueIds": []
+    },
+    {
+      "ordinal": 293,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/8HaUlEh9t0A.8HaUlEh9t0A",
+      "createTime": "2026-08-28T18:06:02.415855Z",
+      "category": "opto-sync",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4078",
+        "DEN-4050"
+      ]
+    },
+    {
+      "ordinal": 294,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/7MOx089GREk.7MOx089GREk",
+      "createTime": "2026-08-28T18:06:13.866047Z",
+      "category": "product-intake",
+      "disposition": "skip-non-actionable",
+      "issueIds": []
+    },
+    {
+      "ordinal": 295,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/J607ACvVCFk.J607ACvVCFk",
+      "createTime": "2026-08-28T18:15:29.084751Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-3920",
+        "DEN-4078"
+      ]
+    },
+    {
+      "ordinal": 296,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/IQVdS3eyE7A.M27z49xnLVE",
+      "createTime": "2026-08-28T18:15:35.353599Z",
+      "category": "ack",
+      "disposition": "skip-non-actionable",
+      "issueIds": []
+    },
+    {
+      "ordinal": 297,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/4FpReSKDe48.4FpReSKDe48",
+      "createTime": "2026-08-28T18:18:53.576895Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4165"
+      ]
+    },
+    {
+      "ordinal": 298,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/MeXoNGXVDrk.MeXoNGXVDrk",
+      "createTime": "2026-08-28T18:18:59.404479Z",
+      "category": "ack",
+      "disposition": "skip-non-actionable",
+      "issueIds": []
+    },
+    {
+      "ordinal": 299,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/ZShlfo7wZLM.ZShlfo7wZLM",
+      "createTime": "2026-08-28T18:28:35.760639Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4165"
+      ]
+    },
+    {
+      "ordinal": 300,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/GRyfQpdy9Ao.GRyfQpdy9Ao",
+      "createTime": "2026-08-28T18:28:42.295455Z",
+      "category": "product-intake",
+      "disposition": "skip-non-actionable",
+      "issueIds": []
+    },
+    {
+      "ordinal": 301,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/KL16pVr9Z9g.KL16pVr9Z9g",
+      "createTime": "2026-08-28T18:47:39.159167Z",
+      "category": "zed-pkg",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-4055"
+      ]
+    },
+    {
+      "ordinal": 302,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/Y5WBzPWw_TE.Y5WBzPWw_TE",
+      "createTime": "2026-08-28T18:48:42.151007Z",
+      "category": "ack",
+      "disposition": "skip-non-actionable",
+      "issueIds": []
+    },
+    {
+      "ordinal": 303,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/TKKcJjkOpuc.TKKcJjkOpuc",
+      "createTime": "2026-08-28T20:20:00.882383Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-1906"
+      ]
+    },
+    {
+      "ordinal": 304,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/I5lDvl6D69s.I5lDvl6D69s",
+      "createTime": "2026-08-28T20:20:27.225871Z",
+      "category": "product-intake",
+      "disposition": "mapped-existing",
+      "issueIds": [
+        "DEN-1906"
+      ]
+    },
+    {
+      "ordinal": 305,
+      "sourceKey": "google-chat:AAQAoHKdzvI:spaces/AAQAoHKdzvI/messages/c_23bsSeJN4.c_23bsSeJN4",
+      "createTime": "2026-08-28T21:43:57.106495Z",
+      "category": "secret-bearing-agent-prompt",
+      "disposition": "mapped-existing-secret-quarantined",
+      "issueIds": [
+        "DEN-1230",
+        "DEN-27"
+      ],
+      "sensitiveClass": "credential-bearing"
+    }
+  ]
+}
