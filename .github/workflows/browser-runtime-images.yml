@@ -203,11 +203,16 @@ jobs:
             sleep 0.2
           done
 
-          echo 'Start final image in an explicitly authorized local-fixture mode'
+          echo 'Start final image with the production Kubernetes security posture'
           docker run --detach \
             --name dd-web-scraper-smoke \
             --add-host=host.docker.internal:host-gateway \
             --publish 18097:18097 \
+            --user 1000:1000 \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges:true \
+            --tmpfs /tmp:rw,nosuid,nodev,size=536870912,uid=1000,gid=1000,mode=1777 \
             --env BROWSER_AGENT_ALLOWED_DOMAINS=host.docker.internal \
             --env SCRAPER_ALLOW_PRIVATE_NETWORKS=true \
             --env SCRAPER_ALLOW_UNAUTHENTICATED=true \
@@ -236,6 +241,11 @@ jobs:
           SCRAPER_SMOKE_BASE_URL=http://127.0.0.1:18097 \
           SCRAPER_SMOKE_TARGET_URL=http://host.docker.internal:19090/index.html \
             node remote/deployments/web-scraper-service/tests/runtime-smoke.mjs
+
+          echo 'Verify graceful supervisor/core shutdown under the same security posture'
+          docker stop --time 10 dd-web-scraper-smoke >/dev/null
+          test "$(docker inspect --format '{{.State.ExitCode}}' dd-web-scraper-smoke)" = '0'
+          docker logs dd-web-scraper-smoke 2>&1 | grep -q '"event":"supervisor_shutdown"'
 
       - name: Smoke scraper secure defaults
         if: github.event_name == 'pull_request' && matrix.name == 'dd-web-scraper'
@@ -284,6 +294,11 @@ jobs:
             --name dd-web-scraper-secure-smoke \
             --add-host=host.docker.internal:host-gateway \
             --publish 18099:18099 \
+            --user 1000:1000 \
+            --read-only \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges:true \
+            --tmpfs /tmp:rw,nosuid,nodev,size=536870912,uid=1000,gid=1000,mode=1777 \
             --env BROWSER_AGENT_ALLOWED_DOMAINS=host.docker.internal \
             --env SERVER_AUTH_SECRET=runtime-smoke-secret \
             "$SCRAPER_IMAGE" \
