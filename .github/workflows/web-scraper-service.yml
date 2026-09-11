@@ -37,23 +37,92 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           show-progress: false
+          submodules: false
 
       - name: Validate this workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/web-scraper-service.yml
 
+      - name: Reject mutable workflow dependencies
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/web-scraper-service.yml')
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if not match:
+                  continue
+              reference = match.group(1)
+              pinned_action = re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference)
+              pinned_image = re.fullmatch(r'docker://[^@]+@sha256:[0-9a-fA-F]{64}', reference)
+              if not reference.startswith('./') and not pinned_action and not pinned_image:
+                  failures.append(f'{path}:{number}: mutable dependency: {reference}')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      # The public superproject intentionally omits the private telemetry gitlink.
+      # Reuse the repository's established compile/runtime contract shim here;
+      # private telemetry integration remains covered by the independent private-
+      # submodule/Fiducia lanes instead of blocking scraper source admission.
+      - name: Create contract-only telemetry package shim
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export function initTelemetry() {
+            return { shutdown: async () => undefined };
+          }
+          export function instrumentFastify() {}
+          export function loggerMixin() {
+            return {};
+          }
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          export interface TelemetryGuard {
+            shutdown(): Promise<void>;
+          }
+          export function initTelemetry(service: string): TelemetryGuard;
+          export function instrumentFastify(app: unknown, options?: { service?: string }): void;
+          export function loggerMixin(): Record<string, unknown>;
+          TS
+
       - name: Install pnpm declared by the service
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 9.15.4
 
-      - name: Install Node.js
+      - name: Install Node.js 22.23.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
-          node-version: '22'
+          node-version: '22.23.1'
           cache: pnpm
           cache-dependency-path: remote/deployments/web-scraper-service/pnpm-lock.yaml
+
+      - name: Verify toolchain identity
+        run: |
+          set -euo pipefail
+          test "$(node --version)" = 'v22.23.1'
+          test "$(pnpm --version)" = '9.15.4'
 
       - name: Install immutable service dependencies
         working-directory: remote/deployments/web-scraper-service
