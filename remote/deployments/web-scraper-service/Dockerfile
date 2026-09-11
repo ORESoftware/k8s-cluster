@@ -3,10 +3,12 @@
 ARG PLAYWRIGHT_VERSION=1.56.0
 ARG FLAGS2ENV_REV=333c2ace93c362d274171ab0e0edf613d96a8e59
 ARG TJSV_REV=8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
+ARG TYPESPEC_ASSET_EMITTER_VERSION=0.79.1
 
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS builder
 ARG FLAGS2ENV_REV
 ARG TJSV_REV
+ARG TYPESPEC_ASSET_EMITTER_VERSION
 
 # Build from the repository root because @dd/telemetry is a pinned file
 # dependency in the private remote/libs submodule:
@@ -40,12 +42,14 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
 
 # tjsv invokes the TypeSpec compiler against this project. Install the pinned
 # validator into this package's node_modules for the builder only so TypeSpec
-# package imports (notably @typespec/json-schema) resolve from the scraper's
-# project root. `npm exec --package=...` only puts the binary on PATH and leaves
-# those compiler-owned imports invisible from the authored .tsp file.
+# package imports resolve from the scraper project root. The upstream tjsv
+# package-lock pins @typespec/asset-emitter 0.79.1 alongside compiler/json-schema
+# 1.15.0; pin that transitive package here as well so a fresh pnpm consumer does
+# not float to asset-emitter 0.79.2, whose compiler peer requires ^1.16.0.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm add --save-dev --lockfile=false \
-      "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz"
+      "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" \
+      "@typespec/asset-emitter@${TYPESPEC_ASSET_EMITTER_VERSION}"
 
 COPY remote/deployments/web-scraper-service/contracts ./contracts
 COPY remote/deployments/web-scraper-service/src ./src
