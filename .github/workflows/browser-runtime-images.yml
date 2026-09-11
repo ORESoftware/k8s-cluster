@@ -110,7 +110,30 @@ jobs:
             --load \
             .
 
-      - name: Smoke scraper CLI, supervisor, Playwright, and Puppeteer
+      - name: Inspect final scraper image integrity
+        if: github.event_name == 'pull_request' && matrix.name == 'dd-web-scraper'
+        env:
+          SCRAPER_IMAGE: ghcr.io/oresoftware/dd-web-scraper:${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test "$(docker image inspect --format '{{.Config.User}}' "$SCRAPER_IMAGE")" = 'pwuser'
+          docker run --rm --entrypoint sh "$SCRAPER_IMAGE" -ceu '
+            test "$(id -u)" -ne 0
+            test "$(whoami)" = pwuser
+            test "$(command -v flags2env)" = /opt/flags2env/bin/flags2env
+            flags2env --version
+            flags2env audit .cli-flags.toml
+            node -e "const major=Number(process.versions.node.split(\".\")[0]); if (major < 22) process.exit(1)"
+            test ! -e node_modules/typescript
+            test ! -e node_modules/tsx
+            test ! -e node_modules/@oresoftware/typespec-json-schema-validator
+            test ! -e node_modules/@typespec/compiler
+            test ! -e node_modules/@typespec/json-schema
+          '
+
+      - name: Smoke scraper authorized runtime matrix
         if: github.event_name == 'pull_request' && matrix.name == 'dd-web-scraper'
         env:
           SCRAPER_IMAGE: ghcr.io/oresoftware/dd-web-scraper:${{ steps.meta.outputs.version }}
@@ -119,7 +142,6 @@ jobs:
           set -euo pipefail
 
           fixture_log="$RUNNER_TEMP/dd-web-scraper-fixture.log"
-          scraper_log="$RUNNER_TEMP/dd-web-scraper-runtime.log"
           fixture_pid=''
 
           cleanup() {
@@ -130,16 +152,13 @@ jobs:
               echo '--- fixture server log ---'
               cat "$fixture_log" 2>/dev/null || true
             fi
-            docker stop dd-web-scraper-smoke >/dev/null 2>&1 || true
+            docker stop --time 10 dd-web-scraper-smoke >/dev/null 2>&1 || true
             if [[ -n "$fixture_pid" ]]; then
               kill "$fixture_pid" >/dev/null 2>&1 || true
             fi
             return "$status"
           }
           trap cleanup EXIT
-
-          echo 'Audit the production flags-2-env contract from inside the final image'
-          docker run --rm "$SCRAPER_IMAGE" flags2env audit .cli-flags.toml
 
           echo 'Exercise typed CLI values plus canonical boolean negation'
           cli_json="$({
@@ -151,6 +170,8 @@ jobs:
                 --core-port=18098 \
                 --default-strategy=auto \
                 --max-concurrent=2 \
+                --supervisor-max-body-bytes=2048 \
+                --supervisor-max-core-response-bytes=65536 \
                 --no-apify-fallback
           })"
           node -e '
@@ -159,20 +180,20 @@ jobs:
             if (value.SCRAPER_CORE_PORT !== "18098") throw new Error(`SCRAPER_CORE_PORT=${value.SCRAPER_CORE_PORT}`);
             if (value.SCRAPER_DEFAULT_STRATEGY !== "auto") throw new Error(`SCRAPER_DEFAULT_STRATEGY=${value.SCRAPER_DEFAULT_STRATEGY}`);
             if (value.SCRAPER_MAX_CONCURRENT !== "2") throw new Error(`SCRAPER_MAX_CONCURRENT=${value.SCRAPER_MAX_CONCURRENT}`);
+            if (value.SCRAPER_SUPERVISOR_MAX_BODY_BYTES !== "2048") throw new Error(`body cap=${value.SCRAPER_SUPERVISOR_MAX_BODY_BYTES}`);
+            if (value.SCRAPER_SUPERVISOR_MAX_CORE_RESPONSE_BYTES !== "65536") throw new Error(`response cap=${value.SCRAPER_SUPERVISOR_MAX_CORE_RESPONSE_BYTES}`);
             if (value.APIFY_FALLBACK_ENABLED !== "false") throw new Error(`APIFY_FALLBACK_ENABLED=${value.APIFY_FALLBACK_ENABLED}`);
           ' "$cli_json"
 
           echo 'Render entrypoint help without starting browser or network listeners'
           docker run --rm "$SCRAPER_IMAGE" node dist/scraper-entrypoint.js --help | grep -q -- '--default-strategy'
 
-          python3 -m http.server 19090 \
-            --bind 0.0.0.0 \
-            --directory remote/deployments/web-scraper-service/tests/fixtures/runtime-smoke \
+          node remote/deployments/web-scraper-service/tests/runtime-fixture-server.mjs \
             >"$fixture_log" 2>&1 &
           fixture_pid=$!
 
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:19090/index.html >/dev/null; then
+            if curl --fail --silent --show-error http://127.0.0.1:19090/healthz >/dev/null; then
               break
             fi
             if [[ "$attempt" == 30 ]]; then
@@ -182,7 +203,7 @@ jobs:
             sleep 0.2
           done
 
-          echo 'Start the final production image through its real flags-2-env entrypoint'
+          echo 'Start final image in an explicitly authorized local-fixture mode'
           docker run --detach \
             --name dd-web-scraper-smoke \
             --add-host=host.docker.internal:host-gateway \
@@ -197,8 +218,9 @@ jobs:
               --core-port=18098 \
               --default-strategy=auto \
               --max-concurrent=2 \
-              --apify-fallback \
-            >"$scraper_log"
+              --supervisor-max-body-bytes=2048 \
+              --supervisor-max-core-response-bytes=65536 \
+              --apify-fallback
 
           for attempt in $(seq 1 120); do
             if curl --fail --silent --show-error http://127.0.0.1:18097/healthz >/dev/null; then
@@ -214,3 +236,101 @@ jobs:
           SCRAPER_SMOKE_BASE_URL=http://127.0.0.1:18097 \
           SCRAPER_SMOKE_TARGET_URL=http://host.docker.internal:19090/index.html \
             node remote/deployments/web-scraper-service/tests/runtime-smoke.mjs
+
+      - name: Smoke scraper secure defaults
+        if: github.event_name == 'pull_request' && matrix.name == 'dd-web-scraper'
+        env:
+          SCRAPER_IMAGE: ghcr.io/oresoftware/dd-web-scraper:${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fixture_log="$RUNNER_TEMP/dd-web-scraper-secure-fixture.log"
+          fixture_pid=''
+
+          cleanup() {
+            status=$?
+            if (( status != 0 )); then
+              echo '--- secure-default scraper log ---'
+              docker logs dd-web-scraper-secure-smoke 2>&1 || true
+              echo '--- secure fixture log ---'
+              cat "$fixture_log" 2>/dev/null || true
+            fi
+            docker stop --time 10 dd-web-scraper-secure-smoke >/dev/null 2>&1 || true
+            if [[ -n "$fixture_pid" ]]; then
+              kill "$fixture_pid" >/dev/null 2>&1 || true
+            fi
+            return "$status"
+          }
+          trap cleanup EXIT
+
+          SCRAPER_FIXTURE_PORT=19091 \
+            node remote/deployments/web-scraper-service/tests/runtime-fixture-server.mjs \
+            >"$fixture_log" 2>&1 &
+          fixture_pid=$!
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:19091/healthz >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 30 ]]; then
+              echo 'secure fixture server did not become ready' >&2
+              exit 1
+            fi
+            sleep 0.2
+          done
+
+          docker run --detach \
+            --name dd-web-scraper-secure-smoke \
+            --add-host=host.docker.internal:host-gateway \
+            --publish 18099:18099 \
+            --env SERVER_AUTH_SECRET=runtime-smoke-secret \
+            "$SCRAPER_IMAGE" \
+            node dist/scraper-entrypoint.js \
+              --port=18099 \
+              --core-port=18100 \
+              --default-strategy=native-fetch \
+              --max-concurrent=1
+
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent --show-error http://127.0.0.1:18099/healthz >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 120 ]]; then
+              echo 'secure-default scraper did not become ready' >&2
+              exit 1
+            fi
+            sleep 0.25
+          done
+
+          node - <<'NODE'
+          const assert = require('node:assert/strict');
+          const base = 'http://127.0.0.1:18099';
+          const body = JSON.stringify({
+            url: 'http://host.docker.internal:19091/index.html',
+            strategy: 'native-fetch',
+            includeText: true,
+          });
+
+          const unauthenticated = await fetch(`${base}/scrape`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body,
+          });
+          const unauthenticatedBody = await unauthenticated.json();
+          assert.equal(unauthenticated.status, 401);
+          assert.equal(unauthenticatedBody.error, 'unauthorized');
+
+          const authenticated = await fetch(`${base}/scrape`, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-server-auth': 'runtime-smoke-secret',
+            },
+            body,
+          });
+          const authenticatedBody = await authenticated.json();
+          assert.equal(authenticated.status, 400, JSON.stringify(authenticatedBody));
+          assert.match(authenticatedBody.error ?? '', /blocked by scraper network policy/i);
+          assert.equal(authenticatedBody.fallback, undefined);
+          NODE
