@@ -1,11 +1,16 @@
+import "@typespec/json-schema";
+using TypeSpec.JsonSchema;
+
 namespace DdWebScraper;
 
+@id("WaitUntil")
 enum WaitUntil {
   load: "load",
   domcontentloaded: "domcontentloaded",
   networkidle: "networkidle",
 }
 
+@id("ScrapeFallbackRequest")
 model ScrapeFallbackRequest {
   requestId?: string;
   url: string;
@@ -27,6 +32,7 @@ model ScrapeFallbackRequest {
   respectRobots?: boolean;
 }
 
+@id("FallbackProvenance")
 model FallbackProvenance {
   provider: string;
   actorId: string;
