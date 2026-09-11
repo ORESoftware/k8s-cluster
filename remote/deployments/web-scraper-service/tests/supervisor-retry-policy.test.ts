@@ -7,8 +7,18 @@ import {
   classifyLocalFailure,
   decideNextLocalRetry,
   isLocalRetryEligible,
+  isLocalScrapeStrategy,
   remainingBudgetMs,
 } from '../src/supervisor-retry-policy.js';
+
+test('strategy guard accepts only canonical local strategy identities', () => {
+  for (const strategy of ['native-fetch', 'cheerio', 'jsdom', 'linkedom', 'playwright', 'puppeteer', 'browserless']) {
+    assert.equal(isLocalScrapeStrategy(strategy), true, strategy);
+  }
+  for (const value of ['auto', 'fetch', 'browserless.io', '', null, 42]) {
+    assert.equal(isLocalScrapeStrategy(value), false, String(value));
+  }
+});
 
 test('policy, auth, and CAPTCHA failures remain terminal', () => {
   const cases: Array<[number, string]> = [
@@ -133,6 +143,8 @@ test('next retry decision chooses the first uncompleted adapter and caps its tim
       nowMs: 116_000,
       maxTotalMs: 120_000,
       requestedTimeoutMs: 30_000,
+      retryCount: 0,
+      maxRetries: 3,
     }),
     {
       retry: true,
@@ -144,47 +156,64 @@ test('next retry decision chooses the first uncompleted adapter and caps its tim
 });
 
 test('next retry decision advances deterministically without repeating adapters', () => {
-  assert.equal(
-    decideNextLocalRetry({
-      requestedStrategy: 'auto',
-      completedStrategies: ['native-fetch', 'playwright'],
-      browserlessConfigured: true,
-      autoUseBrowserless: true,
-      lastStatusCode: 500,
-      lastError: 'playwright page crashed',
-      startedAtMs: 0,
-      nowMs: 5_000,
-      maxTotalMs: 120_000,
-      requestedTimeoutMs: 30_000,
-    }).strategy,
-    'puppeteer',
-  );
+  const second = decideNextLocalRetry({
+    requestedStrategy: 'auto',
+    completedStrategies: ['native-fetch', 'playwright'],
+    browserlessConfigured: true,
+    autoUseBrowserless: true,
+    lastStatusCode: 500,
+    lastError: 'playwright page crashed',
+    startedAtMs: 0,
+    nowMs: 5_000,
+    maxTotalMs: 120_000,
+    requestedTimeoutMs: 30_000,
+    retryCount: 1,
+    maxRetries: 3,
+  });
+  assert.equal(second.retry, true);
+  if (second.retry) assert.equal(second.strategy, 'puppeteer');
 
-  assert.equal(
-    decideNextLocalRetry({
-      requestedStrategy: 'auto',
-      completedStrategies: ['native-fetch', 'playwright', 'puppeteer'],
-      browserlessConfigured: true,
-      autoUseBrowserless: true,
-      lastStatusCode: 500,
-      lastError: 'browser navigation timeout',
-      startedAtMs: 0,
-      nowMs: 5_000,
-      maxTotalMs: 120_000,
-      requestedTimeoutMs: 30_000,
-    }).strategy,
-    'browserless',
-  );
+  const third = decideNextLocalRetry({
+    requestedStrategy: 'auto',
+    completedStrategies: ['native-fetch', 'playwright', 'puppeteer'],
+    browserlessConfigured: true,
+    autoUseBrowserless: true,
+    lastStatusCode: 500,
+    lastError: 'browser navigation timeout',
+    startedAtMs: 0,
+    nowMs: 5_000,
+    maxTotalMs: 120_000,
+    requestedTimeoutMs: 30_000,
+    retryCount: 2,
+    maxRetries: 3,
+  });
+  assert.equal(third.retry, true);
+  if (third.retry) assert.equal(third.strategy, 'browserless');
 });
 
-test('retry decision stops for explicit strategies, terminal failures, exhausted plans, and exhausted budgets', () => {
+test('retry decision stops for abort, explicit strategies, terminal failures, limits, exhausted plans, and budgets', () => {
   const base = {
     browserlessConfigured: false,
     autoUseBrowserless: false,
     startedAtMs: 0,
     maxTotalMs: 120_000,
     requestedTimeoutMs: 30_000,
+    retryCount: 0,
+    maxRetries: 3,
   } as const;
+
+  assert.deepEqual(
+    decideNextLocalRetry({
+      ...base,
+      requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch'],
+      lastStatusCode: 502,
+      lastError: 'network timeout',
+      nowMs: 1_000,
+      aborted: true,
+    }),
+    { retry: false, failureClass: 'timeout', reason: 'aborted' },
+  );
 
   assert.deepEqual(
     decideNextLocalRetry({
@@ -214,6 +243,19 @@ test('retry decision stops for explicit strategies, terminal failures, exhausted
     decideNextLocalRetry({
       ...base,
       requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch'],
+      lastStatusCode: 502,
+      lastError: 'fetch failed: ECONNRESET',
+      nowMs: 1_000,
+      retryCount: 3,
+    }),
+    { retry: false, failureClass: 'network', reason: 'retry-limit' },
+  );
+
+  assert.deepEqual(
+    decideNextLocalRetry({
+      ...base,
+      requestedStrategy: 'auto',
       completedStrategies: ['native-fetch', 'playwright', 'puppeteer'],
       lastStatusCode: 500,
       lastError: 'browser navigation timeout',
@@ -233,4 +275,22 @@ test('retry decision stops for explicit strategies, terminal failures, exhausted
     }),
     { retry: false, failureClass: 'network', reason: 'budget-exhausted' },
   );
+});
+
+test('invalid retry counters fail closed', () => {
+  const base = {
+    requestedStrategy: 'auto' as const,
+    completedStrategies: ['native-fetch'] as const,
+    browserlessConfigured: false,
+    autoUseBrowserless: false,
+    lastStatusCode: 502,
+    lastError: 'network timeout',
+    startedAtMs: 0,
+    nowMs: 1_000,
+    maxTotalMs: 120_000,
+    requestedTimeoutMs: 30_000,
+  };
+  assert.throws(() => decideNextLocalRetry({ ...base, retryCount: -1, maxRetries: 3 }), TypeError);
+  assert.throws(() => decideNextLocalRetry({ ...base, retryCount: 0, maxRetries: -1 }), TypeError);
+  assert.throws(() => decideNextLocalRetry({ ...base, retryCount: 0.5, maxRetries: 3 }), TypeError);
 });
