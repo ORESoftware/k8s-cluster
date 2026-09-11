@@ -145,6 +145,23 @@ assert.match(robotsOverrideDenied.body.error ?? '', /robots\.txt override is blo
 const unsupportedProtocol = await scrape('native-fetch', { url: 'file:///etc/passwd' }, 400);
 assert.match(unsupportedProtocol.body.error ?? '', /only http and https URLs are supported/i);
 
+const credentialTarget = new URL(targetUrl);
+credentialTarget.username = 'runtime-smoke-user';
+credentialTarget.password = 'runtime-smoke-secret';
+const credentialDenied = await scrape('native-fetch', { url: credentialTarget.toString() }, 400);
+assert.match(credentialDenied.body.error ?? '', /URL credentials are blocked by scraper policy/i);
+assert.equal(credentialDenied.body.fallback, undefined, 'URL credential denial must never trigger fallback');
+assert.doesNotMatch(JSON.stringify(credentialDenied.body), /runtime-smoke-secret/);
+
+const sensitiveHeaderDenied = await scrape(
+  'native-fetch',
+  { headers: { authorization: 'Bearer runtime-smoke-sensitive-value' } },
+  400,
+);
+assert.match(sensitiveHeaderDenied.body.error ?? '', /blocked sensitive outbound header: authorization/i);
+assert.equal(sensitiveHeaderDenied.body.fallback, undefined, 'sensitive-header denial must never trigger fallback');
+assert.doesNotMatch(JSON.stringify(sensitiveHeaderDenied.body), /runtime-smoke-sensitive-value/);
+
 const badStrategy = await jsonResponse('/scrape', {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
@@ -231,6 +248,8 @@ console.log(JSON.stringify({
     'robots-denial',
     'robots-override-denial',
     'protocol-policy',
+    'url-credential-denial-and-redaction',
+    'sensitive-header-denial-and-redaction',
     'strategy-validation',
     'concurrency-load-shedding',
     'supervisor-request-cap',
