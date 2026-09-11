@@ -1,0 +1,21 @@
+# Declarative k3d cluster for live-mutex-rs BrokerRaft. 1 server + 2 agents so
+# the three raft pods land on different nodes — real cross-node Raft replication,
+# same shape as the EC2 kubeadm target (#4). k3s ships a `local-path` default
+# StorageClass, so the StatefulSet volumeClaimTemplates (durable raft data dir)
+# provision automatically.
+#
+#   k3d cluster create --config deploy/k3d/cluster.yaml
+#   k3d image import live-mutex-rs-raft:dev -c live-mutex-rs
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: live-mutex-rs
+servers: 1
+agents: 2
+options:
+  k3d:
+    wait: true
+    timeout: "120s"
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.oresoftware</groupId>
+  <artifactId>dd-network-mutex-client</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+
+  <name>dd-rust-network-mutex Java client</name>
+  <description>
+    Zero-dependency Java 17 client for the dd-rust-network-mutex broker. Mirrors
+    ../../PROTOCOL.md (camelCase, newline-delimited JSON) with a typed enum
+    discriminator instead of magic strings.
+  </description>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <!-- Intentionally dependency-free: JSON is hand-rolled in Json.java so the
+       client has no transitive footprint. Tests are plain main() classes
+       (ProtocolTest) runnable without JUnit, so `./build.sh` works without a
+       network fetch; this pom is provided for Maven-based consumers. -->
+</project>

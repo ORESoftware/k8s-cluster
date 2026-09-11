@@ -1,0 +1,23 @@
+{
+  "name": "@dd/rust-network-mutex-client-ts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript client + comparison harness for rust-network-mutex-rs (and the upstream live-mutex broker for benchmarks).",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "smoke": "tsx src/smoke.ts",
+    "compare": "tsx src/compare.ts",
+    "probe": "tsx src/latency_probe.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "live-mutex": "0.2.25"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.0"
+  }
+}

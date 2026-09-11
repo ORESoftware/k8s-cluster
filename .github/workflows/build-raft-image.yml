@@ -1,0 +1,95 @@
+name: Build Raft Image
+
+# Builds the BrokerRaft container (Dockerfile.raft) and pushes it to Docker Hub
+# so the k8s StatefulSet can run a prebuilt binary instead of compiling from
+# source on every pod start (that runtime `cargo run` is what saturates the
+# node and causes leader-election churn under load).
+#
+# Requires repo secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN. Without them the
+# job is skipped, so it is safe to merge before the secrets are configured.
+
+on:
+  push:
+    branches:
+      - dev
+    tags:
+      - 'v*'
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'Dockerfile.raft'
+      - 'lmx-raft.toml'
+      - '.github/workflows/build-raft-image.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-raft-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: docker.io/oresoftware/live-mutex-rs-raft
+
+jobs:
+  image:
+    name: Build and push BrokerRaft image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Skip if Docker Hub creds are not configured (e.g. forks).
+    if: ${{ github.repository_owner == 'ORESoftware' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify Docker Hub credentials present
+        id: creds
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "${DOCKERHUB_USERNAME}" ] || [ -z "${DOCKERHUB_TOKEN}" ]; then
+            echo "have_creds=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN not set; skipping image push."
+          else
+            echo "have_creds=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Derive image tags
+        if: steps.creds.outputs.have_creds == 'true'
+        id: meta
+        run: |
+          ver=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          sha=$(git rev-parse --short HEAD)
+          ref="${GITHUB_REF_NAME//\//-}"
+          tags="${IMAGE}:${ref},${IMAGE}:${ref}-${sha},${IMAGE}:${ver}"
+          if [ "${ref}" = "dev" ]; then
+            tags="${tags},${IMAGE}:latest"
+          fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          echo "Building tags: ${tags}"
+
+      - name: Set up Docker Buildx
+        if: steps.creds.outputs.have_creds == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: steps.creds.outputs.have_creds == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        if: steps.creds.outputs.have_creds == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.raft
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
