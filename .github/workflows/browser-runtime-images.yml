@@ -187,6 +187,7 @@ jobs:
             --name dd-web-scraper-smoke \
             --add-host=host.docker.internal:host-gateway \
             --publish 18097:18097 \
+            --env BROWSER_AGENT_ALLOWED_DOMAINS=host.docker.internal \
             --env SCRAPER_ALLOW_PRIVATE_NETWORKS=true \
             --env SCRAPER_ALLOW_UNAUTHENTICATED=true \
             --env SCRAPER_MIN_ORIGIN_DELAY_MS=1 \
