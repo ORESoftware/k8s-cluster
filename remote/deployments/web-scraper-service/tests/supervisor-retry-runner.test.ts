@@ -39,9 +39,32 @@ test('runs retry adapters sequentially and stops immediately on success', async 
 
   assert.deepEqual(executed, ['playwright', 'puppeteer']);
   assert.equal(result.response.statusCode, 200);
-  assert.equal(result.stopReason, 'terminal-failure');
+  assert.equal(result.stopReason, 'succeeded');
   assert.deepEqual(result.completedStrategies, ['native-fetch', 'playwright', 'puppeteer']);
   assert.deepEqual(result.retries.map((attempt) => attempt.retryIndex), [1, 2]);
+});
+
+test('terminal client responses remain failures and never widen the retry ladder', async () => {
+  let executions = 0;
+  const result = await retryLocalFailures({
+    initialResponse: { statusCode: 429, error: 'rate limited by upstream', strategy: 'native-fetch' },
+    requestedStrategy: 'auto',
+    browserlessConfigured: true,
+    autoUseBrowserless: true,
+    startedAtMs: 0,
+    maxTotalMs: 120_000,
+    requestedTimeoutMs: 30_000,
+    maxRetries: 3,
+    inspect,
+    execute: async () => {
+      executions += 1;
+      throw new Error('must not execute');
+    },
+  });
+
+  assert.equal(executions, 0);
+  assert.equal(result.stopReason, 'terminal-failure');
+  assert.equal(result.response.statusCode, 429);
 });
 
 test('remaining wall-clock budget shrinks later attempt timeouts', async () => {
