@@ -89,6 +89,13 @@ type = "integer"
 default = 60000
 help = "Maximum caller-selected local scrape timeout."
 
+[flags.max-total-timeout-ms]
+env = "SCRAPER_MAX_TOTAL_TIMEOUT_MS"
+aliases = ["max-total-timeout-ms"]
+type = "integer"
+default = 120000
+help = "Maximum local-attempt plus fallback-delay plus external-provider timeout budget."
+
 [flags.dns-timeout-ms]
 env = "SCRAPER_DNS_TIMEOUT_MS"
 aliases = ["dns-timeout-ms"]
