@@ -11,6 +11,8 @@ import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+import { tryConsumeProviderStartBudget, pruneProviderStarts } from './provider-start-budget.js';
+
 import {
   classifyFallback,
   readApifyFallbackConfig,
@@ -32,22 +34,26 @@ const maxCoreResponseBytes = readIntegerEnv(
   25_000_000,
 );
 const apifyConfig = readApifyFallbackConfig();
+const apifyMaxPerMinute = readIntegerEnv('APIFY_FALLBACK_MAX_PER_MINUTE', 20, 1, 600);
 
 if (corePort === externalPort && (externalHost === coreHost || externalHost === '127.0.0.1')) {
   throw new Error('SCRAPER_CORE_PORT must differ from PORT');
 }
 
+type SupervisorSkipReason = FallbackDecisionReason | 'provider-rate-limit';
+
 const fallbackMetrics = {
   attempts: 0,
   success: 0,
   failure: 0,
-  skipped: new Map<FallbackDecisionReason, number>(),
+  skipped: new Map<SupervisorSkipReason, number>(),
 };
 
 let shuttingDown = false;
 let child: ChildProcess | null = null;
 let apifyInFlight = 0;
 let apifyCooldownUntil = 0;
+const apifyStarts: number[] = [];
 
 const server = createServer((request, response) => {
   void routeRequest(request, response).catch((error) => {
@@ -84,6 +90,7 @@ async function main(): Promise<void> {
     apifyFallbackEnabled: apifyConfig.enabled,
     apifyFallbackConfigured: apifyConfig.enabled && Boolean(apifyConfig.token),
     apifyActorId: apifyConfig.actorId,
+    apifyMaxPerMinute,
   });
 }
 
@@ -202,10 +209,15 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
     return;
   }
 
-  fallbackMetrics.attempts += 1;
   apifyInFlight += 1;
   try {
     if (apifyConfig.minDelayMs > 0) await delay(apifyConfig.minDelayMs);
+    if (!tryConsumeProviderStartBudget(apifyStarts, Date.now(), apifyMaxPerMinute)) {
+      incrementSkipped('provider-rate-limit');
+      sendBufferedResponse(response, local);
+      return;
+    }
+    fallbackMetrics.attempts += 1;
     const fallback = await runApifyFallback(requestBody, apifyConfig, {
       statusCode: local.statusCode,
       strategy: typeof localJson?.strategy === 'string' ? localJson.strategy : undefined,
@@ -426,6 +438,8 @@ function fallbackStatus(): Record<string, unknown> {
       maxRequestRetries: apifyConfig.maxRequestRetries,
       maxTotalChargeUsd: apifyConfig.maxTotalChargeUsd,
       maxConcurrent: apifyConfig.maxConcurrent,
+      maxPerMinute: apifyMaxPerMinute,
+      startsInRollingMinute: pruneProviderStarts(apifyStarts, Date.now()),
       minDelayMs: apifyConfig.minDelayMs,
       failureCooldownMs: apifyConfig.failureCooldownMs,
       inFlight: apifyInFlight,
@@ -458,7 +472,7 @@ function renderFallbackMetrics(): string {
   return `${lines.join('\n')}\n`;
 }
 
-function incrementSkipped(reason: FallbackDecisionReason): void {
+function incrementSkipped(reason: SupervisorSkipReason): void {
   fallbackMetrics.skipped.set(reason, (fallbackMetrics.skipped.get(reason) ?? 0) + 1);
 }
 
