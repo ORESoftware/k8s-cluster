@@ -45,7 +45,7 @@ RUN pnpm run build \
  && flags2env audit .cli-flags.toml \
  && APIFY_FALLBACK_ENABLED=true flags2env __dd_web_scraper__ --port=8098 >/tmp/dd-web-scraper-flags.json \
  && node -e "const fs=require('node:fs');const v=JSON.parse(fs.readFileSync('/tmp/dd-web-scraper-flags.json','utf8'));if(v.PORT!=='8098'||v.APIFY_FALLBACK_ENABLED!=='true')process.exit(1)" \
- && pnpm dlx --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" tjsv check \
+ && npm exec --yes --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" -- tjsv check \
       --typespec=contracts/scraper-fallback.tsp \
       --schema=contracts/scraper-fallback.schema.json \
       --instances=contracts/instances \
