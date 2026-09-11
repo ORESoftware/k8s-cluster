@@ -1,4 +1,4 @@
-@external(javascript, "./gleamlang_ws_loadtest/client.mjs", "run")
+@external(javascript, "./gleamlang_ws_loadtest/entrypoint.mjs", "run")
 fn run_clients() -> Nil
 
 pub fn main() -> Nil {

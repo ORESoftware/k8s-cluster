@@ -1,8 +1,13 @@
+[env]
+enabled = false
+files = []
+
 [help]
-url = "https://github.com/ORESoftware/flags-2-env"
+url = "https://github.com/flags-2-env/flags-2-env"
+columns = ["options", "env", "type", "default", "description"]
 
 [parse]
-allow_unknown = true
+allow_unknown = false
 errors_env = "FLAGS2ENV_PARSE_ERRORS"
 unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
 
@@ -27,8 +32,8 @@ default = 5000
 [flags.messages_per_second_per_client]
 env = "MESSAGES_PER_SECOND_PER_CLIENT"
 aliases = ["messages-per-second-per-client", "mps-per-client"]
-type = "string"
-default = "10.0"
+type = "double"
+default = 10.0
 
 [flags.message_payload]
 env = "MESSAGE_PAYLOAD"
@@ -94,6 +99,24 @@ env = "GCS_SENDERS_PER_CONV"
 aliases = ["gcs-senders-per-conv"]
 type = "integer"
 default = 0
+
+[flags.container_pool_url]
+env = "CONTAINER_POOL_URL"
+aliases = ["container-pool-url"]
+type = "string"
+help = "Switch to one-shot container-pool smoke mode."
+
+[flags.container_pool_route_prefix]
+env = "CONTAINER_POOL_ROUTE_PREFIX"
+aliases = ["container-pool-route-prefix"]
+type = "string"
+default = "/pools"
+
+[flags.container_pool_pool]
+env = "CONTAINER_POOL_POOL"
+aliases = ["container-pool-pool"]
+type = "string"
+default = "gleamlang"
 
 [flags.container_pool_timeout_ms]
 env = "CONTAINER_POOL_TIMEOUT_MS"
