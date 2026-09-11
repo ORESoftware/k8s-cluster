@@ -5,6 +5,7 @@ import {
   boundedAttemptTimeoutMs,
   buildLocalRetryPlan,
   classifyLocalFailure,
+  decideNextLocalRetry,
   isLocalRetryEligible,
   remainingBudgetMs,
 } from '../src/supervisor-retry-policy.js';
@@ -117,4 +118,119 @@ test('invalid retry-budget inputs fail closed', () => {
   ] as const) {
     assert.throws(() => boundedAttemptTimeoutMs(...values), TypeError);
   }
+});
+
+test('next retry decision chooses the first uncompleted adapter and caps its timeout', () => {
+  assert.deepEqual(
+    decideNextLocalRetry({
+      requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch'],
+      browserlessConfigured: true,
+      autoUseBrowserless: true,
+      lastStatusCode: 502,
+      lastError: 'fetch failed: ECONNRESET',
+      startedAtMs: 1_000,
+      nowMs: 116_000,
+      maxTotalMs: 120_000,
+      requestedTimeoutMs: 30_000,
+    }),
+    {
+      retry: true,
+      failureClass: 'network',
+      strategy: 'playwright',
+      timeoutMs: 5_000,
+    },
+  );
+});
+
+test('next retry decision advances deterministically without repeating adapters', () => {
+  assert.equal(
+    decideNextLocalRetry({
+      requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch', 'playwright'],
+      browserlessConfigured: true,
+      autoUseBrowserless: true,
+      lastStatusCode: 500,
+      lastError: 'playwright page crashed',
+      startedAtMs: 0,
+      nowMs: 5_000,
+      maxTotalMs: 120_000,
+      requestedTimeoutMs: 30_000,
+    }).strategy,
+    'puppeteer',
+  );
+
+  assert.equal(
+    decideNextLocalRetry({
+      requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch', 'playwright', 'puppeteer'],
+      browserlessConfigured: true,
+      autoUseBrowserless: true,
+      lastStatusCode: 500,
+      lastError: 'browser navigation timeout',
+      startedAtMs: 0,
+      nowMs: 5_000,
+      maxTotalMs: 120_000,
+      requestedTimeoutMs: 30_000,
+    }).strategy,
+    'browserless',
+  );
+});
+
+test('retry decision stops for explicit strategies, terminal failures, exhausted plans, and exhausted budgets', () => {
+  const base = {
+    browserlessConfigured: false,
+    autoUseBrowserless: false,
+    startedAtMs: 0,
+    maxTotalMs: 120_000,
+    requestedTimeoutMs: 30_000,
+  } as const;
+
+  assert.deepEqual(
+    decideNextLocalRetry({
+      ...base,
+      requestedStrategy: 'playwright',
+      completedStrategies: ['playwright'],
+      lastStatusCode: 502,
+      lastError: 'network timeout',
+      nowMs: 1_000,
+    }),
+    { retry: false, failureClass: 'timeout', reason: 'explicit-strategy' },
+  );
+
+  assert.deepEqual(
+    decideNextLocalRetry({
+      ...base,
+      requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch'],
+      lastStatusCode: 500,
+      lastError: 'SSRF private address blocked',
+      nowMs: 1_000,
+    }),
+    { retry: false, failureClass: 'policy', reason: 'terminal-failure' },
+  );
+
+  assert.deepEqual(
+    decideNextLocalRetry({
+      ...base,
+      requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch', 'playwright', 'puppeteer'],
+      lastStatusCode: 500,
+      lastError: 'browser navigation timeout',
+      nowMs: 1_000,
+    }),
+    { retry: false, failureClass: 'timeout', reason: 'plan-exhausted' },
+  );
+
+  assert.deepEqual(
+    decideNextLocalRetry({
+      ...base,
+      requestedStrategy: 'auto',
+      completedStrategies: ['native-fetch'],
+      lastStatusCode: 502,
+      lastError: 'fetch failed: ECONNRESET',
+      nowMs: 119_750,
+    }),
+    { retry: false, failureClass: 'network', reason: 'budget-exhausted' },
+  );
 });
