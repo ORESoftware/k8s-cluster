@@ -123,7 +123,7 @@ jobs:
             test "$(id -u)" -ne 0
             test "$(whoami)" = pwuser
             test "$(command -v flags2env)" = /opt/flags2env/bin/flags2env
-            flags2env --version
+            test -x /opt/flags2env/bin/flags2env
             flags2env audit .cli-flags.toml
             node -e "const major=Number(process.versions.node.split(\".\")[0]); if (major < 22) process.exit(1)"
             test ! -e node_modules/typescript
@@ -284,6 +284,7 @@ jobs:
             --name dd-web-scraper-secure-smoke \
             --add-host=host.docker.internal:host-gateway \
             --publish 18099:18099 \
+            --env BROWSER_AGENT_ALLOWED_DOMAINS=host.docker.internal \
             --env SERVER_AUTH_SECRET=runtime-smoke-secret \
             "$SCRAPER_IMAGE" \
             node dist/scraper-entrypoint.js \
