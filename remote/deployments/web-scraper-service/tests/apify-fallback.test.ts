@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   buildApifyActorInput,
   classifyFallback,
+  effectiveProviderTimeoutMs,
   isSafeFallbackTarget,
   readApifyFallbackConfig,
   runApifyFallback,
@@ -16,6 +17,9 @@ const config: ApifyFallbackConfig = {
   actorId: 'apify/web-scraper',
   apiBaseUrl: 'https://api.apify.com/v2',
   timeoutMs: 60_000,
+  localDefaultTimeoutMs: 30_000,
+  localMaxTimeoutMs: 60_000,
+  maxTotalTimeoutMs: 120_000,
   maxRequestRetries: 2,
   maxTotalChargeUsd: 0.25,
   maxConcurrent: 1,
@@ -96,6 +100,15 @@ test('Actor input is single-page, bounded, production mode, and always respects 
   assert.equal(input.pageLoadTimeoutSecs, 60);
 });
 
+test('provider timeout fits inside the configured local plus delay plus provider budget', () => {
+  assert.equal(effectiveProviderTimeoutMs({ timeoutMs: 30_000 }, config), 60_000);
+  assert.equal(effectiveProviderTimeoutMs({ timeoutMs: 60_000 }, config), 59_000);
+  assert.throws(
+    () => effectiveProviderTimeoutMs({ timeoutMs: 60_000 }, { ...config, maxTotalTimeoutMs: 60_000 }),
+    /total timeout budget is exhausted/,
+  );
+});
+
 test('REST call keeps token in Authorization header and applies run cost caps', async () => {
   const originalFetch = globalThis.fetch;
   let seenUrl = '';
@@ -145,4 +158,7 @@ test('env config is disabled without opt-in and does not require token at startu
   assert.equal(parsed.enabled, false);
   assert.equal(parsed.token, null);
   assert.equal(parsed.actorId, 'apify/web-scraper');
+  assert.equal(parsed.maxTotalTimeoutMs, 120_000);
+  assert.equal(parsed.localDefaultTimeoutMs, 30_000);
+  assert.equal(parsed.localMaxTimeoutMs, 60_000);
 });
