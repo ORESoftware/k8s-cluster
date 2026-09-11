@@ -35,11 +35,16 @@ export type NextLocalRetryDecisionInput = LocalRetryPlanInput & {
   maxTotalMs: number;
   requestedTimeoutMs: number;
   minimumTimeoutMs?: number;
+  retryCount?: number;
+  maxRetries?: number;
+  aborted?: boolean;
 };
 
 export type LocalRetryStopReason =
+  | 'aborted'
   | 'explicit-strategy'
   | 'terminal-failure'
+  | 'retry-limit'
   | 'plan-exhausted'
   | 'budget-exhausted';
 
@@ -82,6 +87,10 @@ const CAPTCHA_MARKERS = [
   'challenge detected',
   'challenge page',
 ] as const;
+
+export function isLocalScrapeStrategy(value: unknown): value is LocalScrapeStrategy {
+  return typeof value === 'string' && (LOCAL_SCRAPE_STRATEGIES as readonly string[]).includes(value);
+}
 
 export function classifyLocalFailure(statusCode: number, error: unknown): LocalFailureClass {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error ?? '').toLowerCase();
@@ -185,18 +194,34 @@ export function boundedAttemptTimeoutMs(
 
 /**
  * Collapse all local retry policy into one state transition. The supervisor
- * should call this after each failed local attempt and obey the result exactly;
- * that keeps explicit strategy requests exact, terminal failures terminal, the
- * adapter order deterministic, and every attempt inside one wall-clock budget.
+ * calls this after each failed local attempt and obeys the result exactly;
+ * that keeps explicit strategy requests exact, terminal failures terminal,
+ * retry count finite, cancellation sticky, adapter order deterministic, and
+ * every attempt inside one wall-clock budget.
  */
 export function decideNextLocalRetry(input: NextLocalRetryDecisionInput): LocalRetryDecision {
   const failureClass = classifyLocalFailure(input.lastStatusCode, input.lastError);
 
+  if (input.aborted === true) {
+    return { retry: false, failureClass, reason: 'aborted' };
+  }
   if (input.requestedStrategy !== 'auto') {
     return { retry: false, failureClass, reason: 'explicit-strategy' };
   }
   if (!isLocalRetryEligible(input.lastStatusCode, failureClass)) {
     return { retry: false, failureClass, reason: 'terminal-failure' };
+  }
+
+  const retryCount = input.retryCount ?? 0;
+  const maxRetries = input.maxRetries ?? LOCAL_SCRAPE_STRATEGIES.length;
+  if (!Number.isInteger(retryCount) || retryCount < 0) {
+    throw new TypeError('retryCount must be a non-negative integer');
+  }
+  if (!Number.isInteger(maxRetries) || maxRetries < 0) {
+    throw new TypeError('maxRetries must be a non-negative integer');
+  }
+  if (retryCount >= maxRetries) {
+    return { retry: false, failureClass, reason: 'retry-limit' };
   }
 
   const [strategy] = buildLocalRetryPlan(input);
