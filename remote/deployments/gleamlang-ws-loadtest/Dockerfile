@@ -19,8 +19,8 @@ COPY package.json ./
 RUN npm install --omit=dev
 
 COPY --from=flags2env-builder /usr/local/lib/node_modules/@oresoftware/f2e /usr/local/lib/node_modules/@oresoftware/f2e
-COPY --from=flags2env-builder /usr/local/bin/flags2env /usr/local/bin/flags2env
-COPY --from=flags2env-builder /usr/local/bin/f2e /usr/local/bin/f2e
+RUN ln -s /usr/local/lib/node_modules/@oresoftware/f2e/clients/nodejs/cli.mjs /usr/local/bin/flags2env \
+ && ln -s /usr/local/lib/node_modules/@oresoftware/f2e/clients/nodejs/cli.mjs /usr/local/bin/f2e
 
 COPY . .
 
