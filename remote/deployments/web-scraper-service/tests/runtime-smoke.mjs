@@ -45,8 +45,14 @@ for (const name of ['native-fetch', 'cheerio', 'playwright', 'puppeteer']) {
 }
 
 const fallback = await getJson('/fallback/status');
-assert.equal(fallback.enabled, true, 'CLI --apify-fallback did not reach the supervisor');
-assert.equal(fallback.configured, false, 'runtime smoke must not require or inject an APIFY_TOKEN');
+assert.equal(fallback.ok, true, 'fallback status endpoint must report ok=true');
+assert.equal(fallback.fallback?.provider, 'apify', 'fallback status must identify the bounded provider');
+assert.equal(fallback.fallback?.enabled, true, 'CLI --apify-fallback did not reach the supervisor');
+assert.equal(
+  fallback.fallback?.configured,
+  false,
+  'runtime smoke must not require or inject an APIFY_TOKEN',
+);
 
 const nativeResult = await scrape('native-fetch', { includeContacts: true });
 assert.match(nativeResult.extraction?.text ?? '', /static-ready/);
