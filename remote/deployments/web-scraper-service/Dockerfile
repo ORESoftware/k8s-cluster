@@ -38,6 +38,15 @@ COPY remote/deployments/web-scraper-service/package.json \
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
+# tjsv invokes the TypeSpec compiler against this project. Install the pinned
+# validator into this package's node_modules for the builder only so TypeSpec
+# package imports (notably @typespec/json-schema) resolve from the scraper's
+# project root. `npm exec --package=...` only puts the binary on PATH and leaves
+# those compiler-owned imports invisible from the authored .tsp file.
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
+    pnpm add --save-dev --lockfile=false \
+      "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz"
+
 COPY remote/deployments/web-scraper-service/contracts ./contracts
 COPY remote/deployments/web-scraper-service/src ./src
 COPY remote/deployments/web-scraper-service/tests ./tests
@@ -45,7 +54,7 @@ RUN pnpm run build \
  && flags2env audit .cli-flags.toml \
  && APIFY_FALLBACK_ENABLED=true flags2env __dd_web_scraper__ --port=8098 >/tmp/dd-web-scraper-flags.json \
  && node -e "const fs=require('node:fs');const v=JSON.parse(fs.readFileSync('/tmp/dd-web-scraper-flags.json','utf8'));if(v.PORT!=='8098'||v.APIFY_FALLBACK_ENABLED!=='true')process.exit(1)" \
- && npm exec --yes --package="https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" -- tjsv check \
+ && pnpm exec tjsv check \
       --typespec=contracts/scraper-fallback.tsp \
       --schema=contracts/scraper-fallback.schema.json \
       --instances=contracts/instances \
