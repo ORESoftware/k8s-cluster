@@ -20,11 +20,13 @@ export type RetryAttemptEvidence = {
   triggerFailureClass: LocalFailureClass;
 };
 
+export type RetryRunStopReason = LocalRetryStopReason | 'succeeded';
+
 export type RetryRunResult<T> = {
   response: T;
   retries: readonly RetryAttemptEvidence[];
   completedStrategies: readonly LocalScrapeStrategy[];
-  stopReason: LocalRetryStopReason;
+  stopReason: RetryRunStopReason;
 };
 
 export type RetryLocalFailuresInput<T> = {
@@ -42,6 +44,10 @@ export type RetryLocalFailuresInput<T> = {
   execute: (attempt: RetryAttemptEvidence) => Promise<T>;
 };
 
+function isSuccessfulStatus(statusCode: number): boolean {
+  return Number.isInteger(statusCode) && statusCode >= 200 && statusCode < 400;
+}
+
 /**
  * Execute local retry attempts one-at-a-time. This function intentionally has
  * no timers, sleeps, HTTP, or provider logic: the caller owns I/O while this
@@ -58,6 +64,15 @@ export async function retryLocalFailures<T>(input: RetryLocalFailuresInput<T>): 
   while (true) {
     const inspected = input.inspect(response);
     if (isLocalScrapeStrategy(inspected.strategy)) completed.add(inspected.strategy);
+
+    if (isSuccessfulStatus(inspected.statusCode)) {
+      return {
+        response,
+        retries,
+        completedStrategies: [...completed],
+        stopReason: 'succeeded',
+      };
+    }
 
     const decision = decideNextLocalRetry({
       requestedStrategy: input.requestedStrategy,
