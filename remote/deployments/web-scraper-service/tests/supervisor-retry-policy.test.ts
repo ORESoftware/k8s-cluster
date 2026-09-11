@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  boundedAttemptTimeoutMs,
   buildLocalRetryPlan,
   classifyLocalFailure,
   isLocalRetryEligible,
@@ -92,4 +93,28 @@ test('wall-clock retry budget is monotonic and clamps at zero', () => {
   assert.equal(remainingBudgetMs(1_000, 31_000, 120_000), 90_000);
   assert.equal(remainingBudgetMs(1_000, 121_001, 120_000), 0);
   assert.equal(remainingBudgetMs(2_000, 1_000, 120_000), 120_000);
+});
+
+test('each retry attempt is capped by the remaining total budget', () => {
+  assert.equal(boundedAttemptTimeoutMs(30_000, 90_000), 30_000);
+  assert.equal(boundedAttemptTimeoutMs(30_000, 8_250), 8_250);
+  assert.equal(boundedAttemptTimeoutMs(30_000, 500), 500);
+  assert.equal(boundedAttemptTimeoutMs(30_000, 499), 0);
+});
+
+test('provider attempts can use a stricter minimum timeout without exceeding the same budget', () => {
+  assert.equal(boundedAttemptTimeoutMs(60_000, 12_500, 1_000), 12_500);
+  assert.equal(boundedAttemptTimeoutMs(60_000, 999, 1_000), 0);
+});
+
+test('invalid retry-budget inputs fail closed', () => {
+  for (const values of [
+    [-1, 10_000, 500],
+    [30_000, -1, 500],
+    [30_000, 10_000, 0],
+    [Number.NaN, 10_000, 500],
+    [30_000, Number.POSITIVE_INFINITY, 500],
+  ] as const) {
+    assert.throws(() => boundedAttemptTimeoutMs(...values), TypeError);
+  }
 });
