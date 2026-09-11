@@ -77,6 +77,7 @@ RUN pnpm run build \
       --quiet \
  && node --import tsx --test \
       tests/apify-fallback.test.ts \
+      tests/scrape-retry-policy.test.ts \
       tests/flags-runtime.test.ts \
       tests/runtime-config-guard.test.ts \
       tests/scraper-contract-fixtures.test.ts \
