@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>dd scraper runtime smoke</title>
+  </head>
+  <body>
+    <main>
+      <div id="static">static-ready</div>
+      <a href="mailto:smoke@example.test">Email smoke</a>
+      <a href="tel:+12125550147">Call smoke</a>
+      <a href="/next.html">Next</a>
+    </main>
+    <script>
+      setTimeout(() => {
+        const node = document.createElement('div');
+        node.id = 'dynamic';
+        node.textContent = 'dynamic-ready';
+        document.body.appendChild(node);
+      }, 50);
+    </script>
+  </body>
+</html>

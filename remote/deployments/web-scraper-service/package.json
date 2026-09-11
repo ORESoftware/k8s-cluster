@@ -4,16 +4,19 @@
   "description": "Long-running Fastify web scraping service for the remote Kubernetes runtime.",
   "private": true,
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/scraper-entrypoint.js",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "tsc",
+    "config:audit": "npm exec --yes --package=https://github.com/flags-2-env/flags-2-env/archive/333c2ace93c362d274171ab0e0edf613d96a8e59.tar.gz -- flags2env audit .cli-flags.toml",
+    "contracts:check": "npm exec --yes --package=https://github.com/ORESoftware/typespec-json-schema-validator/archive/8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085.tar.gz -- tjsv check --typespec=contracts/scraper-fallback.tsp --schema=contracts/scraper-fallback.schema.json --instances=contracts/instances --report=/tmp/dd-web-scraper-contract-report.json --quiet",
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "start": "node dist/scraper-entrypoint.js",
+    "start:core": "node dist/server.js",
     "start:src": "tsx src/server.ts",
-    "test": "pnpm run build && node --test test/*.test.mjs && node --import tsx --test tests/*.test.ts",
+    "test": "pnpm run build && pnpm run config:audit && pnpm run contracts:check && node --test test/*.test.mjs && node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

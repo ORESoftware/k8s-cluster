@@ -1,0 +1,315 @@
+# dd-web-scraper operator CLI/env contract.
+# Secret-bearing variables are intentionally NOT argv flags: APIFY_TOKEN,
+# SERVER_AUTH_SECRET, BROWSERLESS_TOKEN, BROWSERLESS_CONTENT_URL,
+# SCRAPER_CAPTCHA_API_KEY, SCRAPER_PROXIES, and BROWSER_AGENT_SECRETS_FILE.
+
+[env]
+# Production/runtime admission must never silently read a checkout-local .env.
+# Kubernetes/secret injection and explicit argv are the only configured inputs.
+enabled = false
+files = []
+
+[help]
+url = "https://github.com/ORESoftware/k8s-cluster/tree/dev/remote/deployments/web-scraper-service"
+columns = ["options", "env", "type", "default", "description"]
+
+[parse]
+allow_unknown = false
+unknown_options_env = "DD_WEB_SCRAPER_UNKNOWN_OPTIONS"
+errors_env = "DD_WEB_SCRAPER_PARSE_ERRORS"
+
+[flags.host]
+env = "HOST"
+aliases = ["host"]
+type = "string"
+default = "0.0.0.0"
+help = "Public scraper supervisor listen host."
+
+[flags.port]
+env = "PORT"
+aliases = ["port"]
+short = "p"
+type = "integer"
+default = 8097
+help = "Public scraper supervisor listen port."
+
+[flags.core-port]
+env = "SCRAPER_CORE_PORT"
+aliases = ["core-port"]
+type = "integer"
+default = 18097
+help = "Loopback-only port for the existing Fastify scraper core."
+
+[flags.core-startup-timeout-ms]
+env = "SCRAPER_CORE_STARTUP_TIMEOUT_MS"
+aliases = ["core-startup-timeout-ms"]
+type = "integer"
+default = 30000
+help = "Fail startup if the local scraper core is not healthy in this window."
+
+[flags.supervisor-max-body-bytes]
+env = "SCRAPER_SUPERVISOR_MAX_BODY_BYTES"
+aliases = ["supervisor-max-body-bytes"]
+type = "integer"
+default = 1048576
+help = "Maximum buffered /scrape request body for possible fallback replay."
+
+[flags.supervisor-max-core-response-bytes]
+env = "SCRAPER_SUPERVISOR_MAX_CORE_RESPONSE_BYTES"
+aliases = ["supervisor-max-core-response-bytes"]
+type = "integer"
+default = 4194304
+help = "Maximum local /scrape response buffered by the supervisor."
+
+[flags.default-strategy]
+env = "SCRAPER_DEFAULT_STRATEGY"
+aliases = ["default-strategy"]
+type = "string"
+default = "auto"
+help = "Local strategy: auto, native-fetch, cheerio, jsdom, linkedom, playwright, puppeteer, or browserless."
+
+[flags.max-concurrent]
+env = "SCRAPER_MAX_CONCURRENT"
+aliases = ["max-concurrent"]
+type = "integer"
+default = 4
+help = "Maximum concurrent local scrape requests."
+
+[flags.default-timeout-ms]
+env = "SCRAPER_DEFAULT_TIMEOUT_MS"
+aliases = ["default-timeout-ms"]
+type = "integer"
+default = 30000
+help = "Default local scrape timeout."
+
+[flags.max-timeout-ms]
+env = "SCRAPER_MAX_TIMEOUT_MS"
+aliases = ["max-timeout-ms"]
+type = "integer"
+default = 60000
+help = "Maximum caller-selected local scrape timeout."
+
+[flags.max-total-timeout-ms]
+env = "SCRAPER_MAX_TOTAL_TIMEOUT_MS"
+aliases = ["max-total-timeout-ms"]
+type = "integer"
+default = 120000
+help = "Maximum local-attempt plus fallback-delay plus external-provider timeout budget."
+
+[flags.dns-timeout-ms]
+env = "SCRAPER_DNS_TIMEOUT_MS"
+aliases = ["dns-timeout-ms"]
+type = "integer"
+default = 5000
+help = "DNS timeout used by local SSRF preflight checks."
+
+[flags.max-redirects]
+env = "SCRAPER_MAX_REDIRECTS"
+aliases = ["max-redirects"]
+type = "integer"
+default = 5
+help = "Maximum local redirect count."
+
+[flags.max-html-chars]
+env = "SCRAPER_MAX_HTML_CHARS"
+aliases = ["max-html-chars"]
+type = "integer"
+default = 1000000
+help = "Maximum retained HTML characters."
+
+[flags.max-text-chars]
+env = "SCRAPER_MAX_TEXT_CHARS"
+aliases = ["max-text-chars"]
+type = "integer"
+default = 40000
+help = "Maximum returned visible-text characters."
+
+[flags.max-links]
+env = "SCRAPER_MAX_LINKS"
+aliases = ["max-links"]
+type = "integer"
+default = 250
+help = "Maximum returned links per scrape."
+
+[flags.max-phones]
+env = "SCRAPER_MAX_PHONES"
+aliases = ["max-phones"]
+type = "integer"
+default = 50
+help = "Maximum opt-in business phone contacts."
+
+[flags.max-emails]
+env = "SCRAPER_MAX_EMAILS"
+aliases = ["max-emails"]
+type = "integer"
+default = 50
+help = "Maximum opt-in business email contacts."
+
+[flags.contact-region]
+env = "SCRAPER_CONTACT_REGION"
+aliases = ["contact-region"]
+type = "string"
+default = "US"
+help = "ISO 3166-1 alpha-2 region for local phone normalization."
+
+[flags.respect-robots]
+env = "SCRAPER_RESPECT_ROBOTS"
+aliases = ["respect-robots"]
+type = "bool"
+default = "true"
+help = "Respect robots.txt locally. Remote fallback always enables robots handling."
+
+[flags.min-origin-delay-ms]
+env = "SCRAPER_MIN_ORIGIN_DELAY_MS"
+aliases = ["min-origin-delay-ms"]
+type = "integer"
+default = 1000
+help = "Minimum delay between top-level local requests to one origin."
+
+[flags.allow-robots-override]
+env = "SCRAPER_ALLOW_ROBOTS_OVERRIDE"
+aliases = ["allow-robots-override"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Allow robots override only for owned or explicitly authorized targets."
+
+[flags.allow-private-networks]
+env = "SCRAPER_ALLOW_PRIVATE_NETWORKS"
+aliases = ["allow-private-networks"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Permit local private-network targets. Apify fallback still rejects raw IP/local-only targets."
+
+[flags.allow-sensitive-headers]
+env = "SCRAPER_ALLOW_SENSITIVE_HEADERS"
+aliases = ["allow-sensitive-headers"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Permit sensitive outbound headers on the local scraper only."
+
+[flags.allow-url-credentials]
+env = "SCRAPER_ALLOW_URL_CREDENTIALS"
+aliases = ["allow-url-credentials"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Permit local URL credentials. Remote fallback never accepts URL credentials."
+
+[flags.allow-unauthenticated]
+env = "SCRAPER_ALLOW_UNAUTHENTICATED"
+aliases = ["allow-unauthenticated"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Disable SERVER_AUTH_SECRET enforcement for isolated development only."
+
+[flags.browser-headless]
+env = "SCRAPER_BROWSER_HEADLESS"
+aliases = ["browser-headless"]
+type = "bool"
+default = "true"
+help = "Run local Playwright/Puppeteer headless."
+
+[flags.detect-captchas]
+env = "SCRAPER_DETECT_CAPTCHAS"
+aliases = ["detect-captchas"]
+type = "bool"
+default = "true"
+help = "Detect challenge pages. CAPTCHA/challenge failures never trigger Apify fallback."
+
+[flags.captcha-autosolve]
+env = "SCRAPER_CAPTCHA_AUTOSOLVE"
+aliases = ["captcha-autosolve"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Enable owner-authorized CAPTCHA solving only when the separate allow gate and secret key are present."
+
+[flags.allow-captcha-solving]
+env = "SCRAPER_ALLOW_CAPTCHA_SOLVING"
+aliases = ["allow-captcha-solving"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Operator gate for CAPTCHA solving on owned/explicitly authorized tests only."
+
+[flags.apify-fallback]
+env = "APIFY_FALLBACK_ENABLED"
+aliases = ["apify-fallback"]
+type = "bool"
+default = "false"
+help = "Enable costed Apify fallback after classified retriable local 5xx failures. APIFY_TOKEN remains secret env only."
+
+[flags.apify-actor-id]
+env = "APIFY_ACTOR_ID"
+aliases = ["apify-actor-id"]
+type = "string"
+default = "apify/web-scraper"
+help = "Apify Actor ID for fallback."
+
+[flags.apify-api-base-url]
+env = "APIFY_API_BASE_URL"
+aliases = ["apify-api-base-url"]
+type = "string"
+default = "https://api.apify.com/v2"
+help = "HTTPS Apify API base URL without credentials."
+
+[flags.apify-timeout-ms]
+env = "APIFY_FALLBACK_TIMEOUT_MS"
+aliases = ["apify-timeout-ms"]
+type = "integer"
+default = 90000
+help = "External fallback HTTP and Actor run timeout."
+
+[flags.apify-max-request-retries]
+env = "APIFY_MAX_REQUEST_RETRIES"
+aliases = ["apify-max-request-retries"]
+type = "integer"
+default = 2
+help = "Maximum page retries inside the single-page Apify fallback."
+
+[flags.apify-max-concurrent]
+env = "APIFY_FALLBACK_MAX_CONCURRENT"
+aliases = ["apify-max-concurrent"]
+type = "integer"
+default = 1
+help = "Maximum simultaneous Apify fallback runs per pod."
+
+[flags.apify-min-delay-ms]
+env = "APIFY_FALLBACK_MIN_DELAY_MS"
+aliases = ["apify-min-delay-ms"]
+type = "integer"
+default = 1000
+help = "Minimum delay before a remote fallback after the local attempt."
+
+[flags.apify-failure-cooldown-ms]
+env = "APIFY_FALLBACK_FAILURE_COOLDOWN_MS"
+aliases = ["apify-failure-cooldown-ms"]
+type = "integer"
+default = 60000
+help = "Cooldown after a provider failure to avoid cost/error amplification."
+
+[flags.apify-max-total-charge-usd]
+env = "APIFY_MAX_TOTAL_CHARGE_USD"
+aliases = ["apify-max-total-charge-usd"]
+type = "double"
+default = 0.25
+help = "Per-fallback Actor run charge ceiling."
+
+[flags.apify-explicit-strategies]
+env = "APIFY_FALLBACK_FOR_EXPLICIT_STRATEGY"
+aliases = ["apify-explicit-strategies"]
+type = "bool"
+default = "false"
+requires_tty = true
+help = "Allow fallback even when the caller explicitly selected a local strategy."
+
+[flags.apify-max-response-bytes]
+env = "APIFY_MAX_RESPONSE_BYTES"
+aliases = ["apify-max-response-bytes"]
+type = "integer"
+default = 2000000
+help = "Maximum Apify dataset response bytes buffered by the supervisor."

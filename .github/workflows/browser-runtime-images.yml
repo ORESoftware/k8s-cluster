@@ -92,3 +92,125 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           provenance: mode=max
           sbom: true
+
+      # Keep the production build above attested. Docker's local image exporter
+      # cannot load the provenance/SBOM manifest list, so the smoke path performs
+      # a second cache-backed export of the same Dockerfile without attestations.
+      - name: Load scraper image for runtime smoke
+        if: github.event_name == 'pull_request' && matrix.name == 'dd-web-scraper'
+        env:
+          SCRAPER_IMAGE: ghcr.io/oresoftware/dd-web-scraper:${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64 \
+            --file remote/deployments/web-scraper-service/Dockerfile \
+            --tag "$SCRAPER_IMAGE" \
+            --cache-from type=gha,scope=dd-web-scraper \
+            --load \
+            .
+
+      - name: Smoke scraper CLI, supervisor, Playwright, and Puppeteer
+        if: github.event_name == 'pull_request' && matrix.name == 'dd-web-scraper'
+        env:
+          SCRAPER_IMAGE: ghcr.io/oresoftware/dd-web-scraper:${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fixture_log="$RUNNER_TEMP/dd-web-scraper-fixture.log"
+          scraper_log="$RUNNER_TEMP/dd-web-scraper-runtime.log"
+          fixture_pid=''
+
+          cleanup() {
+            status=$?
+            if (( status != 0 )); then
+              echo '--- dd-web-scraper runtime log ---'
+              docker logs dd-web-scraper-smoke 2>&1 || true
+              echo '--- fixture server log ---'
+              cat "$fixture_log" 2>/dev/null || true
+            fi
+            docker stop dd-web-scraper-smoke >/dev/null 2>&1 || true
+            if [[ -n "$fixture_pid" ]]; then
+              kill "$fixture_pid" >/dev/null 2>&1 || true
+            fi
+            return "$status"
+          }
+          trap cleanup EXIT
+
+          echo 'Audit the production flags-2-env contract from inside the final image'
+          docker run --rm "$SCRAPER_IMAGE" flags2env audit .cli-flags.toml
+
+          echo 'Exercise typed CLI values plus canonical boolean negation'
+          cli_json="$({
+            docker run --rm \
+              -e APIFY_FALLBACK_ENABLED=true \
+              "$SCRAPER_IMAGE" \
+              flags2env __dd_web_scraper__ \
+                --port=18097 \
+                --core-port=18098 \
+                --default-strategy=auto \
+                --max-concurrent=2 \
+                --no-apify-fallback
+          })"
+          node -e '
+            const value = JSON.parse(process.argv[1]);
+            if (value.PORT !== "18097") throw new Error(`PORT=${value.PORT}`);
+            if (value.SCRAPER_CORE_PORT !== "18098") throw new Error(`SCRAPER_CORE_PORT=${value.SCRAPER_CORE_PORT}`);
+            if (value.SCRAPER_DEFAULT_STRATEGY !== "auto") throw new Error(`SCRAPER_DEFAULT_STRATEGY=${value.SCRAPER_DEFAULT_STRATEGY}`);
+            if (value.SCRAPER_MAX_CONCURRENT !== "2") throw new Error(`SCRAPER_MAX_CONCURRENT=${value.SCRAPER_MAX_CONCURRENT}`);
+            if (value.APIFY_FALLBACK_ENABLED !== "false") throw new Error(`APIFY_FALLBACK_ENABLED=${value.APIFY_FALLBACK_ENABLED}`);
+          ' "$cli_json"
+
+          echo 'Render entrypoint help without starting browser or network listeners'
+          docker run --rm "$SCRAPER_IMAGE" node dist/scraper-entrypoint.js --help | grep -q -- '--default-strategy'
+
+          python3 -m http.server 19090 \
+            --bind 0.0.0.0 \
+            --directory remote/deployments/web-scraper-service/tests/fixtures/runtime-smoke \
+            >"$fixture_log" 2>&1 &
+          fixture_pid=$!
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:19090/index.html >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 30 ]]; then
+              echo 'fixture server did not become ready' >&2
+              exit 1
+            fi
+            sleep 0.2
+          done
+
+          echo 'Start the final production image through its real flags-2-env entrypoint'
+          docker run --detach \
+            --name dd-web-scraper-smoke \
+            --add-host=host.docker.internal:host-gateway \
+            --publish 18097:18097 \
+            --env BROWSER_AGENT_ALLOWED_DOMAINS=host.docker.internal \
+            --env SCRAPER_ALLOW_PRIVATE_NETWORKS=true \
+            --env SCRAPER_ALLOW_UNAUTHENTICATED=true \
+            --env SCRAPER_MIN_ORIGIN_DELAY_MS=1 \
+            "$SCRAPER_IMAGE" \
+            node dist/scraper-entrypoint.js \
+              --port=18097 \
+              --core-port=18098 \
+              --default-strategy=auto \
+              --max-concurrent=2 \
+              --apify-fallback \
+            >"$scraper_log"
+
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent --show-error http://127.0.0.1:18097/healthz >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == 120 ]]; then
+              echo 'scraper runtime did not become ready' >&2
+              exit 1
+            fi
+            sleep 0.25
+          done
+
+          SCRAPER_SMOKE_BASE_URL=http://127.0.0.1:18097 \
+          SCRAPER_SMOKE_TARGET_URL=http://host.docker.internal:19090/index.html \
+            node remote/deployments/web-scraper-service/tests/runtime-smoke.mjs
