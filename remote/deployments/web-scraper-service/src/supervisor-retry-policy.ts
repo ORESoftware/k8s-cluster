@@ -27,6 +27,35 @@ export type LocalRetryPlanInput = {
   autoUseBrowserless: boolean;
 };
 
+export type NextLocalRetryDecisionInput = LocalRetryPlanInput & {
+  lastStatusCode: number;
+  lastError: unknown;
+  startedAtMs: number;
+  nowMs: number;
+  maxTotalMs: number;
+  requestedTimeoutMs: number;
+  minimumTimeoutMs?: number;
+};
+
+export type LocalRetryStopReason =
+  | 'explicit-strategy'
+  | 'terminal-failure'
+  | 'plan-exhausted'
+  | 'budget-exhausted';
+
+export type LocalRetryDecision =
+  | {
+      retry: true;
+      failureClass: LocalFailureClass;
+      strategy: LocalScrapeStrategy;
+      timeoutMs: number;
+    }
+  | {
+      retry: false;
+      failureClass: LocalFailureClass;
+      reason: LocalRetryStopReason;
+    };
+
 const POLICY_MARKERS = [
   'robots',
   'ssrf',
@@ -152,4 +181,38 @@ export function boundedAttemptTimeoutMs(
 
   const bounded = Math.floor(Math.min(requestedTimeoutMs, remainingMs));
   return bounded >= Math.ceil(minimumTimeoutMs) ? bounded : 0;
+}
+
+/**
+ * Collapse all local retry policy into one state transition. The supervisor
+ * should call this after each failed local attempt and obey the result exactly;
+ * that keeps explicit strategy requests exact, terminal failures terminal, the
+ * adapter order deterministic, and every attempt inside one wall-clock budget.
+ */
+export function decideNextLocalRetry(input: NextLocalRetryDecisionInput): LocalRetryDecision {
+  const failureClass = classifyLocalFailure(input.lastStatusCode, input.lastError);
+
+  if (input.requestedStrategy !== 'auto') {
+    return { retry: false, failureClass, reason: 'explicit-strategy' };
+  }
+  if (!isLocalRetryEligible(input.lastStatusCode, failureClass)) {
+    return { retry: false, failureClass, reason: 'terminal-failure' };
+  }
+
+  const [strategy] = buildLocalRetryPlan(input);
+  if (!strategy) {
+    return { retry: false, failureClass, reason: 'plan-exhausted' };
+  }
+
+  const remainingMs = remainingBudgetMs(input.startedAtMs, input.nowMs, input.maxTotalMs);
+  const timeoutMs = boundedAttemptTimeoutMs(
+    input.requestedTimeoutMs,
+    remainingMs,
+    input.minimumTimeoutMs ?? 500,
+  );
+  if (timeoutMs === 0) {
+    return { retry: false, failureClass, reason: 'budget-exhausted' };
+  }
+
+  return { retry: true, failureClass, strategy, timeoutMs };
 }
