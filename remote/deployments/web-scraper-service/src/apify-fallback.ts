@@ -31,6 +31,9 @@ export type ApifyFallbackConfig = {
   actorId: string;
   apiBaseUrl: string;
   timeoutMs: number;
+  localDefaultTimeoutMs: number;
+  localMaxTimeoutMs: number;
+  maxTotalTimeoutMs: number;
   maxRequestRetries: number;
   maxTotalChargeUsd: number;
   maxConcurrent: number;
@@ -150,12 +153,20 @@ const APIFY_PAGE_FUNCTION = `async function pageFunction(context) {
 
 export function readApifyFallbackConfig(env: NodeJS.ProcessEnv = process.env): ApifyFallbackConfig {
   const apiBaseUrl = normalizeApiBaseUrl(env.APIFY_API_BASE_URL ?? 'https://api.apify.com/v2');
+  const localDefaultTimeoutMs = readInteger(env.SCRAPER_DEFAULT_TIMEOUT_MS, 30_000, 1_000, 300_000);
+  const localMaxTimeoutMs = readInteger(env.SCRAPER_MAX_TIMEOUT_MS, 60_000, 1_000, 300_000);
+  if (localDefaultTimeoutMs > localMaxTimeoutMs) {
+    throw new TypeError('SCRAPER_DEFAULT_TIMEOUT_MS must not exceed SCRAPER_MAX_TIMEOUT_MS');
+  }
   return {
     enabled: readBoolean(env.APIFY_FALLBACK_ENABLED, false),
     token: nonEmpty(env.APIFY_TOKEN),
     actorId: normalizeActorId(env.APIFY_ACTOR_ID ?? 'apify/web-scraper'),
     apiBaseUrl,
     timeoutMs: readInteger(env.APIFY_FALLBACK_TIMEOUT_MS, 90_000, 5_000, 300_000),
+    localDefaultTimeoutMs,
+    localMaxTimeoutMs,
+    maxTotalTimeoutMs: readInteger(env.SCRAPER_MAX_TOTAL_TIMEOUT_MS, 120_000, 5_000, 600_000),
     maxRequestRetries: readInteger(env.APIFY_MAX_REQUEST_RETRIES, 2, 0, 10),
     maxTotalChargeUsd: readNumber(env.APIFY_MAX_TOTAL_CHARGE_USD, 0.25, 0.01, 100),
     maxConcurrent: readInteger(env.APIFY_FALLBACK_MAX_CONCURRENT, 1, 1, 16),
@@ -175,6 +186,24 @@ export function readApifyFallbackConfig(env: NodeJS.ProcessEnv = process.env): A
     maxEmails: readInteger(env.SCRAPER_MAX_EMAILS, 50, 1, 500),
     contactRegion: (env.SCRAPER_CONTACT_REGION ?? 'US').trim().toUpperCase(),
   };
+}
+
+export function effectiveProviderTimeoutMs(
+  request: ScrapeFallbackRequest,
+  config: ApifyFallbackConfig,
+): number {
+  const localBudgetMs = clampInteger(
+    request.timeoutMs ?? config.localDefaultTimeoutMs,
+    1_000,
+    config.localMaxTimeoutMs,
+  );
+  const remainingMs = config.maxTotalTimeoutMs - localBudgetMs - config.minDelayMs;
+  if (remainingMs < 1_000) {
+    throw new Error(
+      `Apify fallback total timeout budget is exhausted before provider call (remaining=${remainingMs}ms)`,
+    );
+  }
+  return Math.min(config.timeoutMs, remainingMs);
 }
 
 export function classifyFallback(
@@ -298,17 +327,19 @@ export async function runApifyFallback(
     throw new Error('Apify fallback is not configured');
   }
 
-  const input = buildApifyActorInput(request, config);
+  const providerTimeoutMs = effectiveProviderTimeoutMs(request, config);
+  const providerConfig = providerTimeoutMs === config.timeoutMs ? config : { ...config, timeoutMs: providerTimeoutMs };
+  const input = buildApifyActorInput(request, providerConfig);
   const actorRef = actorIdToApiRef(config.actorId);
   const endpoint = new URL(`${config.apiBaseUrl.replace(/\/+$/, '')}/actors/${actorRef}/run-sync-get-dataset-items`);
   endpoint.searchParams.set('clean', 'true');
   endpoint.searchParams.set('limit', '1');
-  endpoint.searchParams.set('timeout', String(Math.max(5, Math.ceil(config.timeoutMs / 1000))));
+  endpoint.searchParams.set('timeout', String(Math.max(5, Math.ceil(providerTimeoutMs / 1000))));
   endpoint.searchParams.set('maxItems', '1');
   endpoint.searchParams.set('maxTotalChargeUsd', String(config.maxTotalChargeUsd));
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), providerTimeoutMs);
   const startedAt = Date.now();
   let response: Response;
   try {
@@ -325,7 +356,7 @@ export async function runApifyFallback(
     });
   } catch (error) {
     if (controller.signal.aborted) {
-      throw new Error(`Apify fallback timed out after ${config.timeoutMs}ms`);
+      throw new Error(`Apify fallback timed out after ${providerTimeoutMs}ms`);
     }
     throw new Error(`Apify fallback request failed: ${safeErrorMessage(error)}`);
   } finally {
@@ -347,7 +378,7 @@ export async function runApifyFallback(
     throw new Error('Apify fallback returned no dataset item');
   }
 
-  const responsePayload = normalizeApifyItem(request, config, items[0], localFailure, Date.now() - startedAt);
+  const responsePayload = normalizeApifyItem(request, providerConfig, items[0], localFailure, Date.now() - startedAt);
   return { response: responsePayload, durationMs: Date.now() - startedAt };
 }
 
