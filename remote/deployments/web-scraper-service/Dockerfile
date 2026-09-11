@@ -3,11 +3,13 @@
 ARG PLAYWRIGHT_VERSION=1.56.0
 ARG FLAGS2ENV_REV=333c2ace93c362d274171ab0e0edf613d96a8e59
 ARG TJSV_REV=8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
+ARG TYPESPEC_VERSION=1.15.0
 ARG TYPESPEC_ASSET_EMITTER_VERSION=0.79.1
 
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS builder
 ARG FLAGS2ENV_REV
 ARG TJSV_REV
+ARG TYPESPEC_VERSION
 ARG TYPESPEC_ASSET_EMITTER_VERSION
 
 # Build from the repository root because @dd/telemetry is a pinned file
@@ -40,15 +42,17 @@ COPY remote/deployments/web-scraper-service/package.json \
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
-# tjsv invokes the TypeSpec compiler against this project. Install the pinned
-# validator into this package's node_modules for the builder only so TypeSpec
-# package imports resolve from the scraper project root. The upstream tjsv
-# package-lock pins @typespec/asset-emitter 0.79.1 alongside compiler/json-schema
-# 1.15.0; pin that transitive package here as well so a fresh pnpm consumer does
-# not float to asset-emitter 0.79.2, whose compiler peer requires ^1.16.0.
+# TJSV invokes the TypeSpec compiler with the authored contract directory as
+# its cwd. Install the exact compiler/emitter pair at the scraper project root
+# so `import "@typespec/json-schema"` resolves by ordinary Node/TypeSpec package
+# lookup from contracts/*.tsp. The upstream TJSV lock also pins asset-emitter
+# 0.79.1; keep that exact transitive version so a fresh pnpm consumer does not
+# float to 0.79.2, whose compiler peer requires ^1.16.0.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm add --save-dev --lockfile=false \
       "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" \
+      "@typespec/compiler@${TYPESPEC_VERSION}" \
+      "@typespec/json-schema@${TYPESPEC_VERSION}" \
       "@typespec/asset-emitter@${TYPESPEC_ASSET_EMITTER_VERSION}"
 
 COPY remote/deployments/web-scraper-service/contracts ./contracts
