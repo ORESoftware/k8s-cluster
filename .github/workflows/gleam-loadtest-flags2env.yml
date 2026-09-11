@@ -1,0 +1,64 @@
+name: Gleam loadtest flags2env
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/gleamlang-ws-loadtest/**'
+      - '.github/workflows/gleam-loadtest-flags2env.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Build exact loadtest image
+        run: |
+          docker build \
+            --tag dd-gleamlang-ws-loadtest:contract \
+            remote/deployments/gleamlang-ws-loadtest
+
+      - name: Verify copied flags2env parser and typed coercion
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved="$(docker run --rm \
+            --entrypoint flags2env \
+            dd-gleamlang-ws-loadtest:contract \
+            __dd_gleamlang_ws_loadtest__ \
+            --client-count=7 \
+            --messages-per-second-per-client=2.5 \
+            --container-pool-timeout-ms=12345)"
+          node -e '
+            const value = JSON.parse(process.argv[1]);
+            if (value.CLIENT_COUNT !== "7") process.exit(1);
+            if (value.MESSAGES_PER_SECOND_PER_CLIENT !== "2.5") process.exit(1);
+            if (value.CONTAINER_POOL_TIMEOUT_MS !== "12345") process.exit(1);
+            if (JSON.parse(value.FLAGS2ENV_PARSE_ERRORS || "[]").length !== 0) process.exit(1);
+            if (JSON.parse(value.FLAGS2ENV_UNKNOWN_OPTIONS || "[]").length !== 0) process.exit(1);
+          ' "$resolved"
+
+      - name: Prove unknown argv is surfaced fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved="$(docker run --rm \
+            --entrypoint flags2env \
+            dd-gleamlang-ws-loadtest:contract \
+            __dd_gleamlang_ws_loadtest__ \
+            --definitely-unknown)"
+          node -e '
+            const value = JSON.parse(process.argv[1]);
+            const unknown = JSON.parse(value.FLAGS2ENV_UNKNOWN_OPTIONS || "[]");
+            if (!unknown.includes("--definitely-unknown")) process.exit(1);
+          ' "$resolved"
+
+      - name: Verify exact PR diff is whitespace-clean
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: git diff --check "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
