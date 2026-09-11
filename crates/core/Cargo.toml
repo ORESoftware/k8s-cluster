@@ -1,0 +1,11 @@
+[package]
+name = "t2v-core"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-dependency DSP core: custom FFT implementations, WAV codec, G.711 mu-law, resampling, DTMF (Goertzel), VAD"
+license = "MIT"
+
+[dependencies]
+# intentionally empty — the DSP core is fully hand-rolled
+
+[dev-dependencies]
