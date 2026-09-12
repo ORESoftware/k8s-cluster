@@ -29,7 +29,7 @@ spec:
         # created root-owned. Restrict root to this short ownership handoff so
         # the long-running broker can use an unprivileged uid.
         - name: prepare-nats-data
-          image: nats:2.11.17-alpine
+          image: nats:2.14.5-alpine@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
@@ -61,7 +61,7 @@ spec:
               mountPath: /data
       containers:
         - name: nats
-          image: nats:2.11.17-alpine
+          image: nats:2.14.5-alpine@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -124,7 +124,7 @@ spec:
             - name: data
               mountPath: /data
         - name: prometheus-exporter
-          image: natsio/prometheus-nats-exporter:0.19.2
+          image: natsio/prometheus-nats-exporter:0.20.2@sha256:c623b608e148e31e1c1c878673a197f1828e58ce90de4f01d22f1baa84c8fee9
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
