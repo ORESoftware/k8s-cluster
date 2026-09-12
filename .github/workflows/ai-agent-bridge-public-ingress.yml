@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
-      BRIDGE_SOURCE_REVISION: c3e54e6cd0c6d56e3d2ed32902228d974e550a3f
+      BRIDGE_SOURCE_REVISION: ec667946b1f8725b6baea8e67ae6a701d602dc04
     steps:
       - name: Checkout the measured dev revision without credentials or private gitlinks
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

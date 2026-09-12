@@ -15,7 +15,7 @@ const ingress = readFileSync(ingressPath, 'utf8');
 const runner = readFileSync(runnerPath, 'utf8');
 
 const host = 'api.fiducia.cloud';
-const sourceSha = 'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f';
+const sourceSha = 'ec667946b1f8725b6baea8e67ae6a701d602dc04';
 const exactPaths = [
   '/slack/commands/ores-claude',
   '/slack/commands/ores-chatgpt',
