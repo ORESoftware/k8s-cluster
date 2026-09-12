@@ -1,0 +1,72 @@
+name: DEN-800 reconcile telemetry head
+
+on:
+  pull_request:
+    branches:
+      - agent/den-800-reconcile-base
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-800-reconcile-head
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: github.event.pull_request.head.ref == 'agent/telemetry-ticket-automation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/telemetry-ticket-automation
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Extract reviewed semantic merge steps from the head branch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          source = Path('.github/workflows/den-800-semantic-merge.yml').read_text(encoding='utf-8').splitlines()
+          names = [
+              'Merge current dev and resolve ownership semantically',
+              'Validate reconciled cluster contracts',
+              'Commit semantic merge',
+          ]
+          for index, name in enumerate(names, start=1):
+              marker = f'      - name: {name}'
+              start = source.index(marker)
+              run_index = next(i for i in range(start + 1, len(source)) if source[i].strip() == 'run: |')
+              body = []
+              for line in source[run_index + 1:]:
+                  if line.startswith('      - name: '):
+                      break
+                  body.append(line[10:] if line.startswith('          ') else line)
+              Path(f'/tmp/den-800-step-{index}.sh').write_text('\n'.join(body) + '\n', encoding='utf-8')
+
+      - name: Perform semantic three-way reconciliation
+        shell: bash
+        run: bash /tmp/den-800-step-1.sh
+
+      - name: Validate reconciled tree
+        shell: bash
+        run: bash /tmp/den-800-step-2.sh
+
+      - name: Remove all head-only executor files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -f --ignore-unmatch \
+            .github/workflows/den-800-pr-execute.yml \
+            .github/workflows/den-800-start.yml
+          git add -A
+
+      - name: Commit and push semantic merge
+        shell: bash
+        run: bash /tmp/den-800-step-3.sh
