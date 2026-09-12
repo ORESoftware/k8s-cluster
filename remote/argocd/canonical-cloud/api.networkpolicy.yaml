@@ -1,41 +1,27 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: canonical-cloud-web
+  name: canonical-cloud-api
   namespace: canonical-cloud
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: canonical-web-server
-      app.kubernetes.io/component: web
+      app.kubernetes.io/name: canonical-api-server
+      app.kubernetes.io/component: api
   policyTypes:
     - Ingress
     - Egress
   ingress:
+    # The quote API is private. Only the authenticated Canonical web tier may
+    # project a subject and present the shared internal service credential.
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: default
-          podSelector:
-            matchLabels:
-              app: dd-remote-gateway
+              app.kubernetes.io/name: canonical-web-server
+              app.kubernetes.io/component: web
       ports:
         - protocol: TCP
-          port: 8081
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: observability
-          podSelector:
-            matchExpressions:
-              - key: app
-                operator: In
-                values:
-                  - dd-prometheus
-                  - dd-otel-collector
-      ports:
-        - protocol: TCP
-          port: 8081
+          port: 8080
   egress:
     - to:
         - namespaceSelector:
@@ -46,35 +32,6 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: observability
-          podSelector:
-            matchLabels:
-              app: dd-otel-collector
-      ports:
-        - protocol: TCP
-          port: 4317
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: canonical-api-server
-              app.kubernetes.io/component: api
-      ports:
-        - protocol: TCP
-          port: 8080
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: shared-auth
-          podSelector:
-            matchLabels:
-              app: dd-shared-auth
-              app.kubernetes.io/instance: canonical-plus
-      ports:
-        - protocol: TCP
-          port: 8120
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
