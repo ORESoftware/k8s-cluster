@@ -1,0 +1,6 @@
+# ores-lint :: clippy configuration for k8s-cluster.
+# Clippy walks up from each crate directory, so this one file covers all 91.
+avoid-breaking-exported-api = true      # internal crates; API churn is fine
+too-many-arguments-threshold = 8
+cognitive-complexity-threshold = 30     # operator/reconciler loops are branchy
+type-complexity-threshold = 350

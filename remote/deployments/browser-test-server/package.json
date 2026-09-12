@@ -16,7 +16,10 @@
     "start:src": "tsx src/server.ts",
     "test:contract": "tsx --test src/api-contract.test.ts",
     "test:runtime": "node scripts/runtime-contract-smoke.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint:ores": "if [ -f ../../../.ores-lint/lint.sh ]; then sh ../../../.ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores",
+    "prebuild": "npm run lint:ores"
   },
   "dependencies": {
     "@dd/telemetry": "file:../../libs/telemetry-node",
@@ -32,5 +35,13 @@
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
-  "packageManager": "pnpm@9.15.4"
+  "packageManager": "pnpm@9.15.4",
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
+  }
 }
