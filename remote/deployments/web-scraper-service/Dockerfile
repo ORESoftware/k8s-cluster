@@ -77,7 +77,9 @@ RUN pnpm run build \
       --quiet \
  && node --import tsx --test \
       tests/apify-fallback.test.ts \
+      tests/bounded-close.test.ts \
       tests/flags-runtime.test.ts \
+      tests/origin-politeness.test.ts \
       tests/runtime-config-guard.test.ts \
       tests/scraper-contract-fixtures.test.ts \
       tests/sensitive-field-policy.test.ts \
