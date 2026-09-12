@@ -1,0 +1,28 @@
+name: canonical gap-bootstrap supervisor contract
+
+on:
+  pull_request:
+    branches: [main, fix/den319-dispatch-existing-gap-bootstrap]
+    paths:
+      - .github/workflows/canonical-gap-bootstrap-supervisor.yml
+      - .github/workflows/canonical-gap-bootstrap-supervisor-contract.yml
+      - scripts/ops/test_canonical_gap_bootstrap_supervisor.py
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out proposed tree without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile contract test
+        run: python3 -m py_compile scripts/ops/test_canonical_gap_bootstrap_supervisor.py
+
+      - name: Verify trusted supervisor security contract
+        run: python3 scripts/ops/test_canonical_gap_bootstrap_supervisor.py

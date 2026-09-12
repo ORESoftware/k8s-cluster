@@ -1,0 +1,172 @@
+name: Trusted canonical gap-bootstrap supervisor
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/canonical-gap-bootstrap-dispatch-trigger
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  statuses: write
+
+concurrency:
+  group: canonical-gap-bootstrap-supervisor-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.pull_request.number == 551 &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/dispatch-canonical-gap-bootstrap-20260801-v1' &&
+      github.event.pull_request.title == 'DO NOT MERGE: dispatch safe canonical repository-gap bootstrap'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 125
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TRIGGER_PR: '551'
+      TRACKING_PR: '471'
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      MARKER_PATH: .github/canonical-gap-bootstrap-dispatch-trigger
+      CHILD_WORKFLOW: ops-bootstrap-canonical-repository-gaps.yml
+      WORKFLOW_BLOB_SHA: 112cb7e8249c6a2a41de9799fca870f5cabde055
+      SCRIPT_BLOB_SHA: 9d9021a0584de8e3f7def2f32a067b4f6701e6c2
+      FLEET_SOURCE_SHA: 5d9a0c2cb44dff607bc3953954ce4b9af08e5789
+
+    steps:
+      - name: Validate exact carrier and immutable trusted-main inputs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}")"
+          jq -e --arg base_sha "$TRUSTED_BASE_SHA" --arg head_sha "$TARGET_SHA" '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .base.sha == $base_sha and
+            .head.sha == $head_sha and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/dispatch-canonical-gap-bootstrap-20260801-v1" and
+            .title == "DO NOT MERGE: dispatch safe canonical repository-gap bootstrap" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 4 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          test "$(jq -er '.[0].sha' <<<"$commits")" = "$TARGET_SHA"
+
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" -eq 1
+          jq -e --arg marker "$MARKER_PATH" '
+            .[0].filename == $marker and
+            .[0].status == "added" and
+            .[0].additions == 4 and
+            .[0].deletions == 0 and
+            .[0].changes == 4
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${MARKER_PATH}?ref=${TARGET_SHA}" --jq .content)"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          expected=$'target=canonical-gap-bootstrap-v1\nworkflow=112cb7e8249c6a2a41de9799fca870f5cabde055\nscript=9d9021a0584de8e3f7def2f32a067b4f6701e6c2\nfleet-source=5d9a0c2cb44dff607bc3953954ce4b9af08e5789'
+          test "$marker" = "$expected"
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/${CHILD_WORKFLOW}?ref=${TRUSTED_BASE_SHA}")"
+          test "$(jq -er .sha <<<"$workflow")" = "$WORKFLOW_BLOB_SHA"
+          script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=${TRUSTED_BASE_SHA}")"
+          test "$(jq -er .sha <<<"$script")" = "$SCRIPT_BLOB_SHA"
+          gh api "repos/ORESoftware/ai-agent-coordinator.rs/commits/${FLEET_SOURCE_SHA}" >/dev/null
+
+          registered="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${CHILD_WORKFLOW}")"
+          test "$(jq -er .state <<<"$registered")" = active
+
+      - name: Dispatch exact trusted-main bootstrap and discover its run
+        id: child
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${CHILD_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=100"
+          before="$RUNNER_TEMP/before-run-ids.txt"
+          gh api "$endpoint" --jq '.workflow_runs[].id' | sort -n > "$before"
+
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${CHILD_WORKFLOW}/dispatches" \
+            -f ref=main
+
+          run_id=''
+          run_url=''
+          for _ in $(seq 1 60); do
+            runs="$(gh api "$endpoint")"
+            while IFS=$'\t' read -r candidate url; do
+              [[ "$candidate" =~ ^[0-9]+$ ]] || continue
+              if ! grep -Fxq "$candidate" "$before"; then
+                run_id="$candidate"
+                run_url="$url"
+                break
+              fi
+            done < <(jq -r '.workflow_runs | sort_by(.created_at) | reverse | .[] | [.id,.html_url] | @tsv' <<<"$runs")
+            [[ "$run_id" =~ ^[0-9]+$ ]] && break
+            sleep 2
+          done
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=pending \
+            -f context='ops/canonical-gap-bootstrap' \
+            -f description="trusted bootstrap run ${run_id} is executing" \
+            -f target_url="$run_url" >/dev/null
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Trusted canonical gap bootstrap dispatched: ${run_url}" >/dev/null
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Trusted canonical gap bootstrap dispatched from carrier #${TRIGGER_PR}: ${run_url}" >/dev/null
+
+      - name: Follow exact child run to completion
+        shell: bash
+        env:
+          RUN_ID: ${{ steps.child.outputs.run_id }}
+          RUN_URL: ${{ steps.child.outputs.run_url }}
+        run: |
+          set -Eeuo pipefail
+          status=queued
+          conclusion=''
+          for _ in $(seq 1 460); do
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
+            status="$(jq -r .status <<<"$current")"
+            conclusion="$(jq -r '.conclusion // empty' <<<"$current")"
+            echo "bootstrap run=${RUN_ID} status=${status} conclusion=${conclusion:-pending}"
+            [[ "$status" == completed ]] && break
+            sleep 15
+          done
+          [[ "$status" == completed ]] || conclusion=timed_out
+
+          if [[ "$conclusion" == success ]]; then
+            state=success
+            description='canonical repository gaps bootstrapped safely'
+          else
+            state=failure
+            description="canonical gap bootstrap ${conclusion:-failed}"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='ops/canonical-gap-bootstrap' \
+            -f description="$description" \
+            -f target_url="$RUN_URL" >/dev/null
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Canonical gap bootstrap completed with **${conclusion:-unknown}**: ${RUN_URL}" >/dev/null || true
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Canonical gap bootstrap from carrier #${TRIGGER_PR} completed with **${conclusion:-unknown}**: ${RUN_URL}" >/dev/null || true
+          test "$conclusion" = success
