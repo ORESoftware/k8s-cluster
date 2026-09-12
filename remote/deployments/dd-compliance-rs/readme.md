@@ -107,5 +107,3 @@ Even with these gates enabled, the collectors are hardened against an attacker-c
   `git clone` runs with `GIT_TERMINAL_PROMPT=0`, the `ext`/`file` transports disabled, and
   `--no-recurse-submodules --no-tags`, so a malicious repo can't prompt for credentials or pull in
   additional remote URLs.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

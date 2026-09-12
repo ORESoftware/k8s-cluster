@@ -79,5 +79,3 @@ container response echoed it back.
 docker build -t dd-ws-loadtest-rs:dev remote/deployments/ws-loadtest-rs
 docker run --rm dd-ws-loadtest-rs:dev
 ```
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

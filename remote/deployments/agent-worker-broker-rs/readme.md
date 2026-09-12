@@ -55,5 +55,3 @@ target for moving worker lifecycle and dispatch out of the REST data API.
 - **Ensure-once stream** — the WorkQueue stream is ensured once at startup (not per request); a
   publish failure or timeout clears the flag so the next request re-ensures (covers runtime deletion).
 - A startup warning is logged if no auth secret is configured (dispatch fails closed regardless).
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

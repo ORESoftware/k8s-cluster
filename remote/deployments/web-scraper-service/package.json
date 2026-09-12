@@ -13,18 +13,15 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
-    "test": "pnpm run build && node --test test/*.test.mjs && node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dd/telemetry": "file:../../libs/telemetry-node",
     "cheerio": "^1.2.0",
     "fastify": "^5.0.0",
     "jsdom": "^29.0.2",
     "linkedom": "^0.18.12",
     "playwright": "1.56.0",
     "puppeteer": "^24.22.3",
-    "robots-parser": "3.0.1",
     "undici": "^7.25.0",
     "zod": "^4.1.13"
   },

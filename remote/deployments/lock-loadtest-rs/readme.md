@@ -128,5 +128,3 @@ p99=200µs (loopback). Cross-cluster numbers will be lower; see
 - No per-broker concurrent runs. To benchmark all three brokers in
   the same wall-clock window you need three separate replicas of
   this Deployment.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

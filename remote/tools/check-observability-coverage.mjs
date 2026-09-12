@@ -43,14 +43,6 @@ const webHomeMainPath = path.join(
   'src',
   'main.rs',
 );
-const webHomeGrafanaPath = path.join(
-  repoRoot,
-  'remote',
-  'deployments',
-  'web-home-rs',
-  'src',
-  'grafana.rs',
-);
 const deploymentsDir = path.join(repoRoot, 'remote', 'deployments');
 
 const dependencyManifestNames = new Set([
@@ -272,21 +264,7 @@ function dependencyNamesFromManifest(file, text) {
 }
 
 function sourceFilesUnder(dir) {
-  return walk(dir).filter(
-    (file) => sourceFileExtensions.has(path.extname(file)) && !isTestSourceFile(file),
-  );
-}
-
-function isTestSourceFile(file) {
-  const relativeParts = path.relative(deploymentsDir, file).split(path.sep);
-  const basename = path.basename(file);
-  return (
-    relativeParts.includes('test') ||
-    relativeParts.includes('tests') ||
-    /(?:^|\.)test\.[^.]+$/.test(basename) ||
-    /(?:^|\.)spec\.[^.]+$/.test(basename) ||
-    /_test\.[^.]+$/.test(basename)
-  );
+  return walk(dir).filter((file) => sourceFileExtensions.has(path.extname(file)));
 }
 
 const workloadFiles = workloadRoots.flatMap((root) =>
@@ -315,10 +293,7 @@ const dependencyManifests = walk(deploymentsDir).filter((file) =>
 );
 
 const grafanaDashboards = fs.readFileSync(grafanaDashboardsPath, 'utf8');
-const webHomeMain = [
-  fs.readFileSync(webHomeMainPath, 'utf8'),
-  fs.readFileSync(webHomeGrafanaPath, 'utf8'),
-].join('\n');
+const webHomeMain = fs.readFileSync(webHomeMainPath, 'utf8');
 
 const failures = [];
 

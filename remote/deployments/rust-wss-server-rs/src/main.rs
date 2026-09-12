@@ -155,7 +155,6 @@ fn json_escape(s: &str) -> String {
 
 // ---- WS connection handler -------------------------------------------
 
-#[tracing::instrument(name = "ws_connection", skip_all, fields(peer = %peer))]
 async fn handle_ws_connection(stream: TcpStream, peer: SocketAddr) {
     // Disable Nagle on every connection — these are bursty small JSON
     // frames where a 40 ms delay would dominate p50.
@@ -315,8 +314,6 @@ fn env_usize(name: &str, default_value: usize) -> usize {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
-    let _otel = dd_telemetry::init("dd-rust-wss-server");
-
     Lazy::force(&STARTED_AT);
     Lazy::force(&WS_CONNECTIONS_TOTAL);
     Lazy::force(&WS_DISCONNECTIONS_TOTAL);
@@ -337,7 +334,7 @@ async fn main() {
         .parse()
         .expect("invalid ADMIN_PORT/HOST");
 
-    tracing::error!(
+    eprintln!(
         "dd-rust-wss-server starting host={host} ws_port={ws_port} admin_port={admin_port} shards={shards}"
     );
 
@@ -345,12 +342,12 @@ async fn main() {
     for shard_id in 0..shards {
         match make_listener(ws_addr) {
             Ok(listener) => {
-                tracing::error!("dd-rust-wss-server shard={shard_id} bound on {ws_addr}");
+                eprintln!("dd-rust-wss-server shard={shard_id} bound on {ws_addr}");
                 tokio::spawn(accept_loop(listener));
                 spawned += 1;
             }
             Err(error) => {
-                tracing::error!("dd-rust-wss-server shard={shard_id} bind failed on {ws_addr}: {error}");
+                eprintln!("dd-rust-wss-server shard={shard_id} bind failed on {ws_addr}: {error}");
             }
         }
     }
@@ -364,16 +361,11 @@ async fn main() {
     let admin_listener = TcpListener::bind(admin_addr)
         .await
         .expect("bind admin port");
-    tracing::error!("dd-rust-wss-server admin listening on {admin_addr}");
+    eprintln!("dd-rust-wss-server admin listening on {admin_addr}");
 
     let admin = tokio::spawn(async move {
-        if let Err(error) = axum::serve(
-            admin_listener,
-            admin_router.layer(dd_telemetry::http_trace_layer()),
-        )
-        .await
-        {
-            tracing::error!("admin serve error: {error}");
+        if let Err(error) = axum::serve(admin_listener, admin_router).await {
+            eprintln!("admin serve error: {error}");
         }
     });
 
@@ -383,18 +375,18 @@ async fn main() {
         signal(SignalKind::interrupt()).expect("install SIGINT handler");
 
     tokio::select! {
-        _ = sigterm.recv() => tracing::error!("received SIGTERM, exiting"),
-        _ = sigint.recv() => tracing::error!("received SIGINT, exiting"),
+        _ = sigterm.recv() => eprintln!("received SIGTERM, exiting"),
+        _ = sigint.recv() => eprintln!("received SIGINT, exiting"),
         result = admin => {
             match result {
-                Ok(()) => tracing::error!("admin server exited"),
-                Err(error) => tracing::error!("admin server task panicked: {error}"),
+                Ok(()) => eprintln!("admin server exited"),
+                Err(error) => eprintln!("admin server task panicked: {error}"),
             }
         }
     }
 
     let uptime_s = STARTED_AT.elapsed().as_secs_f64();
-    tracing::error!(
+    eprintln!(
         "dd-rust-wss-server stopping uptime_s={uptime_s:.1} active={} total_connected={} total_disconnected={}",
         WS_ACTIVE.get(),
         WS_CONNECTIONS_TOTAL.get(),

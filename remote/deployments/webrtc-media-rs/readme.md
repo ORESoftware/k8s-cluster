@@ -75,5 +75,3 @@ Recommended first production step is TURN:
 
 Add an SFU later only when the product needs server-side room media routing, recording, moderation,
 simulcast, or large multi-party calls.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

@@ -97,11 +97,10 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            # Cold source builds can exceed five minutes after Cargo cache loss.
-            failureThreshold: 600
+            failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /healthz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3

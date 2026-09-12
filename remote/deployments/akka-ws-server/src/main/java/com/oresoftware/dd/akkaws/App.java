@@ -39,11 +39,7 @@ public final class App {
     final var asyncJavaPipeline = new AsyncJavaPipeline(asyncJavaExec);
     final var akkaStreamsPipeline = new AkkaStreamsPipeline(system);
 
-    // Explicit OpenTelemetry SDK (no -javaagent). WsRoutes opens one SERVER span per route.
-    final Telemetry telemetry = Telemetry.init();
-
-    final Route routes =
-        new WsRoutes(system, asyncJavaPipeline, akkaStreamsPipeline, telemetry).all();
+    final Route routes = new WsRoutes(system, asyncJavaPipeline, akkaStreamsPipeline).all();
 
     final CompletionStage<ServerBinding> binding =
         Http.get(system).newServerAt(host, port).bind(routes);
@@ -62,7 +58,6 @@ public final class App {
       log.info("dd-akka-ws-server shutting down");
       binding.thenCompose(ServerBinding::unbind).whenComplete((u, e) -> system.terminate());
       asyncJavaExec.shutdown();
-      telemetry.close();
     }, "shutdown-hook"));
   }
 

@@ -17,13 +17,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use maud::{html, Markup, PreEscaped, DOCTYPE};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::signal;
 use tower_http::{limit::RequestBodyLimitLayer, trace::TraceLayer};
 use tracing::{error, info};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-apostille-services-server";
@@ -297,7 +297,7 @@ enum AuthFailure {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let _otel = dd_telemetry::init(SERVICE_NAME);
+    init_tracing();
     let config = config_from_env().map_err(|message| {
         error!(error = %message, "apostille service configuration failed");
         std::io::Error::new(std::io::ErrorKind::InvalidInput, message)
@@ -353,11 +353,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         translation_provider = state.config.translation_provider.is_some(),
         "apostille services server listening"
     );
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     info!("apostille services server shut down cleanly");
     Ok(())
+}
+
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("dd_apostille_services_server=info,tower_http=info"));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer().compact())
+        .init();
 }
 
 async fn shutdown_signal() {
@@ -564,45 +573,26 @@ fn validate_outbound_url(raw: &str, allow_private: bool) -> Result<Url, String> 
     Ok(url)
 }
 
-/// True if an IPv4 address is in a range we refuse to make outbound requests to
-/// (SSRF guard): private, loopback, link-local (incl. the `169.254.169.254` cloud
-/// metadata endpoint), broadcast, documentation, unspecified, and the RFC 6598
-/// carrier-grade-NAT shared range `100.64.0.0/10`.
-fn blocked_v4(addr: std::net::Ipv4Addr) -> bool {
-    let o = addr.octets();
-    let is_cgnat = o[0] == 100 && (64..=127).contains(&o[1]);
-    addr.is_private()
-        || addr.is_loopback()
-        || addr.is_link_local()
-        || addr.is_broadcast()
-        || addr.is_documentation()
-        || addr.is_unspecified()
-        || is_cgnat
-}
-
 fn blocked_host(host: &str) -> bool {
     let host = host.trim().trim_matches(['[', ']']).to_ascii_lowercase();
     if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
         return true;
     }
     match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(addr)) => blocked_v4(addr),
+        Ok(IpAddr::V4(addr)) => {
+            addr.is_private()
+                || addr.is_loopback()
+                || addr.is_link_local()
+                || addr.is_broadcast()
+                || addr.is_documentation()
+                || addr.is_unspecified()
+        }
         Ok(IpAddr::V6(addr)) => {
-            // An IPv4-mapped IPv6 literal (e.g. `::ffff:169.254.169.254`) must be
-            // judged by its embedded IPv4, or the v4 ranges above are reachable
-            // through the v6 form — an SSRF bypass to loopback/metadata. Use
-            // `to_ipv4_mapped` (only the `::ffff:0:0/96` range), NOT `to_ipv4`,
-            // which also maps the deprecated `::/96` compat range and would turn
-            // `::1` into `0.0.0.1` and wrongly unblock loopback.
-            if let Some(v4) = addr.to_ipv4_mapped() {
-                blocked_v4(v4)
-            } else {
-                addr.is_loopback()
-                    || addr.is_unspecified()
-                    || addr.is_unique_local()
-                    || addr.is_unicast_link_local()
-                    || addr.is_multicast()
-            }
+            addr.is_loopback()
+                || addr.is_unspecified()
+                || addr.is_unique_local()
+                || addr.is_unicast_link_local()
+                || addr.is_multicast()
         }
         Err(_) => false,
     }
@@ -857,101 +847,31 @@ fn connector_status(state: &AppState) -> Vec<Value> {
 }
 
 async fn home(State(state): State<AppState>) -> Html<String> {
-    let connector_count = state.config.provider_configs.len();
+    let configured = state.config.provider_configs.len();
     let translation = if state.config.translation_provider.is_some() {
         "configured"
     } else {
         "not configured"
     };
-    Html(render_home(jurisdiction_catalog().len(), connector_count, translation).into_string())
+    let mut html = HOME_HTML.to_string();
+    html = html.replace(
+        "__JURISDICTION_COUNT__",
+        &jurisdiction_catalog().len().to_string(),
+    );
+    html = html.replace("__CONNECTOR_COUNT__", &configured.to_string());
+    html = html.replace("__TRANSLATION_STATUS__", translation);
+    Html(html)
 }
 
-/// The home page shell. maud compile-checks the structure and auto-escapes any
-/// dynamic value, replacing the previous `HOME_HTML` string-replace template.
-fn render_home(jurisdiction_count: usize, connector_count: usize, translation: &str) -> Markup {
-    html! {
-        (DOCTYPE)
-        html lang="en" {
-            head {
-                meta charset="utf-8";
-                meta name="viewport" content="width=device-width, initial-scale=1";
-                title { "Apostille, Notary, Immigration Services" }
-                script src="https://unpkg.com/htmx.org@1.9.12" {}
-                style { (PreEscaped(HOME_CSS)) }
-            }
-            body {
-                header {
-                    div class="wrap hero" {
-                        span class="eyebrow" { "Rust Axum service" }
-                        h1 { "Apostille, Notary, Immigration Services" }
-                        p class="lead" {
-                            "A normalized intake and orchestration server for document legalization, "
-                            "notarial workflows, immigration support, English translation handoff, "
-                            "government-provider submissions, and inbound status webhooks."
-                        }
-                        div class="stats" {
-                            div class="stat" { strong { (jurisdiction_count) } span { "jurisdictions in the catalog" } }
-                            div class="stat" { strong { (connector_count) } span { "provider connectors configured at boot" } }
-                            div class="stat" { strong { (translation) } span { "translation provider" } }
-                        }
-                    }
-                }
-                nav {
-                    div class="wrap tabs" {
-                        button hx-get="/home/flow" hx-target="#home-panel" hx-swap="innerHTML" { "Workflow" }
-                        button hx-get="/home/jurisdictions" hx-target="#home-panel" hx-swap="innerHTML" { "Jurisdictions" }
-                        button hx-get="/home/webhooks" hx-target="#home-panel" hx-swap="innerHTML" { "Webhooks" }
-                        button hx-get="/home/examples" hx-target="#home-panel" hx-swap="innerHTML" { "Payloads" }
-                        button onclick="location.href='/docs/api'" { "API Docs" }
-                    }
-                }
-                main class="wrap grid" {
-                    section id="home-panel" hx-get="/home/flow" hx-trigger="load" hx-swap="innerHTML" {
-                        p { "Loading workflow..." }
-                    }
-                    aside class="panel" {
-                        h2 { "Runtime Contract" }
-                        div class="aside-list" {
-                            div {
-                                strong { "Auth" }
-                                p {
-                                    "Operator routes accept " code { "X-Server-Auth" } " or legacy "
-                                    code { "Auth" } ". Government callbacks use "
-                                    code { "X-Apostille-Webhook-Secret" } "."
-                                }
-                            }
-                            div {
-                                strong { "Translation" }
-                                p {
-                                    "Every non-English document field is queued through the configured "
-                                    "translation provider. Without a provider, the case is marked "
-                                    "translation-pending."
-                                }
-                            }
-                            div {
-                                strong { "Interop" }
-                                p {
-                                    "Government API calls are made only for jurisdictions with explicit "
-                                    "provider base URLs and credentials from environment or secret-backed "
-                                    "JSON config."
-                                }
-                            }
-                            div {
-                                strong { "Storage" }
-                                p {
-                                    "This first slice keeps a bounded in-memory case ledger. Add a "
-                                    "Postgres contract before storing legal case data durably."
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-const HOME_CSS: &str = r##":root { color-scheme: light; --bg:#f4f5f3; --ink:#17201a; --muted:#617067; --panel:#ffffff; --line:#d8ded7; --accent:#1f6f5b; --accent-2:#7b3f2a; --soft:#edf3ef; --code:#eef2f0; }
+const HOME_HTML: &str = r##"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apostille, Notary, Immigration Services</title>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    :root { color-scheme: light; --bg:#f4f5f3; --ink:#17201a; --muted:#617067; --panel:#ffffff; --line:#d8ded7; --accent:#1f6f5b; --accent-2:#7b3f2a; --soft:#edf3ef; --code:#eef2f0; }
     * { box-sizing:border-box; }
     body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.55 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     header { min-height:66vh; display:grid; align-items:end; background:linear-gradient(180deg, rgba(23,32,26,.18), rgba(244,245,243,.98)), url("https://images.unsplash.com/photo-1450101499163-c8848c66ca85?auto=format&fit=crop&w=1800&q=80") center/cover; }
@@ -993,91 +913,125 @@ const HOME_CSS: &str = r##":root { color-scheme: light; --bg:#f4f5f3; --ink:#172
       thead { display:none; }
       tr { border-bottom:1px solid var(--line); padding:7px 0; }
       td { border-bottom:0; padding:4px 0; }
-    }"##;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap hero">
+      <span class="eyebrow">Rust Axum service</span>
+      <h1>Apostille, Notary, Immigration Services</h1>
+      <p class="lead">A normalized intake and orchestration server for document legalization, notarial workflows, immigration support, English translation handoff, government-provider submissions, and inbound status webhooks.</p>
+      <div class="stats">
+        <div class="stat"><strong>__JURISDICTION_COUNT__</strong><span>jurisdictions in the catalog</span></div>
+        <div class="stat"><strong>__CONNECTOR_COUNT__</strong><span>provider connectors configured at boot</span></div>
+        <div class="stat"><strong>__TRANSLATION_STATUS__</strong><span>translation provider</span></div>
+      </div>
+    </div>
+  </header>
+  <nav>
+    <div class="wrap tabs">
+      <button hx-get="/home/flow" hx-target="#home-panel" hx-swap="innerHTML">Workflow</button>
+      <button hx-get="/home/jurisdictions" hx-target="#home-panel" hx-swap="innerHTML">Jurisdictions</button>
+      <button hx-get="/home/webhooks" hx-target="#home-panel" hx-swap="innerHTML">Webhooks</button>
+      <button hx-get="/home/examples" hx-target="#home-panel" hx-swap="innerHTML">Payloads</button>
+      <button onclick="location.href='/docs/api'">API Docs</button>
+    </div>
+  </nav>
+  <main class="wrap grid">
+    <section id="home-panel" hx-get="/home/flow" hx-trigger="load" hx-swap="innerHTML">
+      <p>Loading workflow...</p>
+    </section>
+    <aside class="panel">
+      <h2>Runtime Contract</h2>
+      <div class="aside-list">
+        <div><strong>Auth</strong><p>Operator routes accept <code>X-Server-Auth</code> or legacy <code>Auth</code>. Government callbacks use <code>X-Apostille-Webhook-Secret</code>.</p></div>
+        <div><strong>Translation</strong><p>Every non-English document field is queued through the configured translation provider. Without a provider, the case is marked translation-pending.</p></div>
+        <div><strong>Interop</strong><p>Government API calls are made only for jurisdictions with explicit provider base URLs and credentials from environment or secret-backed JSON config.</p></div>
+        <div><strong>Storage</strong><p>This first slice keeps a bounded in-memory case ledger. Add a Postgres contract before storing legal case data durably.</p></div>
+      </div>
+    </aside>
+  </main>
+</body>
+</html>"##;
 
-async fn home_flow_fragment() -> Html<String> {
+async fn home_flow_fragment() -> Html<&'static str> {
     Html(
-        html! {
-            h2 { "How It Works" }
-            div class="flow" {
-                div class="step" { strong { "1. Intake" } span { "Clients post one normalized case to " code { "POST /cases" } " with service type, jurisdiction, applicant data, consent, and document metadata or text." } }
-                div class="step" { strong { "2. Normalize" } span { "The server canonicalizes jurisdictions, service types, language codes, document ids, and public file URLs. It rejects unknown jurisdictions and unsafe outbound URLs." } }
-                div class="step" { strong { "3. Translate To English" } span { "When source language differs from the configured target language, document titles and text are sent to " code { "APOSTILLE_TRANSLATION_BASE_URL" } ". If no translator is configured, the case remains translation-pending." } }
-                div class="step" { strong { "4. Submit Through Approved Connectors" } span { code { "POST /cases/:case_id/submit" } ", or " code { "workflow.autoSubmit=true" } ", posts to the jurisdiction provider configured through " code { "APOSTILLE_PROVIDER_CONFIG_JSON" } " or per-country env vars." } }
-                div class="step" { strong { "5. Receive Government Webhooks" } span { "Providers call " code { "POST /webhooks/government" } " or " code { "POST /webhooks/government/:jurisdiction" } ". The server appends status events and updates the matching case." } }
-            }
-        }
-        .into_string(),
+        r#"<h2>How It Works</h2>
+<div class="flow">
+  <div class="step"><strong>1. Intake</strong><span>Clients post one normalized case to <code>POST /cases</code> with service type, jurisdiction, applicant data, consent, and document metadata or text.</span></div>
+  <div class="step"><strong>2. Normalize</strong><span>The server canonicalizes jurisdictions, service types, language codes, document ids, and public file URLs. It rejects unknown jurisdictions and unsafe outbound URLs.</span></div>
+  <div class="step"><strong>3. Translate To English</strong><span>When source language differs from the configured target language, document titles and text are sent to <code>APOSTILLE_TRANSLATION_BASE_URL</code>. If no translator is configured, the case remains translation-pending.</span></div>
+  <div class="step"><strong>4. Submit Through Approved Connectors</strong><span><code>POST /cases/:case_id/submit</code>, or <code>workflow.autoSubmit=true</code>, posts to the jurisdiction provider configured through <code>APOSTILLE_PROVIDER_CONFIG_JSON</code> or per-country env vars.</span></div>
+  <div class="step"><strong>5. Receive Government Webhooks</strong><span>Providers call <code>POST /webhooks/government</code> or <code>POST /webhooks/government/:jurisdiction</code>. The server appends status events and updates the matching case.</span></div>
+</div>"#,
     )
 }
 
 async fn home_jurisdictions_fragment(State(state): State<AppState>) -> Html<String> {
-    // maud auto-escapes every interpolated value, so the manual escape_html
-    // calls (and their easy-to-forget failure mode) are gone.
-    Html(
-        html! {
-            h2 { "Jurisdiction Coverage" }
-            p { "The catalog covers the requested countries and regions. Each government API connector is opt-in, credential-backed, and configured by operators rather than hard-coded in source." }
-            table {
-                thead { tr { th { "Jurisdiction" } th { "Languages" } th { "Connector" } th { "Notes" } } }
-                tbody {
-                    @for jurisdiction in jurisdiction_catalog() {
-                        @let configured = state
-                            .config
-                            .provider_configs
-                            .get(&jurisdiction.slug)
-                            .map(|provider| if provider.enabled { "configured" } else { "disabled" })
-                            .unwrap_or("not configured");
-                        tr {
-                            td { strong { (jurisdiction.display_name) } div class="muted" { code { (jurisdiction.slug) } } }
-                            td { (jurisdiction.primary_languages.join(", ")) }
-                            td { (configured) }
-                            td { (jurisdiction.notes) }
-                        }
-                    }
-                }
-            }
-        }
-        .into_string(),
-    )
+    let rows = jurisdiction_catalog()
+        .into_iter()
+        .map(|jurisdiction| {
+            let configured = state
+                .config
+                .provider_configs
+                .get(&jurisdiction.slug)
+                .map(|provider| if provider.enabled { "configured" } else { "disabled" })
+                .unwrap_or("not configured");
+            format!(
+                "<tr><td><strong>{}</strong><div class=\"muted\"><code>{}</code></div></td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                escape_html(&jurisdiction.display_name),
+                escape_html(&jurisdiction.slug),
+                escape_html(&jurisdiction.primary_languages.join(", ")),
+                escape_html(configured),
+                escape_html(&jurisdiction.notes)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    Html(format!(
+        r#"<h2>Jurisdiction Coverage</h2>
+<p>The catalog covers the requested countries and regions. Each government API connector is opt-in, credential-backed, and configured by operators rather than hard-coded in source.</p>
+<table>
+  <thead><tr><th>Jurisdiction</th><th>Languages</th><th>Connector</th><th>Notes</th></tr></thead>
+  <tbody>{rows}</tbody>
+</table>"#
+    ))
 }
 
-async fn home_webhooks_fragment() -> Html<String> {
+async fn home_webhooks_fragment() -> Html<&'static str> {
     Html(
-        html! {
-            h2 { "Webhook Flow" }
-            p { "Government agencies and approved intermediaries usually expose different callback formats. This service accepts one normalized envelope and stores only compact status metadata in the case ledger." }
-            h3 { "Callback URL" }
-            pre { code { "POST /webhooks/government\nPOST /webhooks/government/:jurisdiction" } }
-            h3 { "Authentication" }
-            p { "Set " code { "APOSTILLE_WEBHOOK_SECRET" } " and require providers to send one of these headers:" }
-            pre { code { "X-Apostille-Webhook-Secret: ...\nX-Government-Webhook-Secret: ...\nX-Webhook-Secret: ..." } }
-            h3 { "Envelope" }
-            pre { code {
-"{
-  \"caseId\": \"case_...\",
-  \"jurisdiction\": \"peru\",
-  \"providerReference\": \"gov-reference-123\",
-  \"eventType\": \"status.changed\",
-  \"status\": \"approved\",
-  \"payload\": {
-    \"rawProviderStatus\": \"approved\",
-    \"receivedAt\": \"2026-06-07T18:00:00Z\"
+        r#"<h2>Webhook Flow</h2>
+<p>Government agencies and approved intermediaries usually expose different callback formats. This service accepts one normalized envelope and stores only compact status metadata in the case ledger.</p>
+<h3>Callback URL</h3>
+<pre><code>POST /webhooks/government
+POST /webhooks/government/:jurisdiction</code></pre>
+<h3>Authentication</h3>
+<p>Set <code>APOSTILLE_WEBHOOK_SECRET</code> and require providers to send one of these headers:</p>
+<pre><code>X-Apostille-Webhook-Secret: ...
+X-Government-Webhook-Secret: ...
+X-Webhook-Secret: ...</code></pre>
+<h3>Envelope</h3>
+<pre><code>{
+  "caseId": "case_...",
+  "jurisdiction": "peru",
+  "providerReference": "gov-reference-123",
+  "eventType": "status.changed",
+  "status": "approved",
+  "payload": {
+    "rawProviderStatus": "approved",
+    "receivedAt": "2026-06-07T18:00:00Z"
   }
-}" } }
-            p { "When " code { "caseId" } " is present, the case status becomes " code { "government_<status>" } ". Orphan callbacks are accepted and reported as unmatched so providers can retry with a corrected id." }
-        }
-        .into_string(),
+}</code></pre>
+<p>When <code>caseId</code> is present, the case status becomes <code>government_&lt;status&gt;</code>. Orphan callbacks are accepted and reported as unmatched so providers can retry with a corrected id.</p>"#,
     )
 }
 
-async fn home_examples_fragment() -> Html<String> {
+async fn home_examples_fragment() -> Html<&'static str> {
     Html(
-        html! {
-            h2 { "Payload Examples" }
-            h3 { "Create And Auto-Submit A Case" }
-            pre { code {
-r#"curl -sS http://127.0.0.1:8122/cases \
+        r#"<h2>Payload Examples</h2>
+<h3>Create And Auto-Submit A Case</h3>
+<pre><code>curl -sS http://127.0.0.1:8122/cases \
   -H 'content-type: application/json' \
   -H "X-Server-Auth: $SERVER_AUTH_SECRET" \
   -d '{
@@ -1100,10 +1054,9 @@ r#"curl -sS http://127.0.0.1:8122/cases \
       "dataUseAccepted": true,
       "governmentTermsAccepted": true
     }
-  }'"# } }
-            h3 { "Provider Config Shape" }
-            pre { code {
-r#"{
+  }'</code></pre>
+<h3>Provider Config Shape</h3>
+<pre><code>{
   "peru": {
     "baseUrl": "https://approved-provider.example",
     "submitPath": "/apostille/submit",
@@ -1112,61 +1065,17 @@ r#"{
     "authKind": "bearer",
     "tokenEnv": "APOSTILLE_PROVIDER_PERU_TOKEN"
   }
-}"# } }
-        }
-        .into_string(),
+}</code></pre>"#,
     )
 }
 
-#[cfg(test)]
-mod maud_render_tests {
-    use super::*;
-
-    #[test]
-    fn home_page_renders_htmx_shell_and_counts() {
-        let html = render_home(7, 3, "configured").into_string();
-        assert!(html.starts_with("<!DOCTYPE html>"));
-        // HTMX wiring preserved verbatim from the original template.
-        assert!(html.contains("src=\"https://unpkg.com/htmx.org@1.9.12\""));
-        assert!(html.contains("hx-get=\"/home/flow\""));
-        assert!(html.contains("hx-target=\"#home-panel\""));
-        assert!(html.contains("hx-trigger=\"load\""));
-        // Dynamic counts are interpolated into the stat tiles.
-        assert!(html.contains("<strong>7</strong>"));
-        assert!(html.contains("<strong>3</strong>"));
-        assert!(html.contains("<strong>configured</strong>"));
-        // CSS embedded verbatim via PreEscaped.
-        assert!(html.contains("--accent:#1f6f5b"));
-    }
-
-    #[test]
-    fn webhooks_fragment_auto_escapes_angle_brackets() {
-        // The old hand-written template wrote `&lt;status&gt;` by hand; maud must
-        // produce the same escaped output from the literal `government_<status>`.
-        let html = tokio_test_block(home_webhooks_fragment());
-        assert!(html.contains("government_&lt;status&gt;"));
-        assert!(!html.contains("government_<status>"));
-    }
-
-    // Minimal executor so the async fragment can be rendered without pulling in
-    // a full tokio runtime dependency for the test.
-    fn tokio_test_block(fut: impl std::future::Future<Output = Html<String>>) -> String {
-        use std::pin::pin;
-        use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
-        fn noop(_: *const ()) {}
-        fn clone(_: *const ()) -> RawWaker {
-            RawWaker::new(std::ptr::null(), &VTABLE)
-        }
-        static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, noop, noop, noop);
-        let waker = unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) };
-        let mut cx = Context::from_waker(&waker);
-        let mut fut = pin!(fut);
-        loop {
-            if let Poll::Ready(Html(body)) = fut.as_mut().poll(&mut cx) {
-                return body;
-            }
-        }
-    }
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }
 
 async fn descriptor(State(state): State<AppState>) -> Json<Value> {
@@ -2162,856 +2071,4 @@ async fn api_docs_json() -> impl IntoResponse {
         [("content-type", "application/json; charset=utf-8")],
         include_str!("../generated/api-docs.json"),
     )
-}
-
-// ---------------------------------------------------------------------------
-// Integrity / security focused unit tests.
-//
-// These exercise the deterministic, service-free logic that gates every
-// document/case as it moves through the apostille pipeline: input
-// sanitization and bounds, jurisdiction/service canonicalization, the SSRF
-// outbound-URL guard, operator/webhook authentication, consent gating for
-// government submission, translation routing, and the serialization contract
-// clients depend on. Assertions capture *current* behavior; a few document
-// genuine gaps (marked FINDING) so they act as regression tripwires rather
-// than aspirational specs. No production code is modified by these tests.
-// ---------------------------------------------------------------------------
-#[cfg(test)]
-mod logic_tests {
-    use super::*;
-    use axum::http::{HeaderName, HeaderValue};
-
-    // ---- fixtures -------------------------------------------------------
-
-    fn base_config() -> Config {
-        Config {
-            bind_addr: "0.0.0.0".to_string(),
-            port: DEFAULT_PORT,
-            server_auth_secret: None,
-            webhook_secret: None,
-            allow_unauthenticated: false,
-            allow_unauthenticated_webhooks: false,
-            allow_private_provider_urls: false,
-            default_target_language: "en".to_string(),
-            provider_configs: BTreeMap::new(),
-            translation_provider: None,
-        }
-    }
-
-    fn test_state(config: Config) -> AppState {
-        AppState {
-            config: Arc::new(config),
-            http: reqwest::Client::new(),
-            store: Arc::new(RwLock::new(CaseStore::default())),
-            metrics: Arc::new(Metrics::default()),
-        }
-    }
-
-    fn mk_headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        for (name, value) in pairs {
-            headers.insert(
-                HeaderName::from_static(name),
-                HeaderValue::from_str(value).unwrap(),
-            );
-        }
-        headers
-    }
-
-    fn translation_with(status: &str) -> DocumentTranslation {
-        DocumentTranslation {
-            document_id: "doc_1".to_string(),
-            field: "text".to_string(),
-            source_language: "es".to_string(),
-            target_language: "en".to_string(),
-            status: status.to_string(),
-            provider: "configured-http".to_string(),
-            original_text: "hola".to_string(),
-            translated_text: None,
-            translated_at_ms: 0,
-            error: None,
-        }
-    }
-
-    fn consent_of(rep: bool, self_filed: bool, data: bool, gov: bool) -> ConsentAttestation {
-        ConsentAttestation {
-            authorized_representative: Some(rep),
-            self_filed: Some(self_filed),
-            data_use_accepted: Some(data),
-            government_terms_accepted: Some(gov),
-        }
-    }
-
-    fn sample_case() -> ServiceCase {
-        ServiceCase {
-            case_id: "case_test".to_string(),
-            request_id: "req_test".to_string(),
-            customer_reference: None,
-            status: "ready_for_submission".to_string(),
-            service_type: "apostille".to_string(),
-            jurisdiction: canonical_jurisdiction("peru").unwrap(),
-            applicant: Applicant {
-                full_name: "Example Applicant".to_string(),
-                email: None,
-                phone: None,
-                nationality: None,
-                date_of_birth: None,
-                passport_country: None,
-                address_country: None,
-            },
-            documents: Vec::new(),
-            target_language: "en".to_string(),
-            translations: Vec::new(),
-            government_submissions: Vec::new(),
-            webhook_events: Vec::new(),
-            consent: None,
-            warnings: Vec::new(),
-            metadata: None,
-            created_at_ms: 0,
-            updated_at_ms: 0,
-        }
-    }
-
-    // ---- canonicalization / slugging -----------------------------------
-
-    #[test]
-    fn canonical_slug_normalizes_and_is_idempotent() {
-        assert_eq!(canonical_slug("Peru"), "peru");
-        assert_eq!(canonical_slug("  United States  "), "united-states");
-        assert_eq!(canonical_slug("US!!"), "us");
-        assert_eq!(canonical_slug("a--b"), "a-b");
-        assert_eq!(canonical_slug("---"), "");
-        assert_eq!(canonical_slug("   "), "");
-        // Non-ASCII is dropped to a separator then trimmed.
-        assert_eq!(canonical_slug("café"), "caf");
-        // Idempotence is the invariant jurisdiction matching relies on.
-        for sample in ["Peru", "United-States", "a--b", "café", "X_y Z"] {
-            let once = canonical_slug(sample);
-            assert_eq!(canonical_slug(&once), once, "slug not idempotent: {sample}");
-        }
-    }
-
-    #[test]
-    fn env_slug_uppercases_with_underscores() {
-        assert_eq!(env_slug("united-states"), "UNITED_STATES");
-        assert_eq!(env_slug("Peru"), "PERU");
-        assert_eq!(env_slug("a b"), "A_B");
-    }
-
-    // ---- token / text sanitization -------------------------------------
-
-    #[test]
-    fn request_id_trims_falls_back_and_truncates() {
-        assert_eq!(request_id(None, "case"), "case");
-        assert_eq!(request_id(Some(&"  abc  ".to_string()), "case"), "abc");
-        // Whitespace-only input falls back to the default token.
-        assert_eq!(request_id(Some(&"   ".to_string()), "case"), "case");
-        let long = "a".repeat(200);
-        assert_eq!(request_id(Some(&long), "case").chars().count(), MAX_TOKEN_LEN);
-    }
-
-    #[test]
-    fn clean_required_enforces_bounds_and_rejects_control() {
-        assert_eq!(clean_required("  hi  ", "field").unwrap(), "hi");
-        assert!(clean_required("   ", "field").is_err());
-        // Control characters are REJECTED here (not stripped as in clean_text).
-        assert!(clean_required("a\tb", "field").is_err());
-        assert!(clean_required("a\nb", "field").is_err());
-        // 512 bytes is the inclusive ceiling.
-        assert!(clean_required(&"a".repeat(MAX_SHORT_TEXT_LEN), "field").is_ok());
-        assert!(clean_required(&"a".repeat(MAX_SHORT_TEXT_LEN + 1), "field").is_err());
-    }
-
-    #[test]
-    fn clean_required_limit_is_bytes_not_chars() {
-        // 200 three-byte code points = 600 bytes > 512 even though only 200 chars.
-        let euros = "€".repeat(200);
-        assert_eq!(euros.chars().count(), 200);
-        assert!(euros.len() > MAX_SHORT_TEXT_LEN);
-        assert!(clean_required(&euros, "field").is_err());
-    }
-
-    #[test]
-    fn clean_text_strips_control_and_truncates_by_char() {
-        assert_eq!(clean_text(Some(&" hi ".to_string()), 100), Some("hi".to_string()));
-        assert_eq!(clean_text(None, 100), None);
-        assert_eq!(clean_text(Some(&"   ".to_string()), 100), None);
-        // Control chars are silently removed, not rejected.
-        assert_eq!(
-            clean_text(Some(&"a\tb\nc".to_string()), 100),
-            Some("abc".to_string())
-        );
-        // Truncation is by character count.
-        assert_eq!(
-            clean_text(Some(&"abcdef".to_string()), 3),
-            Some("abc".to_string())
-        );
-    }
-
-    #[test]
-    fn clean_short_trims_strips_and_caps() {
-        assert_eq!(clean_short(Some(&" x ".to_string())), Some("x".to_string()));
-        assert_eq!(clean_short(None), None);
-        assert_eq!(clean_short(Some(&"".to_string())), None);
-        assert_eq!(
-            clean_short(Some(&"a\u{0007}b".to_string())),
-            Some("ab".to_string())
-        );
-        let capped = clean_short(Some(&"a".repeat(600))).unwrap();
-        assert_eq!(capped.chars().count(), MAX_SHORT_TEXT_LEN);
-    }
-
-    // ---- translation routing -------------------------------------------
-
-    #[test]
-    fn needs_translation_language_matrix() {
-        assert!(needs_translation("es", "en"));
-        assert!(needs_translation("es-PE", "en"));
-        assert!(needs_translation("de", "fr"));
-        assert!(needs_translation("auto", "en"));
-        assert!(!needs_translation("en", "en"));
-        assert!(!needs_translation("EN", "en"));
-        assert!(!needs_translation("en-US", "en"));
-        assert!(!needs_translation("fr", "fr"));
-        assert!(!needs_translation("es", "es"));
-    }
-
-    // ---- outbound endpoint construction --------------------------------
-
-    #[test]
-    fn provider_endpoint_joins_paths_without_double_slash() {
-        let cases = [
-            ("https://x.example", "/submit", "https://x.example/submit"),
-            ("https://x.example/", "submit", "https://x.example/submit"),
-            ("https://x.example/api", "/v1/go", "https://x.example/api/v1/go"),
-            ("https://x.example/api/", "/v1/go", "https://x.example/api/v1/go"),
-        ];
-        for (base, path, expected) in cases {
-            let url = provider_endpoint(&Url::parse(base).unwrap(), path);
-            assert_eq!(url.as_str(), expected, "base={base} path={path}");
-        }
-    }
-
-    // ---- payload shape (privacy invariant) -----------------------------
-
-    #[test]
-    fn payload_shape_describes_object_without_leaking_values() {
-        let shape = payload_shape(&json!({ "b": 1, "ssn": "123-45-6789" }));
-        assert_eq!(shape["type"], "object");
-        assert_eq!(shape["keyCount"], 2);
-        // Keys are exposed (BTreeMap => sorted) but never the sensitive values.
-        assert_eq!(shape["keys"], json!(["b", "ssn"]));
-        let serialized = serde_json::to_string(&shape).unwrap();
-        assert!(
-            !serialized.contains("123-45-6789"),
-            "payload_shape leaked a value: {serialized}"
-        );
-    }
-
-    #[test]
-    fn payload_shape_scalar_and_container_types() {
-        assert_eq!(payload_shape(&json!([1, 2, 3])), json!({"type":"array","length":3}));
-        assert_eq!(payload_shape(&json!("hello")), json!({"type":"string","length":5}));
-        assert_eq!(payload_shape(&json!(42)), json!({"type":"number"}));
-        assert_eq!(payload_shape(&json!(true)), json!({"type":"boolean"}));
-        assert_eq!(payload_shape(&json!(null)), json!({"type":"null"}));
-    }
-
-    // ---- provider reference extraction ---------------------------------
-
-    #[test]
-    fn provider_reference_prefers_by_key_priority_and_truncates() {
-        assert_eq!(
-            provider_reference(&json!({"providerReference":"A","id":"B"})),
-            Some("A".to_string())
-        );
-        // providerReference wins over reference regardless of object order.
-        assert_eq!(
-            provider_reference(&json!({"reference":"R","providerReference":"P"})),
-            Some("P".to_string())
-        );
-        assert_eq!(provider_reference(&json!({"reference":"R"})), Some("R".to_string()));
-        assert_eq!(provider_reference(&json!({"submissionId":"S"})), Some("S".to_string()));
-        assert_eq!(provider_reference(&json!({"caseReference":"C"})), Some("C".to_string()));
-        assert_eq!(provider_reference(&json!({"id":"Z"})), Some("Z".to_string()));
-        assert_eq!(provider_reference(&json!({})), None);
-        // Non-string values are ignored.
-        assert_eq!(provider_reference(&json!({"providerReference": 123})), None);
-        let long = provider_reference(&json!({"id": "a".repeat(300)})).unwrap();
-        assert_eq!(long.chars().count(), MAX_TOKEN_LEN);
-    }
-
-    // ---- catalogs & lookups --------------------------------------------
-
-    #[test]
-    fn jurisdiction_catalog_invariants() {
-        let catalog = jurisdiction_catalog();
-        assert_eq!(catalog.len(), 17);
-        let service_slugs: Vec<String> =
-            service_catalog().into_iter().map(|s| s.slug).collect();
-        let mut seen = BTreeSet::new();
-        for jur in &catalog {
-            assert!(seen.insert(jur.slug.clone()), "duplicate slug {}", jur.slug);
-            assert_eq!(canonical_slug(&jur.slug), jur.slug, "non-canonical slug {}", jur.slug);
-            assert!(!jur.primary_languages.is_empty(), "{} has no languages", jur.slug);
-            assert_eq!(jur.services, service_slugs, "{} service mismatch", jur.slug);
-        }
-    }
-
-    #[test]
-    fn canonical_jurisdiction_resolves_every_slug_and_alias() {
-        for jur in jurisdiction_catalog() {
-            let by_slug = canonical_jurisdiction(&jur.slug).expect("slug resolves");
-            assert_eq!(by_slug.slug, jur.slug);
-            for alias in &jur.aliases {
-                let resolved = canonical_jurisdiction(alias)
-                    .unwrap_or_else(|| panic!("alias {alias} unresolved"));
-                assert_eq!(resolved.slug, jur.slug, "alias {alias} -> wrong slug");
-            }
-        }
-        // Case/whitespace-insensitive and alias resolution spot checks.
-        assert_eq!(canonical_jurisdiction(" PERU ").unwrap().slug, "peru");
-        assert_eq!(canonical_jurisdiction("us").unwrap().slug, "usa");
-        assert_eq!(canonical_jurisdiction("united-states").unwrap().slug, "usa");
-        assert_eq!(canonical_jurisdiction("brasil").unwrap().slug, "brazil");
-    }
-
-    #[test]
-    fn canonical_jurisdiction_rejects_unknown() {
-        assert!(canonical_jurisdiction("atlantis").is_none());
-        assert!(canonical_jurisdiction("").is_none());
-    }
-
-    #[test]
-    fn service_catalog_and_lookup() {
-        let slugs: Vec<String> = service_catalog().into_iter().map(|s| s.slug).collect();
-        assert_eq!(slugs, vec!["apostille", "notary", "immigration"]);
-        assert_eq!(service_type("apostille").unwrap().slug, "apostille");
-        assert_eq!(service_type("  APOSTILLE ").unwrap().slug, "apostille");
-        assert_eq!(service_type("immigration").unwrap().slug, "immigration");
-        assert!(service_type("bogus").is_none());
-    }
-
-    // ---- serialization contract (camelCase) ----------------------------
-
-    #[test]
-    fn jurisdiction_serializes_camel_case() {
-        let value = serde_json::to_value(canonical_jurisdiction("usa").unwrap()).unwrap();
-        assert!(value.get("displayName").is_some());
-        assert!(value.get("primaryLanguages").is_some());
-        assert!(value.get("interopLevel").is_some());
-        // The snake_case field names must never leak to clients.
-        assert!(value.get("display_name").is_none());
-        assert!(value.get("primary_languages").is_none());
-    }
-
-    #[test]
-    fn translation_and_case_serialize_camel_case() {
-        let translation = serde_json::to_value(translation_with("translated")).unwrap();
-        for key in ["documentId", "sourceLanguage", "targetLanguage", "translatedAtMs"] {
-            assert!(translation.get(key).is_some(), "missing {key}");
-        }
-        let case = serde_json::to_value(sample_case()).unwrap();
-        for key in ["caseId", "requestId", "serviceType", "targetLanguage", "createdAtMs"] {
-            assert!(case.get(key).is_some(), "missing {key}");
-        }
-    }
-
-    // ---- SSRF guard: validate_outbound_url -----------------------------
-
-    #[test]
-    fn validate_outbound_url_enforces_scheme_and_rejects_credentials() {
-        assert!(validate_outbound_url("https://example.com/x", false).is_ok());
-        assert!(validate_outbound_url("http://example.com", false).is_ok());
-        assert!(validate_outbound_url("ftp://example.com", false).is_err());
-        assert!(validate_outbound_url("file:///etc/passwd", false).is_err());
-        assert!(validate_outbound_url("https://user:pass@example.com", false).is_err());
-        assert!(validate_outbound_url("https://user@example.com", false).is_err());
-        assert!(validate_outbound_url("not-a-url", false).is_err());
-    }
-
-    #[test]
-    fn validate_outbound_url_blocks_private_allows_public() {
-        for blocked in [
-            "http://localhost/",
-            "http://127.0.0.1/",
-            "http://10.0.0.1/",
-            "http://192.168.1.1/",
-            "http://169.254.169.254/", // cloud metadata endpoint
-            "http://[::1]/",
-        ] {
-            assert!(
-                validate_outbound_url(blocked, false).is_err(),
-                "expected block: {blocked}"
-            );
-        }
-        assert!(validate_outbound_url("https://apostille.example.com/submit", false).is_ok());
-    }
-
-    #[test]
-    fn validate_outbound_url_allow_private_flag_opens_gate() {
-        assert!(validate_outbound_url("http://127.0.0.1/", true).is_ok());
-        assert!(validate_outbound_url("http://localhost/", true).is_ok());
-        // Credential/scheme rules still apply even when private hosts are allowed.
-        assert!(validate_outbound_url("ftp://127.0.0.1/", true).is_err());
-    }
-
-    #[test]
-    fn validate_outbound_url_ipv4_mapped_ipv6_is_blocked() {
-        // Regression: an IPv4-mapped IPv6 literal pointing at the cloud metadata
-        // service (or loopback) is now judged by its embedded IPv4 and rejected,
-        // closing the SSRF bypass.
-        assert!(validate_outbound_url("http://[::ffff:169.254.169.254]/", false).is_err());
-        assert!(validate_outbound_url("http://[::ffff:127.0.0.1]/", false).is_err());
-    }
-
-    // ---- SSRF guard: blocked_host (ground-truth table) -----------------
-
-    #[test]
-    fn blocked_host_blocks_local_and_private() {
-        for host in [
-            "localhost",
-            "FOO.LOCAL",
-            "foo.localhost",
-            "127.0.0.1",
-            "10.0.0.1",
-            "172.16.0.1",
-            "192.168.1.1",
-            "169.254.169.254",
-            "0.0.0.0",
-            "255.255.255.255",
-            "192.0.2.1", // TEST-NET documentation range
-            "::1",
-            "[::1]",
-            "fc00::1",
-            "fe80::1",
-        ] {
-            assert!(blocked_host(host), "expected blocked: {host}");
-        }
-    }
-
-    #[test]
-    fn blocked_host_allows_genuinely_public_hosts() {
-        for host in [
-            "example.com",
-            "8.8.8.8",
-            "172.32.0.1", // just outside the 172.16/12 private block
-            "2001:4860:4860::8888",
-        ] {
-            assert!(!blocked_host(host), "expected allowed: {host}");
-        }
-    }
-
-    #[test]
-    fn blocked_host_ipv4_mapped_and_cgnat_now_blocked() {
-        // Regression for the SSRF fix: IPv4-mapped IPv6 forms of loopback and the
-        // cloud metadata address are judged by their embedded IPv4 and blocked...
-        assert!(blocked_host("::ffff:127.0.0.1"));
-        assert!(blocked_host("::ffff:169.254.169.254"));
-        // ...and the RFC 6598 carrier-grade-NAT shared range is blocked too.
-        assert!(blocked_host("100.64.0.1"));
-        assert!(blocked_host("100.127.255.255"));
-        assert!(!blocked_host("100.63.0.1")); // just outside 100.64.0.0/10
-        assert!(!blocked_host("100.128.0.1"));
-    }
-
-    #[test]
-    fn blocked_host_remaining_gap_non_dotted_ip_encodings() {
-        // KNOWN, LOWER-SEVERITY GAP (not addressed by the mapped-IPv6 fix): a
-        // decimal/octal-encoded IPv4 parses as a hostname, not an IpAddr, so it is
-        // not caught here. Impact depends on the downstream resolver. Tripwire so
-        // any future fix (parse these encodings as IPs) trips here.
-        assert!(!blocked_host("2130706433")); // decimal form of 127.0.0.1
-        assert!(!blocked_host("0177.0.0.1")); // octal first octet
-    }
-
-    // ---- operator authentication ---------------------------------------
-
-    #[test]
-    fn require_auth_bypass_and_missing_secret() {
-        // Explicit unauthenticated mode short-circuits to Ok.
-        let mut config = base_config();
-        config.allow_unauthenticated = true;
-        let state = test_state(config);
-        assert!(require_auth(&HeaderMap::new(), &state).is_ok());
-
-        // Auth required but no secret configured => MissingSecret (fail closed).
-        let state = test_state(base_config());
-        assert!(matches!(
-            require_auth(&HeaderMap::new(), &state),
-            Err(AuthFailure::MissingSecret)
-        ));
-    }
-
-    #[test]
-    fn require_auth_accepts_valid_and_rejects_invalid() {
-        let mut config = base_config();
-        config.server_auth_secret = Some("s3cr3t".to_string());
-        let state = test_state(config);
-
-        assert!(require_auth(&mk_headers(&[("x-server-auth", "s3cr3t")]), &state).is_ok());
-        // Legacy `Auth` header is still honored.
-        assert!(require_auth(&mk_headers(&[("auth", "s3cr3t")]), &state).is_ok());
-        // Exact-match only: wrong value, case difference, and trailing space all fail.
-        // (The comparison is a plain `==`, i.e. not constant-time -- see report.)
-        assert!(matches!(
-            require_auth(&mk_headers(&[("x-server-auth", "nope")]), &state),
-            Err(AuthFailure::Unauthorized)
-        ));
-        assert!(matches!(
-            require_auth(&mk_headers(&[("x-server-auth", "S3CR3T")]), &state),
-            Err(AuthFailure::Unauthorized)
-        ));
-        assert!(matches!(
-            require_auth(&mk_headers(&[("x-server-auth", "s3cr3t ")]), &state),
-            Err(AuthFailure::Unauthorized)
-        ));
-        // No header at all.
-        assert!(matches!(
-            require_auth(&HeaderMap::new(), &state),
-            Err(AuthFailure::Unauthorized)
-        ));
-    }
-
-    // ---- webhook authentication ----------------------------------------
-
-    #[test]
-    fn require_webhook_auth_with_dedicated_secret() {
-        let mut config = base_config();
-        config.webhook_secret = Some("whsec".to_string());
-        // Also set an operator secret to prove webhook auth does NOT fall through
-        // to it once a dedicated webhook secret exists.
-        config.server_auth_secret = Some("opsec".to_string());
-        let state = test_state(config);
-
-        for header in [
-            "x-apostille-webhook-secret",
-            "x-government-webhook-secret",
-            "x-webhook-secret",
-        ] {
-            assert!(
-                require_webhook_auth(&mk_headers(&[(header, "whsec")]), &state).is_ok(),
-                "header {header} should authenticate"
-            );
-        }
-        // Wrong webhook secret is rejected.
-        assert!(matches!(
-            require_webhook_auth(&mk_headers(&[("x-webhook-secret", "bad")]), &state),
-            Err(AuthFailure::Unauthorized)
-        ));
-        // Presenting only the operator secret does NOT satisfy webhook auth.
-        assert!(matches!(
-            require_webhook_auth(&mk_headers(&[("x-server-auth", "opsec")]), &state),
-            Err(AuthFailure::Unauthorized)
-        ));
-    }
-
-    #[test]
-    fn require_webhook_auth_falls_back_to_operator_when_no_webhook_secret() {
-        let mut config = base_config();
-        config.server_auth_secret = Some("opsec".to_string());
-        // webhook_secret is None => fall back to operator auth.
-        let state = test_state(config);
-        assert!(require_webhook_auth(&mk_headers(&[("x-server-auth", "opsec")]), &state).is_ok());
-        assert!(matches!(
-            require_webhook_auth(&HeaderMap::new(), &state),
-            Err(AuthFailure::Unauthorized)
-        ));
-
-        // And the unauthenticated-webhooks escape hatch bypasses everything.
-        let mut open = base_config();
-        open.allow_unauthenticated_webhooks = true;
-        let open_state = test_state(open);
-        assert!(require_webhook_auth(&HeaderMap::new(), &open_state).is_ok());
-    }
-
-    // ---- consent gating for government submission ----------------------
-
-    #[test]
-    fn submission_consent_ok_requires_authorization_data_and_terms() {
-        let mut case = sample_case();
-
-        case.consent = None;
-        assert!(!submission_consent_ok(&case), "no consent must block");
-
-        // Authorization alone is insufficient.
-        case.consent = Some(consent_of(true, false, false, false));
-        assert!(!submission_consent_ok(&case));
-
-        // Missing government-terms acceptance blocks.
-        case.consent = Some(consent_of(true, false, true, false));
-        assert!(!submission_consent_ok(&case));
-
-        // Missing data-use acceptance blocks.
-        case.consent = Some(consent_of(true, false, false, true));
-        assert!(!submission_consent_ok(&case));
-
-        // Authorized representative + data + terms passes.
-        case.consent = Some(consent_of(true, false, true, true));
-        assert!(submission_consent_ok(&case));
-
-        // Self-filed also satisfies the authorization requirement.
-        case.consent = Some(consent_of(false, true, true, true));
-        assert!(submission_consent_ok(&case));
-    }
-
-    #[test]
-    fn case_has_pending_translations_detects_incomplete_work() {
-        let mut case = sample_case();
-        assert!(!case_has_pending_translations(&case), "empty => none pending");
-
-        case.translations = vec![translation_with("translated")];
-        assert!(!case_has_pending_translations(&case));
-
-        case.translations = vec![translation_with("not_required")];
-        assert!(!case_has_pending_translations(&case));
-
-        case.translations = vec![translation_with("provider_not_configured")];
-        assert!(case_has_pending_translations(&case));
-
-        // Any incomplete entry among complete ones still counts as pending.
-        case.translations = vec![
-            translation_with("translated"),
-            translation_with("provider_error"),
-        ];
-        assert!(case_has_pending_translations(&case));
-    }
-
-    // ---- end-to-end normalization (service-free async paths) -----------
-
-    fn case_request(value: Value) -> CaseRequest {
-        serde_json::from_value(value).expect("valid CaseRequest json")
-    }
-
-    #[tokio::test]
-    async fn build_service_case_normalizes_and_marks_ready() {
-        let state = test_state(base_config());
-        let (case, should_submit) = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "Apostille",
-                "jurisdiction": "PERU",
-                "sourceLanguage": "en",
-                "targetLanguage": "en",
-                "applicant": { "fullName": "  Example Applicant  " },
-                "documents": [{ "kind": "passport", "text": "hello" }]
-            })),
-        )
-        .await
-        .expect("case builds");
-
-        assert_eq!(case.service_type, "apostille");
-        assert_eq!(case.jurisdiction.slug, "peru");
-        assert_eq!(case.applicant.full_name, "Example Applicant"); // trimmed
-        assert_eq!(case.status, "ready_for_submission");
-        assert!(case.translations.is_empty(), "en->en needs no translation");
-        assert!(case.warnings.is_empty());
-        assert!(!should_submit, "no autoSubmit requested");
-    }
-
-    #[tokio::test]
-    async fn build_service_case_marks_translation_pending_without_provider() {
-        let state = test_state(base_config()); // no translation provider
-        let (case, _) = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille",
-                "jurisdiction": "peru",
-                "sourceLanguage": "es",
-                "targetLanguage": "en",
-                "applicant": { "fullName": "Ana" },
-                "documents": [{ "kind": "birth-certificate", "text": "hola mundo" }]
-            })),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(case.status, "translation_pending");
-        assert!(case_has_pending_translations(&case));
-        assert!(case
-            .warnings
-            .iter()
-            .any(|w| w.contains("English translation provider")));
-    }
-
-    #[tokio::test]
-    async fn build_service_case_defaults_source_language_from_jurisdiction() {
-        let state = test_state(base_config());
-        // No sourceLanguage anywhere => falls back to Peru's primary language (es),
-        // which then requires translation to en.
-        let (case, _) = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille",
-                "jurisdiction": "peru",
-                "targetLanguage": "en",
-                "applicant": { "fullName": "Ana" },
-                "documents": [{ "kind": "passport", "title": "Pasaporte" }]
-            })),
-        )
-        .await
-        .unwrap();
-        assert_eq!(case.documents[0].source_language, "es");
-        assert_eq!(case.status, "translation_pending");
-    }
-
-    #[tokio::test]
-    async fn build_service_case_rejects_invalid_input() {
-        let state = test_state(base_config());
-
-        let bad_service = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "bogus", "jurisdiction": "peru",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "passport" }]
-            })),
-        )
-        .await;
-        assert!(bad_service.unwrap_err().contains("unsupported serviceType"));
-
-        let bad_jur = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "atlantis",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "passport" }]
-            })),
-        )
-        .await;
-        assert!(bad_jur.unwrap_err().contains("unsupported jurisdiction"));
-
-        let no_docs = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "applicant": { "fullName": "A" }, "documents": []
-            })),
-        )
-        .await;
-        assert!(no_docs.unwrap_err().contains("at least one"));
-
-        let too_many_docs: Vec<Value> = (0..MAX_DOCUMENTS_PER_CASE + 1)
-            .map(|_| json!({ "kind": "passport" }))
-            .collect();
-        let overflow = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "applicant": { "fullName": "A" }, "documents": too_many_docs
-            })),
-        )
-        .await;
-        assert!(overflow.unwrap_err().contains("at most"));
-
-        // Empty document.kind is rejected by clean_required.
-        let bad_kind = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "sourceLanguage": "en", "targetLanguage": "en",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "   " }]
-            })),
-        )
-        .await;
-        assert!(bad_kind.is_err());
-    }
-
-    #[tokio::test]
-    async fn build_service_case_rejects_private_outbound_urls() {
-        let state = test_state(base_config());
-
-        // Private file URL is refused (SSRF guard on document fetch targets).
-        let bad_file = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "sourceLanguage": "en", "targetLanguage": "en",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "passport", "fileUrl": "http://10.0.0.1/secret" }]
-            })),
-        )
-        .await;
-        assert!(bad_file.is_err());
-
-        // Private webhook callback URL is refused too.
-        let bad_hook = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "sourceLanguage": "en", "targetLanguage": "en",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "passport" }],
-                "workflow": { "notifyWebhookUrl": "http://127.0.0.1/hook" }
-            })),
-        )
-        .await;
-        assert!(bad_hook.is_err());
-    }
-
-    #[tokio::test]
-    async fn build_service_case_autosubmit_is_gated_by_consent_and_translation() {
-        let state = test_state(base_config());
-
-        // autoSubmit requested but consent incomplete => not submitted + warned.
-        let (case, should_submit) = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "sourceLanguage": "en", "targetLanguage": "en",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "passport", "text": "hi" }],
-                "workflow": { "autoSubmit": true }
-            })),
-        )
-        .await
-        .unwrap();
-        assert!(!should_submit);
-        assert!(case
-            .warnings
-            .iter()
-            .any(|w| w.contains("autoSubmit was requested")));
-
-        // autoSubmit + full consent + no pending translation => cleared to submit.
-        let (_case, should_submit) = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "sourceLanguage": "en", "targetLanguage": "en",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "passport", "text": "hi" }],
-                "workflow": { "autoSubmit": true },
-                "consent": {
-                    "authorizedRepresentative": true,
-                    "dataUseAccepted": true,
-                    "governmentTermsAccepted": true
-                }
-            })),
-        )
-        .await
-        .unwrap();
-        assert!(should_submit, "complete consent + no pending => submit");
-
-        // autoSubmit + consent BUT pending translation (es->en, no provider) => blocked.
-        let (case, should_submit) = build_service_case(
-            &state,
-            case_request(json!({
-                "serviceType": "apostille", "jurisdiction": "peru",
-                "sourceLanguage": "es", "targetLanguage": "en",
-                "applicant": { "fullName": "A" },
-                "documents": [{ "kind": "passport", "text": "hola" }],
-                "workflow": { "autoSubmit": true },
-                "consent": {
-                    "authorizedRepresentative": true,
-                    "dataUseAccepted": true,
-                    "governmentTermsAccepted": true
-                }
-            })),
-        )
-        .await
-        .unwrap();
-        assert!(!should_submit, "pending translation must block auto-submit");
-        assert_eq!(case.status, "translation_pending");
-    }
 }

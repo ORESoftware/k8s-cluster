@@ -19,15 +19,13 @@ name = "formal_methods_service"
 path = "src/lib.rs"
 
 [dependencies]
-dd-telemetry = { path = "../../libs/telemetry-rs" }
 anyhow = "1"
 async-trait = "0.1"
-axum = { version = "0.8", features = ["macros"] }
+axum = { version = "0.7", features = ["macros"] }
 bytes = "1"
-dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs", default-features = false, features = ["axum-08", "openapi"] }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
 hex = "0.4"
 hmac = "0.12"
-libc = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -35,14 +33,11 @@ sha2 = "0.10"
 subtle = "2"
 tempfile = "3"
 thiserror = "1"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process", "fs", "io-util", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process", "fs", "sync", "time"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "limit"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-utoipa = { version = "=5.5.0", features = ["axum_extras", "preserve_order", "preserve_path_order", "uuid"] }
-utoipa-axum = "=0.2.0"
-utoipa-scalar = "=0.3.0"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]

@@ -14,18 +14,17 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-des-rs
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-13-stdout-subscriber-drop-telemetry-and-soccer-buildinfo'
+        dd.dev/telemetry-revision: '2026-06-07-des-rs-render-playback-f694d98'
         dd.dev/des-server-revision: 'streamed-out-artifacts'
         dd.dev/des-engine-revision: 'f694d98170a3efb4459c6c92778a9715d1e61c50'
-        dd.dev/soccer-engine-revision: 'soccer-sim-game-engine.rs@15bd673830bcbfceeadbbb1533fdc2739c7de35a'
       labels:
         app: dd-des-rs
     spec:
@@ -58,15 +57,6 @@ spec:
               python -m venv /tools/yt-dlp-venv
               /tools/yt-dlp-venv/bin/python -m pip install --no-cache-dir --upgrade pip yt-dlp
               /tools/yt-dlp-venv/bin/yt-dlp --version
-          # Builds a venv and pip-installs yt-dlp on every pod start. Bounded so
-          # a slow or wedged index fetch cannot starve the node.
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: '1'
-              memory: 1Gi
           volumeMounts:
             - name: tools
               mountPath: /tools
@@ -181,11 +171,11 @@ spec:
               value: main
             # Soccer engine source: soccer was extracted out of des_engine into
             # the soccer_engine crate. Cloned at pod start the same way; pinned to
-            # a tested engine SHA. Set URL to "" to use the submodule.
+            # main so it tracks the engine. Set URL to "" to use the submodule.
             - name: SOCCER_ENGINE_GIT_URL
               value: https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
             - name: SOCCER_ENGINE_GIT_REF
-              value: 15bd673830bcbfceeadbbb1533fdc2739c7de35a
+              value: main
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -222,16 +212,10 @@ spec:
               containerPort: 8112
           resources:
             requests:
-              # Guarantee a full core so the live soccer step loop sustains its
-              # ~10Hz tick under node contention (the UI animates one tick per
-              # server step; a starved/throttled server = slow-motion playback).
-              cpu: '1'
+              cpu: 50m
               memory: 4Gi
             limits:
-              # Burst ceiling raised 2 -> 6: the per-tick sim + tokio workers
-              # briefly exceeded a 2-core cgroup quota, causing CFS throttle
-              # stalls (~300ms tick spikes). The 16-core nodes have ample room.
-              cpu: '6'
+              cpu: '2'
               # Headroom for the cold release build: the pod recompiles the full
               # des_engine crate (plus axum/tokio) from an empty /tmp on every
               # (re)start, which peaks higher than des-simulator's smaller build.
@@ -274,7 +258,7 @@ spec:
         - name: repo
           hostPath:
             path: /home/ec2-user/codes/dd/dd-next-1
-            type: DirectoryOrCreate
+            type: Directory
         - name: tmp
           emptyDir:
             sizeLimit: 16Gi

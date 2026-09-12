@@ -1,4 +1,3 @@
-import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
@@ -38,7 +37,7 @@ pub fn supervised(
   metrics_name: process.Name(metrics.Message),
   nats_name: Option(nats.Name),
 ) {
-  mist.new(dd_otel_client.trace(fn(req) { route(req, metrics_name, nats_name) }))
+  mist.new(fn(req) { route(req, metrics_name, nats_name) })
   |> mist.bind(bind_host())
   |> mist.port(bind_port())
   |> mist.supervised

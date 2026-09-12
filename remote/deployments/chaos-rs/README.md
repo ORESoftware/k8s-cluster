@@ -69,21 +69,6 @@ GET /metrics   Prometheus text (dd_chaos_armed, pod_kills_total, probe_rtt_secon
 | `CHAOS_JITTER_HOLD_SECONDS` | `60` | how long a replica stays removed |
 | `CHAOS_PROBE_INTERVAL_SECONDS` | `60` | NATS RTT probe cadence |
 
-## Hardening
-
-Beyond the kill switch / dry-run / blast-radius / protected-namespace guards above:
-
-- **Never self-targets**: the pod-kill loop skips any pod whose name equals its own
-  hostname (the pod name in Kubernetes), in addition to the `chaos-protected` label.
-- **Selector is URL-encoded**: the operator-supplied `CHAOS_POD_LABEL_SELECTOR` is
-  percent-encoded before going into the API query, so it can't malform or inject into the URL.
-- **Bounded list**: pod listings request `limit=500` (first page only — chaos samples a
-  victim, it doesn't need full coverage), bounding memory/latency on large clusters.
-- **NATS resilience**: bounded connect-retry (`CHAOS_NATS_CONNECT_ATTEMPTS`); the k8s
-  loops still run if NATS never comes up (experiments/events just aren't published).
-- **Jitter restores on a fresh client** after the hold, in case the SA token/CA rotated
-  during the window.
-
 ## Build & deploy
 
 ```bash
@@ -94,5 +79,3 @@ kubectl apply -k remote/deployments/chaos-rs/k8s
 
 It deploys **disarmed** (`CHAOS_ENABLED=false`); only the read-only NATS probe is active
 until you arm it.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

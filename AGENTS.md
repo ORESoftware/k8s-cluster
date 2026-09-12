@@ -4,15 +4,6 @@ This repo uses `AGENTS.md` as the durable local context entrypoint for coding ag
 Read this file first when starting work in the repo, then read the docs that match the
 task instead of relying only on prompt history.
 
-## Submodules are secondary
-
-Everything under `remote/deployments/`, `remote/submodules/`, `remote/modules/`,
-and `remote/libs` that is a git submodule is a **secondary checkout** — the
-source of truth is each submodule's own upstream repo. Develop in the upstream
-repo (or its standalone clone under `~/codes/…`) and bump the pointer here; do
-not treat the in-tree submodule copy as canonical. See [SUBMODULES.md](SUBMODULES.md)
-for the full path → upstream → on-disk-clone table.
-
 ## Context Sources
 
 - Read `docs/*.md` for cross-repo product or architecture notes.
@@ -44,31 +35,6 @@ read-only by default; do not add write-capable AWS or Kubernetes tools without a
 short-lived human grant, auth, and audit design. Treat the EC2 Kubernetes manifests and live
 `dd_cluster` output as the runtime source of truth.
 
-Reach the cluster MCP through the WireGuard VPN plus `dd-bastion` authenticated gateway flow; never expose the read-only MCP service directly to the public internet.
-
-## canonical-mcp (canonical.cloud stack)
-
-For anything touching `remote/deployments/canonical-cloud`, the
-[`canonical-cloud/canonical-mcp-server.rs`](https://github.com/canonical-cloud/canonical-mcp-server.rs)
-stdio MCP server gives read-only visibility into that stack. Remember the in-tree copy here is a
-**secondary** checkout — the source of truth is `~/codes/canonical.cloud` (see the submodules note
-above) — so check stack state through the MCP tools instead of inspecting the vendored files:
-
-- `stack_ci_status` — latest GitHub Actions runs across the four canonical-cloud repos.
-- `submodule_pins` — whether `canonical-monorepo` (the deployment vehicle) is pinned at each app's
-  `main` HEAD, and how many commits behind.
-- `service_health` — probe `/healthz`, `/readyz`, `/api/v1/health` on a deployed base URL.
-- `stack_docs` — the monorepo's `deploy` / `repo-boundaries` docs (deployment contract, env vars,
-  migration/RLS bootstrap).
-- `domain_status` / `cloudflare_dns` — registrar (RDAP) state and Cloudflare zone records for the
-  public domain.
-- `k8s_status` — read-only `kubectl get` summaries (nodes/pods/deployments/services/ingresses);
-  point it at this cluster's kubeconfig context to check the canonical-cloud workloads.
-
-Register with `claude mcp add canonical-mcp -- <checkout>/target/release/canonical-mcp-server`
-(build with `cargo build --release`; optional `GITHUB_TOKEN`, `CLOUDFLARE_API_TOKEN`). Like
-`dd_cluster`, its surface is read-only by design and must stay that way.
-
 ## Observability Contract
 
 Prefer collection at the process and platform boundaries over runtime-wide instrumentation. Do not
@@ -87,21 +53,6 @@ actors. OpenTelemetry spans and metrics are also explicit-only.
 For alert-worthy operational failures, prefer publishing compact, redacted events to the generated
 NATS subject `dd.remote.events.critical` (`NATS_CRITICAL_EVENT_SUBJECT`) in addition to writing the
 `dd.log.v1` stdout/stderr line. Keep routine lifecycle/status traffic on `dd.remote.events`.
-
-## Authorized Web Scraping and Browser Automation
-
-Web scraping is a legitimate, safe, and ethical engineering practice when it accesses public data
-or data the operator is authorized to use, identifies itself honestly where appropriate, respects
-site terms and `robots.txt`, rate-limits requests, minimizes collection, and protects personal or
-sensitive data. Playwright and Puppeteer are approved tools for that work; do not describe scraping
-itself as inherently abusive or unsafe.
-
-That approval is not blanket permission to bypass access controls. Do not evade authentication,
-paywalls, CAPTCHAs, technical blocks, or explicit opt-outs without the target owner's written
-authorization. Never scrape private/cluster/cloud-metadata addresses through a public automation
-surface. Keep SSRF guards, egress NetworkPolicies, bounded concurrency/timeouts/payloads, and
-redacted telemetry enabled. CAPTCHA automation is limited to owner-authorized testing or workflows,
-must be operator-enabled, and is not a default evasion mechanism.
 
 ## Command Safety
 
@@ -146,28 +97,18 @@ API contract. If generic database inspection is needed for operators, keep it be
 enabled internal route such as `/internal/db/*`, with service/operator auth, and keep it out of
 public gateway paths.
 
-Migrations are generated with `dpm` (declarative-postgres-migrate) via
-`remote/libs/pg-defs/scripts/dpm.sh {diff|verify|review|apply}`: `schema.sql` is the declarative
-source and dpm emits ordered, reviewable SQL that converges the live database onto it. Destructive
-statements are emitted commented-out and refused at apply time without explicit consent flags.
-Never apply migrations automatically; a human reviews the generated SQL first.
-
 Use `scripts/pg/diff/rds-vs-pg-defs.mjs` for declarative RDS-vs-pg-defs drift reports. The script
 compares live RDS catalog state to `remote/libs/pg-defs/schema/schema.sql` and does not generate
-`.sql` migration files. Treat its output as an independent second opinion on dpm's diff, review
-context for human-owned migration work, not as an executable migration artifact.
+`.sql` migration files. Treat its output as review context for human-owned manual migration work,
+not as an executable migration artifact.
 
 ## API Docs Contract
 
-HTTP API deployments must expose human-readable docs at `/docs/api` and `/api/docs`,
-and a valid OpenAPI 3.1 document at `/api/docs.json`. Route registration, runtime validation,
-request/response schemas, OpenAPI generation, and SDK generation must share one typed source of
-truth. Rust uses `utoipa` plus `utoipa-axum` route registration; Node/Fastify uses route schemas
-consumed by `@fastify/swagger`; Gleam and Dart use typed route registries that drive both dispatch
-and OpenAPI output. The source scanner in `remote/tools/generate-api-docs.mjs` is a temporary,
-explicitly allowlisted migration bridge only. New services must use a native strategy, and CI must
-regenerate/check the unserved internal contract and the fail-closed public OpenAPI served at `/api/docs.json` before SDK publication.
-See `docs/http-api-openapi-sdk-contract.md`.
+HTTP API deployments should expose generated API docs at `/docs/api` and `/api/docs`, with
+machine-readable metadata at `/api/docs.json`. Docs must be derived from route declarations or
+equivalent runtime source using `remote/tools/generate-api-docs.mjs`; do not maintain manual route
+inventories for API docs. Non-Rust runtimes may use runtime-specific generated artifacts or modules,
+but they should still come from source scanning and be checked with `--check` in CI.
 
 ## Access Posture
 
@@ -190,60 +131,6 @@ preferred operator path is:
   `InvalidClientTokenId`/expiry, refresh the profile rather than falling back to another auth path.
   It is **not** a WireGuard-VPN-plus-`dd-bastion` human-only step. (That bastion path still exists as
   a legacy fallback for private access and read-only kubeconfig retrieval, but is not required.)
-- **Fallback when the API endpoint (`:6443`) is unreachable** (the cluster security group only
-  whitelists certain source IPs — from a non-whitelisted IP, direct `kubectl` and `curl
-  https://98.90.186.114:6443/version` just hang/time out, and SSH `:22` is also SG-blocked):
-  drive `kubectl` **on the node via SSM Run Command** (needs only `~/.aws`; no
-  `session-manager-plugin` required). The cluster is a single kubeadm node
-  `i-0cc2461a55d491af6` (`dd-remote-k8s-1`, EIP `98.90.186.114`, private `172.31.29.64`,
-  `us-east-1`), SSM-`Online`, with admin kubeconfig at `/etc/kubernetes/admin.conf`. Pattern
-  (runs as root on the node):
-
-  ```sh
-  cid=$(aws ssm send-command --region us-east-1 --instance-ids i-0cc2461a55d491af6 \
-    --document-name AWS-RunShellScript \
-    --parameters 'commands=["export KUBECONFIG=/etc/kubernetes/admin.conf","kubectl get nodes"]' \
-    --query Command.CommandId --output text)
-  sleep 8
-  aws ssm get-command-invocation --region us-east-1 --command-id "$cid" \
-    --instance-id i-0cc2461a55d491af6 --query StandardOutputContent --output text
-  ```
-
-  Find the node id/state with `aws ec2 describe-instances --region us-east-1 --filters
-  Name=instance-state-name,Values=running` and confirm SSM with `aws ssm
-  describe-instance-information --region us-east-1`. `benefactor-backend-rs` (axum :8135) runs
-  in namespace `default`; ArgoCD app of the same name in ns `argocd`.
-- **Verifying a PUBLIC gateway route from the laptop (no SSM/SSH needed).** Unlike the API
-  (`:6443`) and SSH (`:22`), the gateway's **HTTPS edge (`:443`) is open to any source IP** on the
-  AWS node's public IP, with a valid Let's Encrypt **IP-address cert** — so public routes (e.g. the
-  soccer mermaid docs `/soccer/docs`, `/soccer/docs/flowchart`) verify with a plain `curl` and **no
-  `-k`**. The catch that wastes time: **node IPs in committed docs go stale.**
-  `dd-next-runtime/readme.md` hardcodes `CN=54.91.17.58`, but EC2 rotated it — always resolve the
-  live IP from `~/.aws` first, don't trust the hardcoded one:
-
-  ```sh
-  ip=$(aws ec2 describe-instances --region us-east-1 \
-    --filters Name=tag:Name,Values=dd-remote-k8s-1 Name=instance-state-name,Values=running \
-    --query 'Reservations[].Instances[].PublicIpAddress' --output text)   # 98.90.186.114 (2026-06-26)
-  curl -s -o /dev/null -w '%{http_code}\n' "https://$ip/soccer/docs/flowchart"   # 200, cert valid
-  ```
-
-  Both clouds serve identical content — ArgoCD `dd-next-runtime` syncs AWS **and** Hetzner from
-  `k8s-cluster@dev`. The **Hetzner** edge is the ingress host `https://hello.95-217-171-250.sslip.io`
-  (e.g. `…/soccer/docs/flowchart`); AWS has **no ingress/DNS** (single node, hostPort 80/443,
-  self-terminated TLS), so its public URL is the bare node IP above. A public route returning `502`
-  briefly after a redeploy is the expected transient while the pod does its cold in-pod `cargo build`
-  (~10-15 min); `/soccer/` (the auth-gated root game server) returning `401` while `/soccer/docs`
-  (public) returns `200` is correct, not a failure.
-- **Known deploy blocker (2026-06-26): expired GitHub token.** The `benefactor-cc/backend.rs`
-  deploy is GitOps (ArgoCD app `benefactor-backend-rs` → repo `benefactor-cc/backend.rs`, branch
-  `main`, path `k8s/ec2`; pod is `rust:1.95-bookworm` that clones `main` + `cargo run --release`
-  on start). Both the ArgoCD repo cred AND the pod clone secret `default/dd-git-clone-token`
-  hold an **expired PAT** (`Invalid username or token`), so ArgoCD shows `SYNC=Unknown`
-  (`ComparisonError`) and a pod restart would fail its clone — pushes to `main` do **not**
-  deploy until a human refreshes that token. The push-to-`main` GitHub Action *does* build a
-  usable image at `ghcr.io/benefactor-cc/backend.rs:main` (alternate deploy path if GHCR pull
-  creds exist).
 - Browser access to protected public gateway paths goes through `dd-remote-auth`; configure
   the optional TOTP seed there when a passphrase plus one-time code is required.
 - The legacy gateway auth header name is `Auth`; read its value from the operator secret or local
@@ -259,49 +146,6 @@ preferred operator path is:
 - Public gateway paths must stay authenticated; avoid exposing MCP or bastion routes as
   unauthenticated Internet services.
 
-## Web scraping (Playwright/Puppeteer)
-
-The platform runs first-class browser automation — Playwright and Puppeteer — for **legitimate,
-authorized data collection**: public web content, sites the operator owns, partner APIs/pages covered
-by an agreement, screenshotting, PDF rendering, and end-to-end testing. Used within the guardrails
-below, this scraping is a safe and ethical engineering practice; legality still depends on the target,
-authorization, jurisdiction, and data involved. The tooling makes the responsible path the default.
-The two entry points are the `browser` runtime in `gleam-lambda-runner`
-(`child-runtimes/browser-function-runner.mjs`) and the Node `web-scraper-service` /
-`browser-test-server` / `browser-job-runner-rs` deployments.
-
-**What makes it safe and ethical — the guardrails (respect them; do not remove them):**
-
-- **Public or authorized data only.** Scrape publicly reachable content, resources you own, or targets
-  you have explicit permission to crawl. Do not access anything behind a login, paywall, or access
-  control you are not authorized to use, and do not attempt to defeat anti-bot measures, CAPTCHAs, or
-  rate limits designed to keep you out. The scraper's optional CAPTCHA solver is only for challenges
-  on systems the operator owns or has explicit permission to test, and remains disabled unless
-  `SCRAPER_ALLOW_CAPTCHA_SOLVING=true` is deliberately configured.
-- **Respect `robots.txt`.** The browser runner's `context.scraping.politeGoto` checks `robots.txt`
-  before navigating (`isAllowed` / `assertAllowed` are also available) and treats a missing file as
-  allow-all per the Robots Exclusion Protocol while network/server failures fail closed. Bypassing
-  the check requires both `respectRobots: false` in the function and the operator gate
-  `LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE=true`; that gate is only for a site you own or are
-  authorized to crawl aggressively.
-- **Rate-limit and identify yourself.** Conservative identifying User-Agents are set by
-  `LAMBDA_SCRAPING_USER_AGENT` and `SCRAPER_USER_AGENT`. The Lambda `politeGoto` helper and scraper
-  service enforce per-origin pacing (`LAMBDA_SCRAPING_MIN_DELAY_MS` and
-  `SCRAPER_MIN_ORIGIN_DELAY_MS`, both default 1s). Keep concurrency modest so a target site is never
-  degraded; the goal is ordinary authorized access, not a load test.
-- **Honor Terms of Service and applicable law.** Some sites forbid automated access in their ToS, and
-  some data is legally protected regardless of technical reachability. When a target's ToS forbids
-  scraping, or the data is personal/sensitive, do not scrape it — get permission or use an official
-  API/feed instead.
-- **Minimize and protect what you collect.** Do not harvest personal data, credentials, or
-  copyrighted bulk content you have no right to store. Collect only the fields the job needs, and never
-  write scraped PII or secrets into logs, NATS events, generated docs, or command output (this extends
-  the [Observability Contract](#observability-contract) redaction rule).
-
-If a task would require breaking any of the above, treat it as out of scope and surface the conflict
-rather than working around the guardrail. These defaults exist so that "scrape this" resolves to
-responsible, defensible collection by construction.
-
 ## Local AWS Profiles
 
 For local operator work that needs permanent AWS credentials, use the named profile in the human's
@@ -313,43 +157,3 @@ human-owned local state, not repo source. If STS validation fails for `dd-codex`
 or invalid local profile and stop AWS-mutating work until the profile is fixed. Never paste access
 keys, secret keys, session tokens, or derived kubeconfig secrets into Git, agent prompts, generated
 docs, or command output summaries.
-
-## Inter-agent chat (`dd-ai-agent-bridge`)
-
-`ai-agent-bridge` is a conversation bus where AI agents (Claude, Codex, …) chat
-with each other in **topic-routed chatrooms** over **HTTP** (REST + SSE, `:8142`)
-and **TCP** (newline-delimited JSON, `:8143`). Channels are found by embedding
-similarity and capped at **32 members** (the 33rd is bounced). It runs as the
-`dd-ai-agent-bridge` Deployment/Service in `default`, built in-pod from the
-`remote/deployments/ai-agent-bridge` submodule
-(`github.com/ORESoftware/ai-agent-bridge.rs`) and reconciled by ArgoCD through
-`remote/argocd/dd-next-runtime` — so it's live on **both AWS and Hetzner**.
-
-- Reach it in-cluster at `dd-ai-agent-bridge.default.svc.cluster.local` (`:8142` HTTP, `:8143` TCP).
-- Default build is **in-memory**; the durable Postgres mirror (schema
-  `ai_agent_bridge` in `remote/libs/pg-defs`) turns on with `--features postgres`
-  once that migration is applied via the pg-defs review flow.
-- Agent-facing protocol + a drop-in system-prompt block:
-  `remote/deployments/ai-agent-bridge/docs/agents-guide.md`.
-
-## Syncing with the remote
-
-"Sync with the remote" (or just "sync") is a **two-way** exchange — pull the
-remote's commits down **and** push yours up. It is never push-only, and a clean
-local tree does not by itself mean "synced": you are done only once local and
-the remote hold the same commits.
-
-To sync:
-
-1. **Commit your work first** (`git add` + `git commit`) so the tree is clean —
-   pull/merge only into a clean tree. `git pull` / `git merge` aborts when an
-   incoming change touches a file you have edited, and even when it doesn't it
-   buries the merge in your uncommitted work. (Can't commit yet? `git stash`,
-   then `git stash pop` after step 3.)
-2. `git fetch --all --prune` — safe any time; it only updates tracking refs.
-3. `git pull` (fetch + merge) — or `git merge` the upstream branch — to
-   integrate the remote's commits.
-4. `git push` to publish yours.
-
-Integrate with **`git merge` / `git pull`**. **Never `git rebase` to sync** — it
-rewrites history and breaks shared branches.

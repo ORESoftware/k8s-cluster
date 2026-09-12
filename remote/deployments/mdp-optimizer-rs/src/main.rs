@@ -1236,7 +1236,7 @@ async fn publish_result(state: &AppState, response: &OptimizationResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            tracing::error!("failed to encode mdp result: {error}");
+            eprintln!("failed to encode mdp result: {error}");
             return;
         }
     };
@@ -1244,7 +1244,7 @@ async fn publish_result(state: &AppState, response: &OptimizationResponse) {
         .publish(state.result_subject.clone(), payload.clone().into())
         .await
     {
-        tracing::error!("failed to publish mdp result: {error}");
+        eprintln!("failed to publish mdp result: {error}");
         return;
     }
     let _ = nats
@@ -1276,7 +1276,7 @@ async fn publish_telemetry_result(state: &AppState, response: &TelemetryLearning
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            tracing::error!("failed to encode mdp telemetry result: {error}");
+            eprintln!("failed to encode mdp telemetry result: {error}");
             return;
         }
     };
@@ -1284,7 +1284,7 @@ async fn publish_telemetry_result(state: &AppState, response: &TelemetryLearning
         .publish(state.result_subject.clone(), payload.clone().into())
         .await
     {
-        tracing::error!("failed to publish mdp telemetry result: {error}");
+        eprintln!("failed to publish mdp telemetry result: {error}");
         return;
     }
     let _ = nats
@@ -1413,10 +1413,10 @@ async fn telemetry_learning_http(
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        tracing::info!("mdp optimizer nats loop disabled: NATS_URL is not configured");
+        println!("mdp optimizer nats loop disabled: NATS_URL is not configured");
         return;
     };
-    tracing::info!(
+    println!(
         "mdp optimizer nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -1427,7 +1427,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                tracing::error!("mdp optimizer nats subscribe failed: {error}; retrying in 5s");
+                eprintln!("mdp optimizer nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1440,7 +1440,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                tracing::error!(
+                eprintln!(
                     "mdp optimizer rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -1463,7 +1463,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                                 .metrics
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            tracing::error!("mdp optimizer failed nats optimization: {error}");
+                            eprintln!("mdp optimizer failed nats optimization: {error}");
                         }
                     },
                     Err(error) => {
@@ -1471,22 +1471,22 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        tracing::error!("mdp optimizer invalid nats request: {error}");
+                        eprintln!("mdp optimizer invalid nats request: {error}");
                     }
                 }
             });
         }
-        tracing::error!("mdp optimizer nats subscription ended; re-subscribing in 5s");
+        eprintln!("mdp optimizer nats subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 async fn run_telemetry_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        tracing::info!("mdp optimizer telemetry nats loop disabled: NATS_URL is not configured");
+        println!("mdp optimizer telemetry nats loop disabled: NATS_URL is not configured");
         return;
     };
-    tracing::info!(
+    println!(
         "mdp optimizer telemetry nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -1497,7 +1497,7 @@ async fn run_telemetry_nats_loop(state: AppState, subject: String, queue_group: 
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                tracing::error!("mdp optimizer telemetry nats subscribe failed: {error}; retrying in 5s");
+                eprintln!("mdp optimizer telemetry nats subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1510,7 +1510,7 @@ async fn run_telemetry_nats_loop(state: AppState, subject: String, queue_group: 
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                tracing::error!(
+                eprintln!(
                     "mdp optimizer rejected oversize telemetry nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -1533,7 +1533,7 @@ async fn run_telemetry_nats_loop(state: AppState, subject: String, queue_group: 
                                 .metrics
                                 .errors_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            tracing::error!("mdp optimizer failed telemetry optimization: {error}");
+                            eprintln!("mdp optimizer failed telemetry optimization: {error}");
                         }
                     },
                     Err(error) => {
@@ -1541,12 +1541,12 @@ async fn run_telemetry_nats_loop(state: AppState, subject: String, queue_group: 
                             .metrics
                             .errors_total
                             .fetch_add(1, Ordering::Relaxed);
-                        tracing::error!("mdp optimizer invalid telemetry request: {error}");
+                        eprintln!("mdp optimizer invalid telemetry request: {error}");
                     }
                 }
             });
         }
-        tracing::error!("mdp optimizer telemetry nats subscription ended; re-subscribing in 5s");
+        eprintln!("mdp optimizer telemetry nats subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -1564,8 +1564,6 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let _otel = dd_telemetry::init("dd-mdp-optimizer");
-
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8096").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -1577,7 +1575,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                tracing::error!("dd-mdp-optimizer NATS connect failed ({url}): {error}");
+                eprintln!("dd-mdp-optimizer NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -1616,9 +1614,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    tracing::info!("dd-mdp-optimizer listening on http://{addr}");
+    println!("dd-mdp-optimizer listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

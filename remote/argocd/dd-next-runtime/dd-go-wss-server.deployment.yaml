@@ -113,7 +113,7 @@ spec:
           # steady-state CPU on the shared single-node cluster.
           resources:
             requests:
-              cpu: 25m
+              cpu: 100m
               memory: 2Gi
             limits:
               cpu: '6'

@@ -176,12 +176,12 @@ async fn publish_result(state: &AppState, response: &SolveResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            tracing::error!("failed to encode quantum result: {error}");
+            eprintln!("failed to encode quantum result: {error}");
             return;
         }
     };
     if payload.len() > MAX_PUBLISH_BYTES {
-        tracing::error!(
+        eprintln!(
             "quantum result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}",
             payload.len()
         );
@@ -192,7 +192,7 @@ async fn publish_result(state: &AppState, response: &SolveResponse) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        tracing::error!("failed to publish quantum result: {error}");
+        eprintln!("failed to publish quantum result: {error}");
         return;
     }
     let _ = nats
@@ -303,10 +303,10 @@ async fn solve_http(
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        tracing::info!("quantum nats loop disabled: NATS_URL is not configured");
+        println!("quantum nats loop disabled: NATS_URL is not configured");
         return;
     };
-    tracing::info!(
+    println!(
         "quantum nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -315,7 +315,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         {
             Ok(subscription) => subscription,
             Err(error) => {
-                tracing::error!("quantum subscribe failed: {error}; retrying in 5s");
+                eprintln!("quantum subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -328,7 +328,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                tracing::error!(
+                eprintln!(
                     "quantum rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -350,25 +350,23 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                         }
                         Err(error) => {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            tracing::error!("quantum failed nats solve: {error}");
+                            eprintln!("quantum failed nats solve: {error}");
                         }
                     },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        tracing::error!("quantum invalid nats request: {error}");
+                        eprintln!("quantum invalid nats request: {error}");
                     }
                 }
             });
         }
-        tracing::error!("quantum subscription ended; re-subscribing in 5s");
+        eprintln!("quantum subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let _otel = dd_telemetry::init("dd-quantum-compute-rs");
-
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8140").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -378,7 +376,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                tracing::error!("quantum-compute-rs NATS connect failed ({url}): {error}");
+                eprintln!("quantum-compute-rs NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -410,9 +408,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    tracing::info!("dd-quantum-compute-rs listening on http://{addr}");
+    println!("dd-quantum-compute-rs listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

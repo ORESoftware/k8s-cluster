@@ -14,8 +14,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-raft-consensus
@@ -99,7 +99,7 @@ spec:
               containerPort: 8135
           resources:
             requests:
-              cpu: 25m
+              cpu: 100m
               memory: 128Mi
             limits:
               cpu: '1'

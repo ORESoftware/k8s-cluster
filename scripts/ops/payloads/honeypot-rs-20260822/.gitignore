@@ -1,5 +1,0 @@
-/target/
-.env
-env/dec/
-*.log
-.DS_Store

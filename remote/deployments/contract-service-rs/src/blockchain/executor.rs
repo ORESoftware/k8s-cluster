@@ -61,11 +61,8 @@ async fn simulate_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(
-        bc,
-        bc.config().executor_enabled,
-        "BLOCKCHAIN_EXECUTOR_ENABLED",
-    ) {
+    if let Err(resp) = require_enabled(bc, bc.config().executor_enabled, "BLOCKCHAIN_EXECUTOR_ENABLED")
+    {
         return resp;
     }
     let chain = match parse_chain(&body.chain) {
@@ -78,25 +75,16 @@ async fn simulate_http(
 
     match chain {
         ChainKind::Solana => {
-            let Some(tx) = body
-                .transaction
-                .as_deref()
-                .map(str::trim)
-                .filter(|t| !t.is_empty())
+            let Some(tx) = body.transaction.as_deref().map(str::trim).filter(|t| !t.is_empty())
             else {
-                return json_err(
-                    StatusCode::BAD_REQUEST,
-                    "solana simulate requires `transaction`",
-                );
+                return json_err(StatusCode::BAD_REQUEST, "solana simulate requires `transaction`");
             };
             if tx.len() > MAX_RAW_TX_BYTES {
                 return json_err(StatusCode::BAD_REQUEST, "transaction too large");
             }
             let params = json!([tx, { "encoding": "base64", "sigVerify": false }]);
             match crate::solana_rpc(&state, "simulateTransaction", params).await {
-                Ok(result) => {
-                    json_ok(json!({ "ok": true, "chain": "solana", "simulation": result }))
-                }
+                Ok(result) => json_ok(json!({ "ok": true, "chain": "solana", "simulation": result })),
                 Err(error) => json_err(StatusCode::BAD_GATEWAY, &error),
             }
         }
@@ -154,9 +142,7 @@ async fn execute_http(
         bc.config().executor_execute_enabled,
         "BLOCKCHAIN_EXECUTOR_EXECUTE_ENABLED",
     ) {
-        bc.metrics()
-            .broadcast_blocked_total
-            .fetch_add(1, Ordering::Relaxed);
+        bc.metrics().broadcast_blocked_total.fetch_add(1, Ordering::Relaxed);
         return resp;
     }
     // Gate 2: shared execute/broadcast auth secret.
@@ -169,36 +155,29 @@ async fn execute_http(
     };
     let request_id = body.request_id.trim();
     if request_id.is_empty() || request_id.len() > 128 {
-        return json_err(
-            StatusCode::BAD_REQUEST,
-            "requestId must be 1..=128 characters",
-        );
+        return json_err(StatusCode::BAD_REQUEST, "requestId must be 1..=128 characters");
     }
     let signed = body.signed_transaction.trim();
     if signed.is_empty() || signed.len() > MAX_RAW_TX_BYTES {
-        return json_err(
-            StatusCode::BAD_REQUEST,
-            "signedTransaction missing or too large",
-        );
+        return json_err(StatusCode::BAD_REQUEST, "signedTransaction missing or too large");
     }
 
     // Idempotency: claim once within the TTL window so retries don't double-send.
     let idem_key = format!("blockchain-executor:{request_id}");
     if !state.claim_idempotency_key(&idem_key) {
-        return json_err(
-            StatusCode::CONFLICT,
-            "duplicate requestId within idempotency window",
-        );
+        return json_err(StatusCode::CONFLICT, "duplicate requestId within idempotency window");
     }
 
     let outcome = match chain {
-        ChainKind::Solana => crate::solana_rpc(
-            &state,
-            "sendTransaction",
-            json!([signed, { "encoding": "base64", "skipPreflight": false }]),
-        )
-        .await
-        .map(|sig| json!({ "chain": "solana", "signature": sig })),
+        ChainKind::Solana => {
+            crate::solana_rpc(
+                &state,
+                "sendTransaction",
+                json!([signed, { "encoding": "base64", "skipPreflight": false }]),
+            )
+            .await
+            .map(|sig| json!({ "chain": "solana", "signature": sig }))
+        }
         ChainKind::Evm => {
             if !bc.config().evm_configured() {
                 state.release_idempotency_key(&idem_key);

@@ -35,12 +35,6 @@ write_files:
       exec > >(tee -a /var/log/dd-prereqs.log) 2>&1
       echo "==> DD Hetzner node prereqs starting $(date -u)"
 
-      # Hetzner servers prefer IPv6, but pkgs.k8s.io returns HTTP 403 over IPv6
-      # (302/OK over IPv4), which breaks the kubeadm/kubelet apt install. Force
-      # IPv4 for getaddrinfo (curl) and apt before any downloads.
-      grep -q "^precedence ::ffff:0:0/96  100$" /etc/gai.conf 2>/dev/null || echo "precedence ::ffff:0:0/96  100" >> /etc/gai.conf
-      echo 'Acquire::ForceIPv4 "true";' > /etc/apt/apt.conf.d/99force-ipv4
-
       ARCH=amd64
       K8S_VERSION="${K8S_VERSION:-1.31}"
       CONTAINERD_VERSION="${CONTAINERD_VERSION:-1.7.24}"
@@ -99,17 +93,6 @@ write_files:
       ARGOCD_TAG="$(curl -fsSL https://api.github.com/repos/argoproj/argo-cd/releases/latest | jq -r .tag_name)"
       curl -fsSL "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_TAG}/argocd-linux-${ARCH}" -o /usr/local/bin/argocd
       chmod 0755 /usr/local/bin/argocd
-
-      # ---- host hardening: key-only SSH + unattended security upgrades ----
-      cat >/etc/ssh/sshd_config.d/99-dd-hardening.conf <<'SSHD'
-      PasswordAuthentication no
-      KbdInteractiveAuthentication no
-      PermitRootLogin prohibit-password
-      X11Forwarding no
-      SSHD
-      sshd -t && systemctl reload ssh || true
-      apt-get install -y unattended-upgrades >/dev/null 2>&1 || true
-      systemctl enable --now unattended-upgrades >/dev/null 2>&1 || true
 
       # ---- WireGuard keypair (private stays here; public is read by orchestrator) ----
       install -d -m 0700 /etc/wireguard

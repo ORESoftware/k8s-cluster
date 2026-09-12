@@ -31,18 +31,16 @@ pub enum RagError {
 
 /// A document to index. `id` is optional — when omitted we derive a stable
 /// UUIDv5 from the text so re-indexing the same content updates in place.
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct Document {
     #[serde(default)]
     pub id: Option<String>,
     pub text: String,
     #[serde(default)]
-    #[schema(value_type = Value)]
     pub metadata: Value,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[schema(as = RagIndexRequest)]
+#[derive(Debug, Deserialize)]
 pub struct IndexRequest {
     pub collection: String,
     pub provider: String,
@@ -60,8 +58,7 @@ fn default_distance() -> String {
     "Cosine".to_string()
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-#[schema(as = RagIndexResponse)]
+#[derive(Debug, Serialize)]
 pub struct IndexResponse {
     pub collection: String,
     pub provider: String,
@@ -70,8 +67,7 @@ pub struct IndexResponse {
     pub indexed: usize,
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[schema(as = RagSearchRequest)]
+#[derive(Debug, Deserialize)]
 pub struct SearchRequest {
     pub collection: String,
     pub provider: String,
@@ -88,8 +84,7 @@ fn default_top_k() -> usize {
     5
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-#[schema(as = RagSearchResponse)]
+#[derive(Debug, Serialize)]
 pub struct SearchResponse {
     pub collection: String,
     pub provider: String,
@@ -216,10 +211,7 @@ impl RagService {
             .map(|e| e.vector)
             .unwrap_or_default();
 
-        let matches = self
-            .qdrant
-            .search(&req.collection, vector, req.top_k)
-            .await?;
+        let matches = self.qdrant.search(&req.collection, vector, req.top_k).await?;
 
         Ok(SearchResponse {
             collection: req.collection,
@@ -242,10 +234,7 @@ impl RagService {
 
     /// Delete points by caller-supplied id. Ids are normalized with the same
     /// rule used at index time so `"doc-1"` deletes the point `"doc-1"` created.
-    pub async fn delete_points(
-        &self,
-        req: DeletePointsRequest,
-    ) -> Result<DeletePointsResponse, RagError> {
+    pub async fn delete_points(&self, req: DeletePointsRequest) -> Result<DeletePointsResponse, RagError> {
         let ids: Vec<Value> = req
             .ids
             .iter()
@@ -253,22 +242,17 @@ impl RagService {
             .collect();
         let deleted = ids.len();
         self.qdrant.delete_points(&req.collection, ids).await?;
-        Ok(DeletePointsResponse {
-            collection: req.collection,
-            deleted,
-        })
+        Ok(DeletePointsResponse { collection: req.collection, deleted })
     }
 }
 
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-#[schema(as = RagDeletePointsRequest)]
+#[derive(Debug, Deserialize)]
 pub struct DeletePointsRequest {
     pub collection: String,
     pub ids: Vec<String>,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-#[schema(as = RagDeletePointsResponse)]
+#[derive(Debug, Serialize)]
 pub struct DeletePointsResponse {
     pub collection: String,
     pub deleted: usize,

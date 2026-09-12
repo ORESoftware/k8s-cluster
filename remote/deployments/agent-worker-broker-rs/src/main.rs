@@ -85,7 +85,6 @@ struct BrokerHealth {
     ok: bool,
     service: &'static str,
     direct_dispatch_enabled: bool,
-    nats_connected: bool,
 }
 
 #[derive(Serialize)]
@@ -260,9 +259,7 @@ fn validate_identifier(value: &str, label: &str) -> Result<(), String> {
         return Err(format!("{label} must not be empty"));
     }
     if value.len() > MAX_IDENTIFIER_LEN {
-        return Err(format!(
-            "{label} must be at most {MAX_IDENTIFIER_LEN} bytes"
-        ));
+        return Err(format!("{label} must be at most {MAX_IDENTIFIER_LEN} bytes"));
     }
     if let Some(bad) = value
         .chars()
@@ -295,37 +292,7 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         ok: true,
         service: "dd-agent-worker-broker",
         direct_dispatch_enabled: state.config.direct_dispatch_enabled,
-        nats_connected: nats_connected(&state),
     })
-}
-
-fn nats_connected(state: &AppState) -> bool {
-    matches!(
-        state.nats.connection_state(),
-        async_nats::connection::State::Connected
-    )
-}
-
-async fn readyz(State(state): State<AppState>) -> Response {
-    state
-        .metrics
-        .http_requests_total
-        .fetch_add(1, Ordering::Relaxed);
-    let connected = nats_connected(&state);
-    let status = if connected {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
-    (
-        status,
-        Json(json!({
-            "ok": connected,
-            "service": "dd-agent-worker-broker",
-            "natsConnected": connected,
-        })),
-    )
-        .into_response()
 }
 
 async fn metrics(State(state): State<AppState>) -> Response {
@@ -352,17 +319,13 @@ async fn metrics(State(state): State<AppState>) -> Response {
             "dd_agent_worker_broker_nats_publish_failures_total {}\n",
             "# HELP dd_agent_worker_broker_direct_dispatch_enabled Direct worker dispatch setting.\n",
             "# TYPE dd_agent_worker_broker_direct_dispatch_enabled gauge\n",
-            "dd_agent_worker_broker_direct_dispatch_enabled {}\n",
-            "# HELP dd_agent_worker_broker_nats_connected Whether the shared NATS connection is established.\n",
-            "# TYPE dd_agent_worker_broker_nats_connected gauge\n",
-            "dd_agent_worker_broker_nats_connected {}\n"
+            "dd_agent_worker_broker_direct_dispatch_enabled {}\n"
         ),
         state.metrics.http_requests_total.load(Ordering::Relaxed),
         state.metrics.dispatch_requests_total.load(Ordering::Relaxed),
         state.metrics.dispatch_failures_total.load(Ordering::Relaxed),
         state.metrics.nats_publish_failures_total.load(Ordering::Relaxed),
-        u8::from(state.config.direct_dispatch_enabled),
-        u8::from(nats_connected(&state))
+        u8::from(state.config.direct_dispatch_enabled)
     );
 
     (
@@ -818,8 +781,6 @@ async fn api_docs_json() -> impl axum::response::IntoResponse {
 
 #[tokio::main]
 async fn main() {
-    let _otel = dd_telemetry::init("dd-agent-worker-broker");
-
     rustls::crypto::ring::default_provider()
         .install_default()
         .ok();
@@ -829,8 +790,8 @@ async fn main() {
     let port = env_u64("PORT", 8098) as u16;
 
     if config.server_auth_secret.is_none() {
-        tracing::warn!(
-            "no REMOTE_DEV_SERVER_SECRET/SERVER_AUTH_SECRET set; \
+        eprintln!(
+            "dd-agent-worker-broker WARNING: no REMOTE_DEV_SERVER_SECRET/SERVER_AUTH_SECRET set; \
              dispatch will reject all requests until one is configured"
         );
     }
@@ -841,7 +802,7 @@ async fn main() {
     let nats = match connect_nats(&config).await {
         Ok(client) => client,
         Err(error) => {
-            tracing::error!(%error, "failed to connect to NATS");
+            eprintln!("dd-agent-worker-broker failed to connect to NATS: {error}");
             std::process::exit(1);
         }
     };
@@ -849,7 +810,7 @@ async fn main() {
     match ensure_task_stream(&config, nats.clone()).await {
         Ok(()) => stream_ensured.store(true, Ordering::Release),
         Err(error) => {
-            tracing::error!(%error, "could not ensure task stream at startup");
+            eprintln!("dd-agent-worker-broker could not ensure task stream at startup: {error}")
         }
     }
 
@@ -863,7 +824,6 @@ async fn main() {
 
     let app = Router::new()
         .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
@@ -874,15 +834,14 @@ async fn main() {
         )
         .layer(axum::extract::DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
-        .merge(dd_runtime_config_client::router())
-        .layer(dd_telemetry::http_trace_layer());
+        .merge(dd_runtime_config_client::router());
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("failed to parse bind address");
-    tracing::info!(%address, "dd-agent-worker-broker listening");
+    println!("dd-agent-worker-broker listening on http://{address}");
 
     let listener = tokio::net::TcpListener::bind(address)
         .await
@@ -914,6 +873,7 @@ async fn shutdown_signal() {
         _ = terminate => {},
     }
 }
+
 
 #[cfg(test)]
 mod tests {

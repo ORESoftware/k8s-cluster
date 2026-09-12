@@ -226,5 +226,3 @@ instead of inline Twilio creds, and is required for Telnyx/Vonage imports.
   metadata is absent.
 - A natural next step is publishing `end-of-call-report` summaries to NATS
   (`dd.remote.events`) like `dd-contract-service` does, for the telemetry plane.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

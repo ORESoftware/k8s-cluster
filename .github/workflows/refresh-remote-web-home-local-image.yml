@@ -28,13 +28,12 @@ permissions:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v4
         with:
           ref: dev
 
-      - uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
@@ -49,10 +48,10 @@ jobs:
               --comment "Refresh remote web-home local image" \
               --parameters 'commands=[
                 "set -euo pipefail",
-                "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; source_repo=/home/ec2-user/codes/dd/dd-next-1; cd \"$source_repo\"; refresh_root=$(mktemp -d /tmp/dd-web-home-refresh.XXXXXX); git clone --depth 1 --branch dev \"$(git config --get remote.origin.url)\" \"$refresh_root\"; cd \"$refresh_root\"; git submodule update --init --depth 1 -- remote/deployments/web-home-rs remote/libs; git rev-parse --short HEAD; printf \"%s\\n\" \"$refresh_root\" >/tmp/dd-web-home-refresh-root'\''",
+                "sudo -u ec2-user -H bash -lc '\''set -euo pipefail; source_repo=/home/ec2-user/codes/dd/dd-next-1; cd \"$source_repo\"; git status --short; refresh_root=$(mktemp -d /tmp/dd-web-home-refresh.XXXXXX); git clone --depth 1 --branch dev \"$(git config --get remote.origin.url)\" \"$refresh_root\"; cd \"$refresh_root\"; git rev-parse --short HEAD; printf \"%s\\n\" \"$refresh_root\" >/tmp/dd-web-home-refresh-root'\''",
                 "refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\"",
-                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-dev-server:dev remote/deployments/dev-server >/tmp/dd-dev-server-build.log 2>&1 || { tail -n 160 /tmp/dd-dev-server-build.log >&2; exit 1; }",
-                "sudo nerdctl -n k8s.io build --progress=plain -f remote/deployments/web-home-rs/Dockerfile -t docker.io/library/dd-remote-web-home:dev remote >/tmp/dd-web-home-build.log 2>&1 || { tail -n 160 /tmp/dd-web-home-build.log >&2; exit 1; }",
+                "sudo nerdctl -n k8s.io build --progress=plain -t docker.io/library/dd-dev-server:dev remote/deployments/dev-server",
+                "sudo nerdctl -n k8s.io build --progress=plain -f remote/deployments/web-home-rs/Dockerfile -t docker.io/library/dd-remote-web-home:dev remote",
                 "sudo -u ec2-user -H bash -lc '\''refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\" && kubectl apply -f remote/argocd/apps/dd-next-runtime.application.yaml'\''",
                 "sudo -u ec2-user -H bash -lc '\''refresh_root=$(cat /tmp/dd-web-home-refresh-root); cd \"$refresh_root\" && kubectl apply -f remote/argocd/apps/dd-gleam-lambda-runner.application.yaml'\''",
                 "sudo -u ec2-user -H bash -lc '\''kubectl -n argocd get application/dd-next-runtime'\''",

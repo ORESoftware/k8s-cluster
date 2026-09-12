@@ -222,5 +222,3 @@ through pool config/env; they are not hardcoded into the Dockerfile.
 
 This service is intentionally a container-pool control plane, not a shell execution API. It never
 accepts arbitrary commands from dispatch requests; process shape comes from trusted Postgres config.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

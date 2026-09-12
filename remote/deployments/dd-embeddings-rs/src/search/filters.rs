@@ -18,8 +18,8 @@ use serde_json::Value;
 
 use crate::error::ApiError;
 
-/// A heterogeneous bound parameter. Bound into a `sea_orm::Statement`'s value
-/// list in order; the SQL only ever references these by `$n` placeholder.
+/// A heterogeneous bound parameter. Bound into a `PgArguments` in order; the
+/// SQL only ever references these by `$n` placeholder.
 #[derive(Debug, Clone)]
 pub enum Bound {
     Text(String),
@@ -36,31 +36,28 @@ pub fn push(binds: &mut Vec<Bound>, b: Bound) -> usize {
     binds.len()
 }
 
-/// Build the ordered `sea_orm::Value` list from the bind list (for
-/// `Statement::from_sql_and_values`).
-pub fn to_values(binds: &[Bound]) -> Vec<sea_orm::Value> {
-    binds
-        .iter()
-        .map(|b| match b {
-            Bound::Text(s) => s.clone().into(),
-            Bound::Float(f) => (*f).into(),
-            Bound::Int(i) => (*i).into(),
-            Bound::Json(v) => v.clone().into(),
-            Bound::Uuids(v) => v.clone().into(),
-        })
-        .collect()
+/// Build a `PgArguments` from the ordered bind list.
+pub fn to_args(binds: &[Bound]) -> Result<sqlx::postgres::PgArguments, ApiError> {
+    use sqlx::Arguments;
+    let mut args = sqlx::postgres::PgArguments::default();
+    for b in binds {
+        let r = match b {
+            Bound::Text(s) => args.add(s.clone()),
+            Bound::Float(f) => args.add(*f),
+            Bound::Int(i) => args.add(*i),
+            Bound::Json(v) => args.add(sqlx::types::Json(v.clone())),
+            Bound::Uuids(v) => args.add(v.clone()),
+        };
+        r.map_err(|e| ApiError::Invalid(format!("could not bind filter value: {e}")))?;
+    }
+    Ok(args)
 }
 
 fn validate_field(field: &str) -> Result<(), ApiError> {
     if field.is_empty() || field.len() > 128 {
-        return Err(ApiError::Invalid(
-            "filter field name must be 1..=128 chars".into(),
-        ));
+        return Err(ApiError::Invalid("filter field name must be 1..=128 chars".into()));
     }
-    if !field
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
-    {
+    if !field.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
         return Err(ApiError::Invalid(format!(
             "filter field `{field}` may contain only [A-Za-z0-9_.-]"
         )));
@@ -96,10 +93,7 @@ pub fn render(filters: &Value, binds: &mut Vec<Bound>) -> Result<String, ApiErro
 /// Equality via JSONB containment — type-accurate for any scalar (avoids the
 /// `"5" != "5.0"` pitfall of text comparison).
 fn eq_pred(field: &str, val: &Value, binds: &mut Vec<Bound>) -> Result<String, ApiError> {
-    let obj = Value::Object(serde_json::Map::from_iter([(
-        field.to_string(),
-        val.clone(),
-    )]));
+    let obj = Value::Object(serde_json::Map::from_iter([(field.to_string(), val.clone())]));
     let n = push(binds, Bound::Json(obj));
     Ok(format!("attributes @> ${n}::jsonb"))
 }
@@ -112,12 +106,7 @@ fn num(field: &str, op: &str, val: &Value, binds: &mut Vec<Bound>) -> Result<Str
     Ok(format!("(attributes->>'{field}')::numeric {op} ${n}"))
 }
 
-fn render_op(
-    field: &str,
-    op: &str,
-    val: &Value,
-    binds: &mut Vec<Bound>,
-) -> Result<String, ApiError> {
+fn render_op(field: &str, op: &str, val: &Value, binds: &mut Vec<Bound>) -> Result<String, ApiError> {
     match op {
         "eq" => eq_pred(field, val, binds),
         "ne" => Ok(format!("not ({})", eq_pred(field, val, binds)?)),
@@ -133,10 +122,7 @@ fn render_op(
                 // `x in ()` ⇒ always false.
                 return Ok("false".into());
             }
-            let ors: Vec<String> = arr
-                .iter()
-                .map(|v| eq_pred(field, v, binds))
-                .collect::<Result<_, _>>()?;
+            let ors: Vec<String> = arr.iter().map(|v| eq_pred(field, v, binds)).collect::<Result<_, _>>()?;
             Ok(format!("({})", ors.join(" or ")))
         }
         "contains" => {
@@ -155,8 +141,6 @@ fn render_op(
                 format!("not (attributes ? ${n})")
             })
         }
-        other => Err(ApiError::Invalid(format!(
-            "unknown filter operator `{other}`"
-        ))),
+        other => Err(ApiError::Invalid(format!("unknown filter operator `{other}`"))),
     }
 }

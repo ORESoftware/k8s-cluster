@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dd-telemetry = { path = "../../libs/telemetry-rs" }
-tracing = "0.1"
 axum = { version = "0.7", features = ["macros", "form"] }
 data-encoding = "2"
 dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
@@ -13,6 +11,3 @@ hmac = "0.12"
 serde = { version = "1", features = ["derive"] }
 sha1 = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-
-[dev-dependencies]
-serde_json = "1"

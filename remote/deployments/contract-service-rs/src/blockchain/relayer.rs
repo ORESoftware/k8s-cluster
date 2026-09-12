@@ -14,7 +14,7 @@ use serde_json::json;
 use std::sync::atomic::Ordering;
 
 use super::{
-    authorize_execute, evict_oldest, evm, gen_id, json_err, json_ok, parse_chain, record_request,
+    authorize_execute, evm, evict_oldest, gen_id, json_err, json_ok, parse_chain, record_request,
     require_enabled, ChainKind, MAX_RELAYS,
 };
 use crate::AppState;
@@ -51,11 +51,8 @@ async fn submit_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(
-        bc,
-        bc.config().relayer_enabled,
-        "BLOCKCHAIN_RELAYER_ENABLED",
-    ) {
+    if let Err(resp) = require_enabled(bc, bc.config().relayer_enabled, "BLOCKCHAIN_RELAYER_ENABLED")
+    {
         return resp;
     }
     let chain = match parse_chain(&body.chain) {
@@ -64,17 +61,11 @@ async fn submit_http(
     };
     let request_id = body.request_id.trim();
     if request_id.is_empty() || request_id.len() > 128 {
-        return json_err(
-            StatusCode::BAD_REQUEST,
-            "requestId must be 1..=128 characters",
-        );
+        return json_err(StatusCode::BAD_REQUEST, "requestId must be 1..=128 characters");
     }
     let signed = body.signed_transaction.trim();
     if signed.is_empty() || signed.len() > MAX_RAW_TX_BYTES {
-        return json_err(
-            StatusCode::BAD_REQUEST,
-            "signedTransaction missing or too large",
-        );
+        return json_err(StatusCode::BAD_REQUEST, "signedTransaction missing or too large");
     }
     if chain == ChainKind::Evm {
         if let Err(error) = evm::validate_hex_blob(signed, "signedTransaction", MAX_RAW_TX_BYTES) {
@@ -102,10 +93,7 @@ async fn submit_http(
         }
         let idem_key = format!("blockchain-relayer:{request_id}");
         if !state.claim_idempotency_key(&idem_key) {
-            return json_err(
-                StatusCode::CONFLICT,
-                "duplicate requestId within idempotency window",
-            );
+            return json_err(StatusCode::CONFLICT, "duplicate requestId within idempotency window");
         }
         let outcome = match chain {
             ChainKind::Solana => crate::solana_rpc(
@@ -114,19 +102,11 @@ async fn submit_http(
                 json!([signed, { "encoding": "base64", "skipPreflight": false }]),
             )
             .await
-            .map(|sig| {
-                sig.as_str()
-                    .map(str::to_string)
-                    .unwrap_or_else(|| sig.to_string())
-            }),
+            .map(|sig| sig.as_str().map(str::to_string).unwrap_or_else(|| sig.to_string())),
             ChainKind::Evm => bc
                 .evm_rpc("eth_sendRawTransaction", json!([signed]))
                 .await
-                .map(|hash| {
-                    hash.as_str()
-                        .map(str::to_string)
-                        .unwrap_or_else(|| hash.to_string())
-                }),
+                .map(|hash| hash.as_str().map(str::to_string).unwrap_or_else(|| hash.to_string())),
         };
         match outcome {
             Ok(value) => {
@@ -140,9 +120,7 @@ async fn submit_http(
             }
         }
     } else {
-        bc.metrics()
-            .broadcast_blocked_total
-            .fetch_add(1, Ordering::Relaxed);
+        bc.metrics().broadcast_blocked_total.fetch_add(1, Ordering::Relaxed);
     }
 
     let id = gen_id("relay");
@@ -186,11 +164,8 @@ async fn status_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(
-        bc,
-        bc.config().relayer_enabled,
-        "BLOCKCHAIN_RELAYER_ENABLED",
-    ) {
+    if let Err(resp) = require_enabled(bc, bc.config().relayer_enabled, "BLOCKCHAIN_RELAYER_ENABLED")
+    {
         return resp;
     }
     let relays = match bc.inner().relays.lock() {

@@ -24,8 +24,8 @@ fn log(severity_text: &str, severity_number: u8, event_name: &str, body: &str, a
         "attributes": attributes,
     });
     if severity_number >= 13 {
-        tracing::error!("{line}");
+        eprintln!("{line}");
     } else {
-        tracing::info!("{line}");
+        println!("{line}");
     }
 }

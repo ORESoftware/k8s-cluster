@@ -11,14 +11,6 @@ metadata:
     app: hello-world
 spec:
   replicas: 3
-  # The hard one-pod-per-node spread leaves no fourth placement slot. Disable
-  # surge so updates replace one diagnostic pod at a time instead of deadlocking
-  # with an unschedulable fourth pod.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 0
-      maxUnavailable: 1
   selector:
     matchLabels:
       app: hello-world
@@ -27,12 +19,6 @@ spec:
       labels:
         app: hello-world
     spec:
-      # A static diagnostic page never calls the Kubernetes API, so don't hand
-      # it a ServiceAccount token an attacker could reuse.
-      automountServiceAccountToken: false
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
@@ -45,17 +31,10 @@ spec:
           image: nginxdemos/hello:plain-text
           ports:
             - containerPort: 80
-          # baseline-PSS compliant; nginxdemos/hello runs as root and needs the
-          # default cap set (CHOWN/SETUID/SETGID) to spawn workers, so we don't
-          # drop ALL. A 'restricted'-grade workload should use a non-root image.
-          securityContext:
-            allowPrivilegeEscalation: false
           resources:
             requests:
               cpu: 50m
-              # Static nginx diagnostic page; keep enough headroom over its
-              # observed footprint without reserving scarce cluster memory.
-              memory: 8Mi
+              memory: 32Mi
             limits:
               cpu: 200m
               memory: 128Mi

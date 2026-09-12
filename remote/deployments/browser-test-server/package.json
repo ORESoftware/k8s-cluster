@@ -11,15 +11,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
-    "export:openapi": "tsx src/server.ts --export-openapi",
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
-    "test:contract": "tsx --test src/api-contract.test.ts",
-    "test:runtime": "node scripts/runtime-contract-smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@dd/telemetry": "file:../../libs/telemetry-node",
     "fastify": "^5.0.0",
     "playwright": "1.56.0",
     "puppeteer": "^24.22.3",

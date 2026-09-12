@@ -39,9 +39,6 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
             seccompProfile:
               type: RuntimeDefault
           # Build-on-pod-start, identical to dd-webrtc-signaling. The
@@ -106,7 +103,7 @@ spec:
           # steady-state CPU on the shared single-node cluster.
           resources:
             requests:
-              cpu: 25m
+              cpu: 100m
               memory: 2Gi
             limits:
               cpu: '6'

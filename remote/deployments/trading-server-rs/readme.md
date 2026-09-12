@@ -93,8 +93,8 @@ The decision engine uses simple bounded scoring today:
 Per-request `constraints` can only tighten the server defaults. Safety gates can force `hold` even
 when the model recommends `buy` or `sell`: kill switch engaged, missing/paused
 platform config, unsupported paper/live mode, disabled mode, live gate off, low confidence, high
-risk score, missing price, stale market data, shorting disallowed, or exposure limits. Live mode
-still only emits an intent; it never calls an exchange API.
+risk score, missing price, shorting disallowed, or exposure limits. Live mode still only emits an
+intent; it never calls an exchange API.
 
 ## Operational hardening
 
@@ -113,13 +113,6 @@ still only emits an intent; it never calls an exchange API.
 - **Loopback URL validation** — platform `baseUrls` must be `https://` or a true loopback host
   (`localhost`/`127.0.0.1`/`[::1]` followed by `:`, `/`, or end), so look-alikes like
   `http://localhost.evil.com` are rejected.
-- **Stale-data gate** — when a request includes `market.asOfMs`, the `marketDataFresh` gate forces a
-  hold once the snapshot is older than `TRADING_MAX_PRICE_AGE_MS` (default 5 min), so a buy/sell
-  intent is never produced from a stale quote. Requests without `asOfMs` are unaffected.
-- **Credential-reference redaction** — the k8s secret name and credential key names ride **only** on
-  the executor-facing `order_intents` subject. They are stripped from the `POST /decide` HTTP response
-  and the broad `decisions` telemetry subject (matching the public service descriptor), so observers
-  can't enumerate which secret keys hold broker creds.
 
 ## Executor boundary (read before wiring live trades)
 
@@ -130,5 +123,3 @@ not-yet-built **executor** that must own broker secrets and add its own controls
 fill: per-venue idempotency/dedup of intents (NATS can redeliver), live notional/rate budgets,
 reconciliation against fills, and per-platform eligibility (e.g. geo, market rules). Until that
 executor exists and is signed off, keep `TRADING_MODE=paper` and `TRADING_ALLOW_LIVE_ORDERS=false`.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

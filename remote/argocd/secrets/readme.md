@@ -2,20 +2,17 @@
 
 Do not commit raw API keys or database URLs.
 
-This folder is the GitOps bridge between ArgoCD and the cluster's selected secret backend:
+This folder is the GitOps bridge between ArgoCD and AWS Secrets Manager:
 
 - GitHub stores only `ExternalSecret` and `ClusterSecretStore` manifests.
-- the selected cloud secret backend stores the real values.
+- AWS Secrets Manager stores the real values.
 - External Secrets Operator reconciles those values into Kubernetes `Secret` objects consumed by
   the deployments through `envFrom` / `secretKeyRef`.
-- Fiducia KV is available as a second application-secret backend through
-  `ClusterSecretStore/dd-fiducia-kv`; see
-  [`../../../docs/fiducia-secret-delivery.md`](../../../docs/fiducia-secret-delivery.md).
 
 `remote/argocd/apps/external-secrets-operator.application.yaml` installs the operator through the
 official Helm chart with CRDs enabled.
 
-Required secret names:
+Required AWS secret names:
 
 - `dd/remote-dev/agent-secrets` -> creates `dd-agent-secrets`
 - `dd/remote-dev/rest-api-secrets` -> creates `dd-remote-rest-api-secrets`
@@ -24,10 +21,6 @@ Required secret names:
 - `dd/remote-dev/mcp-secrets` -> creates `dd-gleam-mcp-server-secrets`
 - `dd/remote-dev/gleamlang-server-secrets` -> creates `dd-gleamlang-server-secrets`
 - `dd/remote-dev/lmx-admin-token` -> creates `dd-lmx-admin-token`
-- `dd/remote-dev/fiducia-eso-reader` -> creates the private
-  `external-secrets/fiducia-eso-reader` bootstrap credential for `dd-fiducia-kv`
-- `dd/remote-dev/fiducia-kv-protection` -> creates the private
-  `fiducia/fiducia-kv-protection` AES-256-GCM keyring used before values enter Raft
 - `dd/remote-dev/ai-ml-platform-secrets` -> consumed by the optional AI/ML chart
   `ExternalSecret`s in `remote/argocd/ai-ml-platform`
 - `dd/remote-dev/big-data-secrets` -> consumed by the optional
@@ -52,20 +45,9 @@ Expected Git keys are:
 Never commit deploy-key material or bake it into a worker image. `dd-dev-server` writes
 `GH_DEPLOY_KEY` from the Kubernetes secret to a private key file at container startup.
 
-Bootstrap and cloud-backed `ExternalSecret` manifests reference the cloud-neutral
-`dd-cluster-secrets` `ClusterSecretStore`. Applications may instead reference
-`dd-fiducia-kv` when their values are stored in Fiducia. Provider directories under `providers/`
-decide how the bootstrap store is backed:
-
-- `providers/aws` uses AWS Secrets Manager through the External Secrets controller pod's default AWS
-  credential chain. On EC2 this is the node instance role `dd-remote-k8s-role`, which also backs the
-  `Remote K8s maintenance` GitHub Actions workflow over SSM.
-- `providers/hetzner` also reads AWS Secrets Manager, but uses the
-  `external-secrets/aws-sm-creds` Kubernetes secret for the AWS access key pair because Hetzner
-  nodes do not have an EC2 instance role.
-- `providers/gcp` uses Google Secret Manager with ambient GCP workload credentials.
-
-A single inline
+The `dd-aws-secrets-manager` store uses the External Secrets controller pod's default AWS
+credential chain. On EC2 this is the node instance role `dd-remote-k8s-role`, which also
+backs the `Remote K8s maintenance` GitHub Actions workflow over SSM. A single inline
 policy `ManageRemoteDevSecrets` covers both consumers:
 
 ```jsonc
@@ -86,15 +68,6 @@ policy `ManageRemoteDevSecrets` covers both consumers:
       "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/remote-dev/*"
     },
     {
-      "Sid": "ReadBenefactorGhcrPullCredential",
-      "Effect": "Allow",
-      "Action": [
-        "secretsmanager:DescribeSecret",
-        "secretsmanager:GetSecretValue"
-      ],
-      "Resource": "arn:aws:secretsmanager:us-east-1:<account>:secret:dd/benefactor/ghcr-pull-*"
-    },
-    {
       "Sid": "ListSecretsForInspect",
       "Effect": "Allow",
       "Action": "secretsmanager:ListSecrets", // not resource-scopeable
@@ -104,12 +77,9 @@ policy `ManageRemoteDevSecrets` covers both consumers:
 }
 ```
 
-Do not split the `dd/remote-dev/*` statement back into separate read-only and
-write policies — the bootstrap path needs `CreateSecret` and the inspect path
-needs `ListSecrets`, and the ESO read path is a strict subset of those actions
-on the same resource prefix. The benefactor registry statement is deliberately
-separate and read-only so the cluster can pull its private image without gaining
-write access to that credential.
+Do not split this back into separate read-only and write policies — the bootstrap path
+needs `CreateSecret` and the inspect path needs `ListSecrets`, and the ESO read path is a
+strict subset of those actions on the same resource prefix.
 
 `dd/remote-dev/lambda-runner-secrets` must include `LAMBDA_DATABASE_URL`; the Gleam lambda runner
 consumes that key through an explicit `secretKeyRef` so function invocation can look up lambda
@@ -128,7 +98,7 @@ and `RDS_DATABASE_URL` for `dd-spark-pipeline-server` Postgres access. Do not us
 `dd/remote-dev/big-data-secrets` must include `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`,
 `AIRFLOW_ADMIN_USERNAME`, and `AIRFLOW_ADMIN_PASSWORD` before applying the optional
 `remote/argocd/big-data` bundle or syncing `dd-big-data.application.yaml`. Keep those values
-rotation-friendly in the selected secret backend; do not restore literal fallback credentials to the
+rotation-friendly in AWS Secrets Manager; do not restore literal fallback credentials to the
 manifests or docs.
 
 `dd/remote-dev/ai-ml-platform-secrets` must include the chart-owned Airbyte auth, Airbyte
@@ -139,13 +109,13 @@ fallback chart credentials such as `admin/admin`, `postgres`, `minio123`, or `te
 
 ## Updating Values
 
-Update live values in the selected secret backend, not in Git. This repo should only change when
-the secret shape changes, such as adding a new key, adding a new service-specific `ExternalSecret`,
-or changing which deployment consumes a generated Kubernetes secret.
+Update live values in AWS Secrets Manager, not in Git. This repo should only change when the secret
+shape changes, such as adding a new key, adding a new service-specific `ExternalSecret`, or
+changing which deployment consumes a generated Kubernetes secret.
 
 Safe rotation flow:
 
-1. Put a new secret version in the selected secret backend.
+1. Put a new secret version in AWS Secrets Manager.
 2. Sync the `dd-secrets` ArgoCD application, or wait for External Secrets Operator refresh.
 3. Restart deployments that read the changed secret through env vars.
 4. Verify the consuming service with health checks and telemetry.

@@ -16,8 +16,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-fabrication-server
@@ -211,7 +211,6 @@ spec:
                 '"path": "/fabrication/slicers/plan"' \
                 '"path": "/fabrication/slicers/result"' \
                 '"path": "/fabrication/mesh-repair/catalog"' \
-                '"path": "/fabrication/mesh-repair/plan"' \
                 '"path": "/fabrication/mesh-repair/result"' \
                 '"path": "/fabrication/design/import/catalog"' \
                 '"path": "/fabrication/design/preflight/catalog"' \
@@ -246,7 +245,6 @@ spec:
                 '"path": "/fabrication/machine-code/result"' \
                 '"path": "/fabrication/toolpaths/catalog"' \
                 '"path": "/fabrication/toolpaths/plan"' \
-                '"path": "/fabrication/toolpaths/generate"' \
                 '"path": "/fabrication/toolpaths/result"' \
                 '"path": "/fabrication/improvements/catalog"' \
                 '"path": "/fabrication/improvements/preflight/catalog"' \
@@ -286,7 +284,6 @@ spec:
                 '"path": "/fabrication/dispositions/catalog"' \
                 '"path": "/fabrication/dispositions/result"' \
                 '"path": "/fabrication/costing/catalog"' \
-                '"path": "/fabrication/costing/estimate"' \
                 '"path": "/fabrication/costing/result"' \
                 '"path": "/fabrication/utilities/catalog"' \
                 '"path": "/fabrication/energy/catalog"' \
@@ -647,36 +644,8 @@ spec:
               value: 0.0.0.0
             - name: PORT
               value: '8113'
-            # Optional, provider-neutral secret overlay. An external secret
-            # controller/injector owns the credential; the app reads only the
-            # allowlisted secrets/daedalus/{NATS_URL,NATS_TOKEN,NATS_NKEY} keys.
-            # Missing credentials preserve the direct environment configuration.
-            - name: FIDUCIA_URL
-              value: http://fiducia-load-balance.fiducia.svc.cluster.local:8088
-            - name: FIDUCIA_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: dd-fabrication-server-secrets
-                  key: FIDUCIA_API_KEY
-                  optional: true
             - name: NATS_URL
               value: nats://dd-nats.messaging.svc.cluster.local:4222
-            - name: NATS_REQUIRE_TLS
-              value: 'false'
-            - name: FABRICATION_STREAM_NAME
-              value: DD_REMOTE_FABRICATION
-            - name: FABRICATION_STREAM_MAX_AGE_SECONDS
-              value: '1209600'
-            - name: FABRICATION_STREAM_MAX_BYTES
-              value: '5368709120'
-            - name: FABRICATION_NATS_ACK_WAIT_SECONDS
-              value: '900'
-            - name: FABRICATION_NATS_MAX_DELIVER
-              value: '5'
-            - name: FABRICATION_NATS_MAX_INFLIGHT
-              value: '8'
-            - name: FABRICATION_NATS_NAK_DELAY_SECONDS
-              value: '10'
             - name: FABRICATION_REQUEST_SUBJECT
               value: dd.remote.fabrication.requests
             - name: FABRICATION_QUEUE_GROUP
@@ -713,7 +682,7 @@ spec:
               protocol: TCP
           resources:
             requests:
-              cpu: 25m
+              cpu: 100m
               memory: 512Mi
               ephemeral-storage: 4Gi
             limits:

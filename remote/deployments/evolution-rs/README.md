@@ -61,25 +61,6 @@ curl -s localhost:8131/optimize -H 'content-type: application/json' -d '{
 Built-in benchmark functions (all global-minimum 0): `sphere`, `rosenbrock`, `rastrigin`,
 `ackley`. `sphere` is convex; the rest are multimodal and exercise migration well.
 
-## Hardening
-
-- **Opt-in auth**: set `EVOLUTION_AUTH_SECRET` and `/optimize` requires it as
-  `Authorization: Bearer <secret>` (or `X-DD-Auth`), compared in constant time. Unset →
-  open (in-cluster ClusterIP default). The master manifest wires it from `dd-agent-secrets`
-  (`optional: true`).
-- **Total time budget**: `timeoutMs` bounds the *whole* solve, not each epoch — a request
-  can never run for `epochs × timeout` when islands are slow or absent.
-- **Concurrency cap**: at most `MAX_CONCURRENT_OPTIMIZATIONS` (8) run at once; excess
-  requests get `503` instead of fanning out unbounded.
-- **Work bounds**: `populationPerIsland × dimension ≤ 200k` (keeps a job under the
-  JetStream message ceiling); islands/epochs/generations/dimension all clamped.
-- **Untrusted jobs**: island workers reject oversize payloads and `clamp_for_safety()`
-  every job (dropping mismatched-width or oversized carried populations) so a message
-  published straight to the jobs subject can't pin a worker.
-- **NATS resilience**: bounded connect-retry (`EVOLUTION_NATS_CONNECT_ATTEMPTS`), and the
-  master ensures the JetStream stream exists on startup so early job publishes aren't lost.
-- Rejections are counted in `dd_evolution_rejected_requests_total`.
-
 ## Build & deploy
 
 ```bash
@@ -89,5 +70,3 @@ kubectl apply -k remote/deployments/evolution-rs/k8s
 ```
 
 `cargo test` runs the GA core's determinism/convergence unit tests.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

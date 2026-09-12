@@ -301,7 +301,7 @@ fn sweep_job_from_env() -> Option<SweepJob> {
     let url = env_string("REAPER_SWEEP_URL");
     let auth_secret = env_string("REAPER_SECRET");
     if url.is_none() || auth_secret.is_none() {
-        tracing::info!("idle sweep disabled: REAPER_SWEEP_URL or REAPER_SECRET missing");
+        println!("idle sweep disabled: REAPER_SWEEP_URL or REAPER_SECRET missing");
         return None;
     }
 
@@ -315,14 +315,14 @@ fn sweep_job_from_env() -> Option<SweepJob> {
 
 fn cluster_doctor_job_from_env() -> Option<ClusterDoctorJob> {
     if !env_bool("CLUSTER_DOCTOR_ENABLED", false) {
-        tracing::info!("cluster doctor disabled: CLUSTER_DOCTOR_ENABLED is false");
+        println!("cluster doctor disabled: CLUSTER_DOCTOR_ENABLED is false");
         return None;
     }
 
     let server_auth_secret = env_string("CLUSTER_DOCTOR_SERVER_AUTH_SECRET")
         .or_else(|| env_string("SERVER_AUTH_SECRET"));
     if server_auth_secret.is_none() {
-        tracing::info!(
+        println!(
             "cluster doctor disabled: CLUSTER_DOCTOR_SERVER_AUTH_SECRET or SERVER_AUTH_SECRET missing"
         );
         return None;
@@ -351,20 +351,20 @@ fn server_auth_secret_from_env() -> Option<String> {
 
 fn nats_watch_job_from_env() -> Option<NatsWatchJob> {
     if !env_bool("NATS_WATCH_ENABLED", false) {
-        tracing::info!("nats watchdog disabled: NATS_WATCH_ENABLED is false");
+        println!("nats watchdog disabled: NATS_WATCH_ENABLED is false");
         return None;
     }
 
     let server_auth_secret = server_auth_secret_from_env();
     if server_auth_secret.is_none() {
-        tracing::info!(
+        println!(
             "nats watchdog disabled: NATS_WATCH_SERVER_AUTH_SECRET, CLUSTER_DOCTOR_SERVER_AUTH_SECRET, or SERVER_AUTH_SECRET missing"
         );
         return None;
     }
     let gleam_broadcast_secret = env_string("NATS_WATCH_GLEAM_BROADCAST_SECRET");
     if gleam_broadcast_secret.is_none() {
-        tracing::info!("nats watchdog disabled: NATS_WATCH_GLEAM_BROADCAST_SECRET missing");
+        println!("nats watchdog disabled: NATS_WATCH_GLEAM_BROADCAST_SECRET missing");
         return None;
     }
 
@@ -390,13 +390,13 @@ fn nats_watch_job_from_env() -> Option<NatsWatchJob> {
 
 fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
     if !env_bool("RUNTIME_FLOOR_ENABLED", false) {
-        tracing::info!("runtime floor disabled: RUNTIME_FLOOR_ENABLED is false");
+        println!("runtime floor disabled: RUNTIME_FLOOR_ENABLED is false");
         return None;
     }
 
     let server_auth_secret = server_auth_secret_from_env();
     if server_auth_secret.is_none() {
-        tracing::info!(
+        println!(
             "runtime floor disabled: NATS_WATCH_SERVER_AUTH_SECRET, CLUSTER_DOCTOR_SERVER_AUTH_SECRET, or SERVER_AUTH_SECRET missing"
         );
         return None;
@@ -412,18 +412,7 @@ fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
             .unwrap_or_else(|| DD_REMOTE_TASKS_STREAM_NAME.to_string()),
         task_consumer: env_string("RUNTIME_FLOOR_NATS_TASK_CONSUMER")
             .unwrap_or_else(|| THREAD_PREPARER_QUEUE_GROUP.to_string()),
-        // This service and dd-remote-queue-consumer both `get_or_create_consumer`
-        // the SAME durable (THREAD_PREPARER_QUEUE_GROUP on DD_REMOTE_TASKS): the
-        // reaper provisions it so KEDA has a consumer to read lag from even when
-        // the queue-consumer has scaled to zero, and the queue-consumer owns its
-        // runtime semantics. Because `get_or_create_consumer` never reconciles an
-        // existing consumer, whichever process wins the create race fixes the
-        // config — so these defaults MUST match the queue-consumer's
-        // (`NATS_TASK_ACK_WAIT_SECONDS`=120, `_MAX_ACK_PENDING`=256,
-        // `_MAX_DELIVER`=5). A drifting ack_wait here (it used to default to 600)
-        // silently overrode the queue-consumer's 120s deadline and its
-        // ack-progress heartbeat tuning. Keep them in lockstep.
-        task_ack_wait_seconds: env_u64("RUNTIME_FLOOR_NATS_TASK_ACK_WAIT_SECONDS", 120),
+        task_ack_wait_seconds: env_u64("RUNTIME_FLOOR_NATS_TASK_ACK_WAIT_SECONDS", 600),
         task_max_ack_pending: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_ACK_PENDING", 256),
         task_max_deliver: env_i64("RUNTIME_FLOOR_NATS_TASK_MAX_DELIVER", 5),
         container_pool_url: env_string("RUNTIME_FLOOR_CONTAINER_POOL_URL").unwrap_or_else(|| {
@@ -442,25 +431,25 @@ fn runtime_floor_job_from_env() -> Option<RuntimeFloorJob> {
 
 fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
     if !env_bool("WORKER_IMAGE_BUILD_ENABLED", false) {
-        tracing::info!("worker image build disabled: WORKER_IMAGE_BUILD_ENABLED is false");
+        println!("worker image build disabled: WORKER_IMAGE_BUILD_ENABLED is false");
         return None;
     }
 
     let deploy_key =
         env_string("WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY").or_else(|| env_string("GH_DEPLOY_KEY"));
     if deploy_key.is_none() {
-        tracing::info!("worker image build disabled: WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY or GH_DEPLOY_KEY missing");
+        println!("worker image build disabled: WORKER_IMAGE_BUILD_GITHUB_DEPLOY_KEY or GH_DEPLOY_KEY missing");
         return None;
     }
     let Some(repo_url) = env_string("WORKER_IMAGE_BUILD_REPO_URL") else {
-        tracing::info!("worker image build disabled: WORKER_IMAGE_BUILD_REPO_URL missing");
+        println!("worker image build disabled: WORKER_IMAGE_BUILD_REPO_URL missing");
         return None;
     };
 
     let timezone_name =
         env_string("WORKER_IMAGE_BUILD_TIMEZONE").unwrap_or_else(|| "America/New_York".to_string());
     let timezone = timezone_name.parse::<Tz>().unwrap_or_else(|_| {
-        tracing::error!(
+        eprintln!(
             "invalid WORKER_IMAGE_BUILD_TIMEZONE={timezone_name}; falling back to America/New_York"
         );
         chrono_tz::America::New_York
@@ -489,13 +478,13 @@ fn worker_image_build_job_from_env() -> Option<WorkerImageBuildJob> {
 
 fn k8s_runtime_watch_job_from_env() -> Option<K8sRuntimeWatchJob> {
     if !env_bool("K8S_RUNTIME_WATCH_ENABLED", false) {
-        tracing::info!("k8s runtime watch disabled: K8S_RUNTIME_WATCH_ENABLED is false");
+        println!("k8s runtime watch disabled: K8S_RUNTIME_WATCH_ENABLED is false");
         return None;
     }
 
     let namespaces = env_csv("K8S_RUNTIME_WATCH_NAMESPACES", "default,vpn");
     if namespaces.is_empty() {
-        tracing::info!("k8s runtime watch disabled: no namespaces configured");
+        println!("k8s runtime watch disabled: no namespaces configured");
         return None;
     }
 
@@ -518,7 +507,7 @@ fn k8s_runtime_watch_job_from_env() -> Option<K8sRuntimeWatchJob> {
 
 fn browser_job_reap_job_from_env() -> Option<BrowserJobReapJob> {
     if !env_bool("BROWSER_JOB_REAP_ENABLED", false) {
-        tracing::info!("browser job reaper disabled: BROWSER_JOB_REAP_ENABLED is false");
+        println!("browser job reaper disabled: BROWSER_JOB_REAP_ENABLED is false");
         return None;
     }
 
@@ -545,7 +534,7 @@ fn browser_job_reap_job_from_env() -> Option<BrowserJobReapJob> {
 
 fn container_pool_reap_job_from_env() -> Option<ContainerPoolReapJob> {
     if !env_bool("CONTAINER_POOL_REAP_ENABLED", false) {
-        tracing::info!("container pool reaper disabled: CONTAINER_POOL_REAP_ENABLED is false");
+        println!("container pool reaper disabled: CONTAINER_POOL_REAP_ENABLED is false");
         return None;
     }
 
@@ -583,7 +572,7 @@ fn parse_label_value(labels: &str, key: &str) -> Option<String> {
 
 async fn publish_browser_job_reap_event(job: &BrowserJobReapJob, reaped: &[String]) {
     let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
-        tracing::error!("browser job reaper could not publish event: nats connect failed");
+        eprintln!("browser job reaper could not publish event: nats connect failed");
         return;
     };
     let payload = json!({
@@ -600,7 +589,7 @@ async fn publish_browser_job_reap_event(job: &BrowserJobReapJob, reaped: &[Strin
         .publish(job.event_subject.clone(), payload.into())
         .await
     {
-        tracing::error!("browser job reap event publish failed: {error}");
+        eprintln!("browser job reap event publish failed: {error}");
     }
 }
 
@@ -619,14 +608,14 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
     let output = match list.output().await {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
-            tracing::error!(
+            eprintln!(
                 "browser job reaper ps failed: {}",
                 truncate_for_log(&output.stderr).trim()
             );
             return;
         }
         Err(error) => {
-            tracing::error!("browser job reaper ps could not start: {error}");
+            eprintln!("browser job reaper ps could not start: {error}");
             return;
         }
     };
@@ -669,14 +658,14 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
             .arg(name);
         match remove.output().await {
             Ok(output) if output.status.success() => {
-                tracing::info!("browser job reaper removed expired container {name}");
+                println!("browser job reaper removed expired container {name}");
                 reaped.push(name.clone());
             }
-            Ok(output) => tracing::error!(
+            Ok(output) => eprintln!(
                 "browser job reaper failed to remove {name}: {}",
                 truncate_for_log(&output.stderr).trim()
             ),
-            Err(error) => tracing::error!("browser job reaper rm could not start for {name}: {error}"),
+            Err(error) => eprintln!("browser job reaper rm could not start for {name}: {error}"),
         }
     }
 
@@ -686,7 +675,7 @@ async fn run_browser_job_reap_once(job: &BrowserJobReapJob) {
 }
 
 async fn run_browser_job_reap_loop(job: BrowserJobReapJob) {
-    tracing::info!(
+    println!(
         "browser job reaper starting: namespace={} label={} interval={}s grace={}s",
         job.namespace, job.label, job.interval_seconds, job.grace_seconds
     );
@@ -909,7 +898,7 @@ async fn remove_managed_pool_container(
     reason: &str,
 ) -> bool {
     if job.dry_run {
-        tracing::info!("container pool reaper dry-run would remove {name}: {reason}");
+        println!("container pool reaper dry-run would remove {name}: {reason}");
         return true;
     }
 
@@ -922,18 +911,18 @@ async fn remove_managed_pool_container(
         .arg(name);
     match remove.output().await {
         Ok(output) if output.status.success() => {
-            tracing::info!("container pool reaper removed {name}: {reason}");
+            println!("container pool reaper removed {name}: {reason}");
             true
         }
         Ok(output) => {
-            tracing::error!(
+            eprintln!(
                 "container pool reaper failed to remove {name}: {}",
                 truncate_for_log(&output.stderr).trim()
             );
             false
         }
         Err(error) => {
-            tracing::error!("container pool reaper remove could not start for {name}: {error}");
+            eprintln!("container pool reaper remove could not start for {name}: {error}");
             false
         }
     }
@@ -944,7 +933,7 @@ async fn publish_container_pool_reap_event(
     reaped: &[(String, String)],
 ) {
     let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
-        tracing::error!("container pool reaper could not publish event: nats connect failed");
+        eprintln!("container pool reaper could not publish event: nats connect failed");
         return;
     };
     let containers = reaped
@@ -967,7 +956,7 @@ async fn publish_container_pool_reap_event(
         .publish(job.event_subject.clone(), payload.into())
         .await
     {
-        tracing::error!("container pool reap event publish failed: {error}");
+        eprintln!("container pool reap event publish failed: {error}");
     }
 }
 
@@ -991,13 +980,13 @@ async fn run_container_pool_reap_once(client: &Client, job: &ContainerPoolReapJo
                 job.idle_grace_seconds,
             ));
         }
-        Err(error) => tracing::error!("{error}"),
+        Err(error) => eprintln!("{error}"),
     }
 
     let names = match list_managed_pool_containers(job).await {
         Ok(names) => names,
         Err(error) => {
-            tracing::error!("{error}");
+            eprintln!("{error}");
             return;
         }
     };
@@ -1040,7 +1029,7 @@ async fn run_container_pool_reap_once(client: &Client, job: &ContainerPoolReapJo
 }
 
 async fn run_container_pool_reap_loop(client: Client, job: ContainerPoolReapJob) {
-    tracing::info!(
+    println!(
         "container pool reaper starting: namespace={} label={} interval={}s idleGrace={}s stoppedTtl={}s orphanTtl={}s poolUrl={} dryRun={}",
         job.namespace,
         job.label,
@@ -1084,19 +1073,19 @@ async fn run_sweep_once(client: &Client, job: &SweepJob) {
                 .await
                 .unwrap_or_else(|_| String::from("<body unreadable>"));
             if status.is_success() {
-                tracing::info!("sweep ok status={} body={}", status, body);
+                println!("sweep ok status={} body={}", status, body);
             } else {
-                tracing::error!("sweep failed status={} body={}", status, body);
+                eprintln!("sweep failed status={} body={}", status, body);
             }
         }
         Err(err) => {
-            tracing::error!("sweep request error: {}", err);
+            eprintln!("sweep request error: {}", err);
         }
     }
 }
 
 async fn run_sweep_loop(client: Client, job: SweepJob) {
-    tracing::info!(
+    println!(
         "idle sweep loop starting: interval={}s dryRun={} url={}",
         job.interval_seconds,
         job.dry_run,
@@ -1139,22 +1128,22 @@ async fn run_cluster_doctor_once(client: &Client, job: &ClusterDoctorJob) {
                 .await
                 .unwrap_or_else(|_| String::from("<body unreadable>"));
             if status.is_success() {
-                tracing::info!("cluster doctor dispatched status={} body={}", status, body);
+                println!("cluster doctor dispatched status={} body={}", status, body);
             } else {
-                tracing::error!(
+                eprintln!(
                     "cluster doctor dispatch failed status={} body={}",
                     status, body
                 );
             }
         }
         Err(err) => {
-            tracing::error!("cluster doctor dispatch request error: {}", err);
+            eprintln!("cluster doctor dispatch request error: {}", err);
         }
     }
 }
 
 async fn run_cluster_doctor_loop(client: Client, job: ClusterDoctorJob) {
-    tracing::info!(
+    println!(
         "cluster doctor loop starting: interval={}s runOnStart={} taskUrl={} provider={}",
         job.interval_seconds,
         job.run_on_start,
@@ -1185,10 +1174,10 @@ async fn run_command(mut command: Command, label: &str) -> Result<(), String> {
     let stdout = truncate_for_log(&output.stdout);
     let stderr = truncate_for_log(&output.stderr);
     if !stdout.trim().is_empty() {
-        tracing::info!("{label} stdout: {}", stdout.trim());
+        println!("{label} stdout: {}", stdout.trim());
     }
     if !stderr.trim().is_empty() {
-        tracing::error!("{label} stderr: {}", stderr.trim());
+        eprintln!("{label} stderr: {}", stderr.trim());
     }
     if output.status.success() {
         Ok(())
@@ -1199,7 +1188,7 @@ async fn run_command(mut command: Command, label: &str) -> Result<(), String> {
 
 async fn publish_worker_image_build_event(job: &WorkerImageBuildJob, status: &str, message: &str) {
     let Ok(nats) = async_nats::connect(job.nats_url.clone()).await else {
-        tracing::error!("worker image build could not publish event: nats connect failed");
+        eprintln!("worker image build could not publish event: nats connect failed");
         return;
     };
     let payload = json!({
@@ -1215,7 +1204,7 @@ async fn publish_worker_image_build_event(job: &WorkerImageBuildJob, status: &st
         .publish(job.event_subject.clone(), payload.into())
         .await
     {
-        tracing::error!("worker image build event publish failed: {error}");
+        eprintln!("worker image build event publish failed: {error}");
     }
 }
 
@@ -1305,14 +1294,14 @@ fn next_worker_image_build_delay(job: &WorkerImageBuildJob) -> Duration {
 }
 
 async fn run_worker_image_build_loop(job: WorkerImageBuildJob) {
-    tracing::info!(
+    println!(
         "worker image build loop starting: image={} ref={} schedule={:02}:{:02} {:?} runOnStart={}",
         job.image, job.repo_ref, job.hour, job.minute, job.timezone, job.run_on_start
     );
     if job.run_on_start {
         match run_worker_image_build_once(&job).await {
             Ok(()) => {
-                tracing::info!("worker image build succeeded on start");
+                println!("worker image build succeeded on start");
                 publish_worker_image_build_event(
                     &job,
                     "ok",
@@ -1321,22 +1310,22 @@ async fn run_worker_image_build_loop(job: WorkerImageBuildJob) {
                 .await;
             }
             Err(error) => {
-                tracing::error!("worker image build failed on start: {error}");
+                eprintln!("worker image build failed on start: {error}");
                 publish_worker_image_build_event(&job, "error", &error).await;
             }
         }
     }
     loop {
         let delay = next_worker_image_build_delay(&job);
-        tracing::info!("worker image build sleeping for {}s", delay.as_secs());
+        println!("worker image build sleeping for {}s", delay.as_secs());
         sleep(delay).await;
         match run_worker_image_build_once(&job).await {
             Ok(()) => {
-                tracing::info!("worker image build succeeded");
+                println!("worker image build succeeded");
                 publish_worker_image_build_event(&job, "ok", "worker image build succeeded").await;
             }
             Err(error) => {
-                tracing::error!("worker image build failed: {error}");
+                eprintln!("worker image build failed: {error}");
                 publish_worker_image_build_event(&job, "error", &error).await;
             }
         }
@@ -1627,10 +1616,10 @@ async fn publish_k8s_runtime_event(
     match serde_json::to_vec(&payload) {
         Ok(body) => {
             if let Err(error) = nats.publish(subject.to_string(), body.into()).await {
-                tracing::error!("k8s runtime watch nats publish failed: {error}");
+                eprintln!("k8s runtime watch nats publish failed: {error}");
             }
         }
-        Err(error) => tracing::error!("k8s runtime watch payload encode failed: {error}"),
+        Err(error) => eprintln!("k8s runtime watch payload encode failed: {error}"),
     }
 }
 
@@ -1813,7 +1802,7 @@ async fn run_k8s_runtime_resource_loop(
     let (client, base_url, token) = match k8s_runtime_client(client_timeout).await {
         Ok(parts) => parts,
         Err(error) => {
-            tracing::error!("k8s runtime watch disabled for namespace={namespace}: {error}");
+            eprintln!("k8s runtime watch disabled for namespace={namespace}: {error}");
             return;
         }
     };
@@ -1822,7 +1811,7 @@ async fn run_k8s_runtime_resource_loop(
     loop {
         match async_nats::connect(job.nats_url.clone()).await {
             Ok(nats) => {
-                tracing::info!(
+                println!(
                     "k8s runtime watch connected: namespace={} resource={} subject={}",
                     namespace,
                     resource.kind(),
@@ -1836,7 +1825,7 @@ async fn run_k8s_runtime_resource_loop(
                     .await
                     {
                         Ok(next_resource_version) => resource_version = next_resource_version,
-                        Err(error) => tracing::error!(
+                        Err(error) => eprintln!(
                             "k8s runtime resync failed namespace={} resource={}: {}",
                             namespace,
                             resource.kind(),
@@ -1857,7 +1846,7 @@ async fn run_k8s_runtime_resource_loop(
                     )
                     .await
                     {
-                        tracing::error!(
+                        eprintln!(
                             "k8s runtime watch failed namespace={} resource={}: {}",
                             namespace,
                             resource.kind(),
@@ -1868,7 +1857,7 @@ async fn run_k8s_runtime_resource_loop(
                 }
             }
             Err(error) => {
-                tracing::error!("k8s runtime watch nats connect failed: {error}");
+                eprintln!("k8s runtime watch nats connect failed: {error}");
                 sleep(Duration::from_secs(job.retry_interval_seconds)).await;
             }
         }
@@ -1876,7 +1865,7 @@ async fn run_k8s_runtime_resource_loop(
 }
 
 async fn run_k8s_runtime_watch_loop(job: K8sRuntimeWatchJob) {
-    tracing::info!(
+    println!(
         "k8s runtime watch starting: namespaces={} subject={} resync={}s watchTimeout={}s",
         job.namespaces.join(","),
         job.event_subject,
@@ -1910,7 +1899,7 @@ async fn prepare_thread_from_nats(client: &Client, job: &NatsWatchJob, task: &Qu
         .await
     {
         Ok(response) if response.status().is_success() => {
-            tracing::info!(
+            println!(
                 "nats watchdog prepared thread={} task={} shadow={} direct_dispatch={}",
                 task.thread_id,
                 task.task_id,
@@ -1921,7 +1910,7 @@ async fn prepare_thread_from_nats(client: &Client, job: &NatsWatchJob, task: &Qu
         Ok(response) => {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            tracing::error!(
+            eprintln!(
                 "nats watchdog prepare failed thread={} task={} status={} body={}",
                 task.thread_id,
                 task.task_id,
@@ -1930,7 +1919,7 @@ async fn prepare_thread_from_nats(client: &Client, job: &NatsWatchJob, task: &Qu
             );
         }
         Err(error) => {
-            tracing::error!(
+            eprintln!(
                 "nats watchdog prepare request failed thread={} task={} error={}",
                 task.thread_id, task.task_id, error
             );
@@ -1948,25 +1937,25 @@ async fn broadcast_event_from_nats(client: &Client, job: &NatsWatchJob, payload:
         .await
     {
         Ok(response) if response.status().is_success() => {
-            tracing::info!("nats watchdog bridged task event to gleam websocket fanout");
+            println!("nats watchdog bridged task event to gleam websocket fanout");
         }
         Ok(response) => {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            tracing::error!(
+            eprintln!(
                 "nats watchdog gleam broadcast failed status={} body={}",
                 status,
                 body.chars().take(500).collect::<String>()
             );
         }
         Err(error) => {
-            tracing::error!("nats watchdog gleam broadcast request failed: {}", error);
+            eprintln!("nats watchdog gleam broadcast request failed: {}", error);
         }
     }
 }
 
 async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
-    tracing::info!(
+    println!(
         "nats watchdog starting: taskSubject={} eventSubject={} active={}s idle={}s natsUrl={}",
         job.task_subject,
         job.event_subject,
@@ -1997,13 +1986,13 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
                                 tokio::select! {
                                     maybe_message = task_subscription.next() => {
                                         let Some(message) = maybe_message else {
-                                            tracing::error!("nats watchdog task subscription ended");
+                                            eprintln!("nats watchdog task subscription ended");
                                             break 'connected;
                                         };
                                         window_had_message = true;
                                         match serde_json::from_slice::<QueueTaskMessage>(&message.payload) {
                                             Ok(task) if is_shadow_task(&task) => prepare_thread_from_nats(&client, &job, &task).await,
-                                            Ok(task) => tracing::info!(
+                                            Ok(task) => println!(
                                                 "nats watchdog ignored queued task thread={} task={} kind={} shadow={} direct_dispatch={}",
                                                 task.thread_id,
                                                 task.task_id,
@@ -2011,12 +2000,12 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
                                                 task.shadow.unwrap_or(false),
                                                 task.direct_dispatch.unwrap_or(false)
                                             ),
-                                            Err(error) => tracing::error!("nats watchdog invalid task message: {}", error),
+                                            Err(error) => eprintln!("nats watchdog invalid task message: {}", error),
                                         }
                                     }
                                     maybe_message = event_subscription.next() => {
                                         let Some(message) = maybe_message else {
-                                            tracing::error!("nats watchdog event subscription ended");
+                                            eprintln!("nats watchdog event subscription ended");
                                             break 'connected;
                                         };
                                         window_had_message = true;
@@ -2032,17 +2021,17 @@ async fn run_nats_watch_loop(client: Client, job: NatsWatchJob) {
                         }
                     }
                     (Err(task_error), Err(event_error)) => {
-                        tracing::error!(
+                        eprintln!(
                             "nats watchdog subscribe failed: task={} event={}",
                             task_error, event_error
                         );
                     }
-                    (Err(error), _) => tracing::error!("nats watchdog task subscribe failed: {}", error),
-                    (_, Err(error)) => tracing::error!("nats watchdog event subscribe failed: {}", error),
+                    (Err(error), _) => eprintln!("nats watchdog task subscribe failed: {}", error),
+                    (_, Err(error)) => eprintln!("nats watchdog event subscribe failed: {}", error),
                 }
             }
             Err(error) => {
-                tracing::error!("nats watchdog connect failed: {}", error);
+                eprintln!("nats watchdog connect failed: {}", error);
             }
         }
 
@@ -2111,10 +2100,10 @@ async fn publish_runtime_floor_event(
     match serde_json::to_vec(&payload) {
         Ok(body) => {
             if let Err(error) = nats.publish(job.event_subject(), body.into()).await {
-                tracing::error!("runtime floor event publish failed: {error}");
+                eprintln!("runtime floor event publish failed: {error}");
             }
         }
-        Err(error) => tracing::error!("runtime floor event encode failed: {error}"),
+        Err(error) => eprintln!("runtime floor event encode failed: {error}"),
     }
 }
 
@@ -2245,7 +2234,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
     let nats = match ensure_runtime_floor_nats(job).await {
         Ok(client) => Some(client),
         Err(error) => {
-            tracing::error!("{error}");
+            eprintln!("{error}");
             None
         }
     };
@@ -2253,7 +2242,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
     match reconcile_queue_consumer_floor(job).await {
         Ok(summary) => {
             if summary.get("ok").and_then(Value::as_bool) != Some(true) {
-                tracing::error!("runtime floor queue consumer below ready floor: {summary}");
+                eprintln!("runtime floor queue consumer below ready floor: {summary}");
                 publish_runtime_floor_event(
                     nats.as_ref(),
                     job,
@@ -2265,7 +2254,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
             }
         }
         Err(error) => {
-            tracing::error!("runtime floor queue consumer reconcile failed: {error}");
+            eprintln!("runtime floor queue consumer reconcile failed: {error}");
             publish_runtime_floor_event(
                 nats.as_ref(),
                 job,
@@ -2299,7 +2288,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
             }
         }
         Err(error) => {
-            tracing::error!("runtime floor container pool reconcile failed: {error}");
+            eprintln!("runtime floor container pool reconcile failed: {error}");
             publish_runtime_floor_event(
                 nats.as_ref(),
                 job,
@@ -2313,7 +2302,7 @@ async fn run_runtime_floor_once(http: &Client, job: &RuntimeFloorJob) {
 }
 
 async fn run_runtime_floor_loop(client: Client, job: RuntimeFloorJob) {
-    tracing::info!(
+    println!(
         "runtime floor starting: interval={}s stream={} consumer={} queueDeployment={}/{} containerPool={}",
         job.interval_seconds,
         job.task_stream,
@@ -2331,8 +2320,6 @@ async fn run_runtime_floor_loop(client: Client, job: RuntimeFloorJob) {
 
 #[tokio::main]
 async fn main() {
-    let _otel = dd_telemetry::init("idle-reaper");
-
     let timeout_seconds = env_u64("REAPER_TIMEOUT_SECONDS", 25);
     let client = Client::builder()
         .timeout(Duration::from_secs(timeout_seconds))
@@ -2348,7 +2335,7 @@ async fn main() {
     let browser_job_reap_job = browser_job_reap_job_from_env();
     let container_pool_reap_job = container_pool_reap_job_from_env();
 
-    tracing::info!("idle-reaper starting: timeout={}s", timeout_seconds);
+    println!("idle-reaper starting: timeout={}s", timeout_seconds);
 
     let mut enabled_jobs = 0;
     if let Some(sweep) = sweep_job {
@@ -2389,7 +2376,7 @@ async fn main() {
 
     if enabled_jobs == 0 {
         loop {
-            tracing::info!("idle-reaper has no enabled jobs; sleeping");
+            println!("idle-reaper has no enabled jobs; sleeping");
             sleep(Duration::from_secs(300)).await;
         }
     }
