@@ -22,6 +22,19 @@ const validRows = [
   },
 ];
 
+const sharedRows = [
+  {
+    organization: 'flags-2-env',
+    linearUrl: 'https://linear.app/denman/project/githubcomflags-2-env-05db5133a267',
+    sourceLine: 2,
+  },
+  {
+    organization: 'flags-2-env-test',
+    linearUrl: 'https://linear.app/denman/project/githubcomflags-2-env-05db5133a267',
+    sourceLine: 3,
+  },
+];
+
 function expectFailure(callback, fragment) {
   assert.throws(callback, (error) => {
     assert(error instanceof Error);
@@ -67,15 +80,8 @@ test('accepts sorted unique rows and renders all canonical links', () => {
   assert.match(markdown, /https:\/\/github\.com\/alpha-org\/\.github/);
 });
 
-test('rejects duplicate organization and Linear ownership', () => {
-  expectFailure(
-    () =>
-      validateRegistry(
-        [validRows[0], { ...validRows[0], organization: 'ALPHA-ORG', sourceLine: 3 }],
-        { expectedCount: 2 },
-      ),
-    'duplicate organization',
-  );
+test('allows only the explicit production/test Linear ownership shares', () => {
+  assert.equal(validateRegistry(sharedRows, { expectedCount: 2 }).length, 2);
 
   expectFailure(
     () =>
@@ -83,7 +89,27 @@ test('rejects duplicate organization and Linear ownership', () => {
         [validRows[0], { ...validRows[1], linearUrl: validRows[0].linearUrl }],
         { expectedCount: 2 },
       ),
-    'duplicate Linear project URL',
+    'shared without an explicit production/test exception',
+  );
+
+  expectFailure(
+    () =>
+      validateRegistry(
+        [sharedRows[0], { ...sharedRows[1], organization: 'flags-2-env-extra' }],
+        { expectedCount: 2 },
+      ),
+    'share exception mismatch',
+  );
+});
+
+test('rejects duplicate organization identity', () => {
+  expectFailure(
+    () =>
+      validateRegistry(
+        [validRows[0], { ...validRows[0], organization: 'ALPHA-ORG', sourceLine: 3 }],
+        { expectedCount: 2 },
+      ),
+    'duplicate organization',
   );
 });
 
@@ -122,12 +148,18 @@ test('rejects unsorted, malformed, credentialed, and ambiguous URLs', () => {
   );
 });
 
-test('requires the semantic conflict-resolution and project exception contract in docs', () => {
+test('requires the 71-org scope, semantic conflict policy, and explicit share contract in docs', () => {
   const complete = [
     'ops/portfolio/github-linear-project-registry.tsv',
+    'current 71-organization fleet',
+    'active 41-portfolio subset',
     '<canonical-org-login>-project',
     'dancing-dragons',
     'project `4`',
+    'Linear project sharing is allowed only for',
+    '`flags-2-env` and `flags-2-env-test`',
+    '`networking-components` and `networking-components-test`',
+    '`ores-otel` and `ores-otel-test`',
     'public `<org>/.github` repository',
     'resolved semantically',
     'never resolve conflicts by blindly choosing one side',
@@ -137,5 +169,9 @@ test('requires the semantic conflict-resolution and project exception contract i
   expectFailure(
     () => validateDocumentation(complete.replace('resolved semantically', 'resolved automatically')),
     'resolved semantically',
+  );
+  expectFailure(
+    () => validateDocumentation(complete.replace('`ores-otel` and `ores-otel-test`', '')),
+    'ores-otel',
   );
 });

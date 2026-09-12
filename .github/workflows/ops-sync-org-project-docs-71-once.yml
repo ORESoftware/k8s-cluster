@@ -1,0 +1,136 @@
+name: Reconcile exact 71-organization Projects and docs once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-sync-org-project-docs-71-once.yml
+      - ops/portfolio/github-linear-project-registry.tsv
+      - scripts/ci/check-github-linear-project-registry.mjs
+      - scripts/ops/receive_encrypted_github_credential.sh
+      - scripts/ops/sync_org_project_docs.sh
+      - scripts/ops/sync_org_project_docs_rate_aware.py
+      - scripts/ops/validate_github_linear_projects_by_org_doc.py
+      - scripts/ops/validate_github_linear_registry_relationship.py
+      - docs/portfolio/github-linear-project-registry.md
+      - docs/portfolio/github-linear-projects-by-org.md
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: reconcile-exact-71-organization-projects-once
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main' &&
+      (github.actor == 'ORESoftware' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    env:
+      REPOSITORY: ${{ github.repository }}
+      DEFAULT_BRANCH: main
+      HANDSHAKE_NONCE: fleet-reconcile-71-${{ github.run_id }}-${{ github.run_attempt }}
+      PUBLIC_KEY_PATH: .github/tmp/fleet-reconcile-71-${{ github.run_id }}-${{ github.run_attempt }}.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/fleet-reconcile-71-${{ github.run_id }}-${{ github.run_attempt }}.enc.b64
+      PROJECT_EVIDENCE_DIR: ops/evidence/org-project-docs-71
+      MIN_CORE_REMAINING: 2500
+      MIN_GRAPHQL_REMAINING: 500
+      MAX_RATE_WAIT_SECONDS: 10800
+      IDENTITY_MAX_WAIT_SECONDS: 1800
+      IDENTITY_RETRY_INITIAL_SECONDS: 60
+      IDENTITY_RETRY_MAX_SECONDS: 300
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate the exact 71-organization contract without credentials
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bash -n scripts/ops/receive_encrypted_github_credential.sh
+          bash -n scripts/ops/sync_org_project_docs.sh
+          python3 -m py_compile \
+            scripts/ops/sync_org_project_docs_rate_aware.py \
+            scripts/ops/validate_github_linear_projects_by_org_doc.py \
+            scripts/ops/validate_github_linear_registry_relationship.py
+          node --check scripts/ci/check-github-linear-project-registry.mjs
+          node --test scripts/ci/check-github-linear-project-registry.test.mjs
+          node scripts/ci/check-github-linear-project-registry.mjs \
+            >/tmp/github-linear-project-registry.json
+          test "$(
+            python3 -c \
+              'import json; print(json.load(open("/tmp/github-linear-project-registry.json"))["organizationCount"])'
+          )" = 71
+          python3 scripts/ops/validate_github_linear_projects_by_org_doc.py
+          python3 scripts/ops/validate_github_linear_registry_relationship.py
+          python3 scripts/ops/test_receive_encrypted_github_credential.py -v
+          python3 scripts/ops/test_sync_org_project_docs_rate_aware.py -v
+
+      - name: Receive the owner credential through the one-run encrypted handoff
+        shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
+        run: bash scripts/ops/receive_encrypted_github_credential.sh
+
+      - name: Reconcile all 71 registered organization Projects and docs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf "$PROJECT_EVIDENCE_DIR"
+          python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+            --evidence-dir "$PROJECT_EVIDENCE_DIR" \
+            --expected-count 71 \
+            --min-core-start 1800 \
+            --min-graphql-start 400 \
+            --max-wait-seconds 10800 \
+            --per-org-timeout 1200 \
+            --retries 3
+
+      - name: Revalidate exact 71-organization live evidence
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+            --evidence-dir "$PROJECT_EVIDENCE_DIR" \
+            --expected-count 71 \
+            --validate-only
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = Path(os.environ["PROJECT_EVIDENCE_DIR"])
+          rows = json.loads((evidence / "results.json").read_text(encoding="utf-8"))
+          if len(rows) != 71:
+              raise SystemExit(f"expected 71 evidence rows, found {len(rows)}")
+          failures = [row for row in rows if row.get("status") != "ok"]
+          if failures:
+              raise SystemExit(f"unexpected failed evidence rows: {len(failures)}")
+          print("VERIFIED_EXACT_PROJECT_FLEET 71/71")
+          PY
+          cat "$PROJECT_EVIDENCE_DIR/README.md" >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload retained 71-organization reconciliation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: organization-projects-71-${{ github.run_id }}
+          path: ops/evidence/org-project-docs-71
+          if-no-files-found: warn
+          retention-days: 30
+          include-hidden-files: true

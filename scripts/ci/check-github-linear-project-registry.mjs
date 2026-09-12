@@ -5,8 +5,22 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const EXPECTED_ORGANIZATION_COUNT = 64;
+export const EXPECTED_ORGANIZATION_COUNT = 71;
 export const PROJECT_NUMBER_EXCEPTIONS = new Map([['dancing-dragons', 4]]);
+export const LINEAR_PROJECT_SHARE_EXCEPTIONS = new Map([
+  [
+    'https://linear.app/denman/project/githubcomflags-2-env-05db5133a267',
+    ['flags-2-env', 'flags-2-env-test'],
+  ],
+  [
+    'https://linear.app/denman/project/githubcomnetworking-components-0099b19507ec',
+    ['networking-components', 'networking-components-test'],
+  ],
+  [
+    'https://linear.app/denman/project/githubcomores-otel-85e70d77275a',
+    ['ores-otel', 'ores-otel-test'],
+  ],
+]);
 
 const ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 const LINEAR_PROJECT_PATTERN = /^https:\/\/linear\.app\/denman\/project\/[a-z0-9][a-z0-9-]*$/;
@@ -37,6 +51,34 @@ function assertSafeAbsoluteUrl(value, expectedOrigin, label) {
   assert.equal(url.search, '', `${label} must not contain a query string`);
   assert.equal(url.hash, '', `${label} must not contain a fragment`);
   assert.equal(url.protocol, 'https:', `${label} must use HTTPS`);
+}
+
+function assertLinearProjectShares(seenLinearUrls, expectedCount) {
+  for (const [linearUrl, observedOwners] of seenLinearUrls.entries()) {
+    if (observedOwners.length === 1) {
+      continue;
+    }
+    const expectedOwners = LINEAR_PROJECT_SHARE_EXCEPTIONS.get(linearUrl);
+    assert(
+      expectedOwners,
+      `Linear project URL is shared without an explicit production/test exception: ${linearUrl}`,
+    );
+    assert.deepEqual(
+      [...observedOwners].sort(asciiCompare),
+      [...expectedOwners].sort(asciiCompare),
+      `Linear project share exception mismatch for ${linearUrl}`,
+    );
+  }
+
+  if (expectedCount === EXPECTED_ORGANIZATION_COUNT) {
+    for (const [linearUrl, expectedOwners] of LINEAR_PROJECT_SHARE_EXCEPTIONS.entries()) {
+      assert.deepEqual(
+        [...(seenLinearUrls.get(linearUrl) ?? [])].sort(asciiCompare),
+        [...expectedOwners].sort(asciiCompare),
+        `required production/test Linear project share is incomplete for ${linearUrl}`,
+      );
+    }
+  }
 }
 
 export function parseRegistry(text) {
@@ -93,8 +135,9 @@ export function validateRegistry(rows, { expectedCount = EXPECTED_ORGANIZATION_C
 
     assert(LINEAR_PROJECT_PATTERN.test(linearUrl), `invalid Linear project URL on line ${sourceLine}: ${linearUrl}`);
     assertSafeAbsoluteUrl(linearUrl, 'https://linear.app', `Linear URL on line ${sourceLine}`);
-    assert(!seenLinearUrls.has(linearUrl), `duplicate Linear project URL on line ${sourceLine}: ${linearUrl}`);
-    seenLinearUrls.set(linearUrl, sourceLine);
+    const owners = seenLinearUrls.get(linearUrl) ?? [];
+    owners.push(key);
+    seenLinearUrls.set(linearUrl, owners);
 
     if (previous) {
       assert(
@@ -115,6 +158,7 @@ export function validateRegistry(rows, { expectedCount = EXPECTED_ORGANIZATION_C
     );
   }
 
+  assertLinearProjectShares(seenLinearUrls, expectedCount);
   return rows.map(deriveRecord);
 }
 
@@ -124,9 +168,15 @@ export function validateDocumentation(markdown) {
 
   const requiredFragments = [
     'ops/portfolio/github-linear-project-registry.tsv',
+    'current 71-organization fleet',
+    'active 41-portfolio subset',
     '<canonical-org-login>-project',
     'dancing-dragons',
     'project `4`',
+    'Linear project sharing is allowed only for',
+    '`flags-2-env` and `flags-2-env-test`',
+    '`networking-components` and `networking-components-test`',
+    '`ores-otel` and `ores-otel-test`',
     'public `<org>/.github` repository',
     'resolved semantically',
     'never resolve conflicts by blindly choosing one side',

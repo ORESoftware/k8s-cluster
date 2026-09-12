@@ -19,7 +19,7 @@ class GitHubLinearProjectsByOrgDocumentTests(unittest.TestCase):
     def test_checked_in_directory_matches_canonical_registry(self) -> None:
         module.validate_document(module.DEFAULT_REGISTRY, module.DEFAULT_DOCUMENT)
         rows = module.load_registry(module.DEFAULT_REGISTRY)
-        self.assertEqual(64, len(rows))
+        self.assertEqual(71, len(rows))
         dancing = next(row for row in rows if row.organization == "dancing-dragons")
         self.assertEqual(4, dancing.project_number)
         self.assertTrue(
@@ -72,6 +72,11 @@ class GitHubLinearProjectsByOrgDocumentTests(unittest.TestCase):
                 "Example\thttps://linear.app/denman/project/example-one\n"
                 "example\thttps://linear.app/denman/project/example-two\n"
             ),
+            "unapproved-share": (
+                "organization\tlinear_url\n"
+                "alpha\thttps://linear.app/denman/project/shared-example\n"
+                "beta\thttps://linear.app/denman/project/shared-example\n"
+            ),
         }
         with tempfile.TemporaryDirectory() as directory:
             for name, content in invalid_registries.items():
@@ -80,6 +85,21 @@ class GitHubLinearProjectsByOrgDocumentTests(unittest.TestCase):
                     path.write_text(content, encoding="utf-8")
                     with self.assertRaises(module.DirectoryError):
                         module.load_registry(path)
+
+    def test_explicit_complete_linear_share_is_allowed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "allowed.tsv"
+            path.write_text(
+                "organization\tlinear_url\n"
+                "flags-2-env\thttps://linear.app/denman/project/githubcomflags-2-env-05db5133a267\n"
+                "flags-2-env-test\thttps://linear.app/denman/project/githubcomflags-2-env-05db5133a267\n",
+                encoding="utf-8",
+            )
+            rows = module.load_registry(path)
+            self.assertEqual(
+                ["flags-2-env", "flags-2-env-test"],
+                [row.organization for row in rows],
+            )
 
     def test_duplicate_or_missing_markers_fail_closed(self) -> None:
         rows = module.load_registry(module.DEFAULT_REGISTRY)
