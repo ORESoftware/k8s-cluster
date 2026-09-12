@@ -1,0 +1,49 @@
+name: Agent GHA current-dev source snapshot
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/agent-gha-current-dev-source-snapshot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-gha-current-dev-source-snapshot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    name: Export exact current-dev review head
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact review head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Record immutable source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain=v1)"
+          snapshot_dir="${RUNNER_TEMP}/gha-current-dev-source"
+          mkdir -p "${snapshot_dir}"
+          git rev-parse HEAD > "${snapshot_dir}/source-sha.txt"
+          git status --porcelain=v1 > "${snapshot_dir}/worktree-status.txt"
+          test ! -s "${snapshot_dir}/worktree-status.txt"
+          tar --exclude=.git -czf "${snapshot_dir}/gha-current-dev-source.tar.gz" .
+          sha256sum "${snapshot_dir}/gha-current-dev-source.tar.gz" \
+            > "${snapshot_dir}/gha-current-dev-source.tar.gz.sha256"
+
+      - name: Upload immutable source snapshot
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gha-current-dev-source-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/gha-current-dev-source/
+          if-no-files-found: error
+          retention-days: 1
