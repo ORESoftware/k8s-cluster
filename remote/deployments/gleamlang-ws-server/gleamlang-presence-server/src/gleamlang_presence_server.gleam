@@ -30,7 +30,6 @@
 //// Each layer dedupes against the others so duplicate deliveries collapse.
 
 import dd_cli_config_client
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/int
 import gleam/io
@@ -56,9 +55,6 @@ import pog
 @external(erlang, "gleamlang_presence_server_ffi", "env")
 fn env(name: String) -> Result(String, Nil)
 
-@external(erlang, "pg", "start_link")
-fn pg_start_link_raw(scope: atom.Atom) -> Result(process.Pid, anything)
-
 pub fn main() {
   let _ = dd_cli_config_client.load_once()
   let port =
@@ -70,10 +66,7 @@ pub fn main() {
   let nats_url = env("NATS_URL") |> option.from_result
   let notify_shards = positive_int_env("PRESENCE_NOTIFY_SHARDS", 256)
 
-  let _ = case pg_start_link_raw(pg_groups.scope()) {
-    Ok(_) -> Nil
-    Error(_) -> Nil
-  }
+  pg_groups.ensure_started()
   io.println("presence: pg scope ready")
 
   let reg_name: process.Name(registry.Message(groups.ConnMsg, groups.ConnGroup)) =

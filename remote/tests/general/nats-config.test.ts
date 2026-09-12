@@ -27,6 +27,7 @@ test('nats messaging app is gitops-managed and exposes client plus metrics ports
   const kustomization = await readRepoFile('remote/argocd/messaging/kustomization.yaml');
   const networkPolicy = await readRepoFile('remote/argocd/messaging/nats.networkpolicy.yaml');
   const pdb = await readRepoFile('remote/argocd/messaging/nats.pdb.yaml');
+  const readme = await readRepoFile('remote/argocd/messaging/readme.md');
   const service = await readRepoFile('remote/argocd/messaging/nats.service.yaml');
 
   assert.match(app, /name:\s*dd-messaging/);
@@ -42,8 +43,15 @@ test('nats messaging app is gitops-managed and exposes client plus metrics ports
   assert.match(config, /max_pending:\s*16MB/);
   assert.match(config, /ping_max:\s*2/);
   assert.match(config, /max_mem_store:\s*512MB/);
-  assert.match(deployment, /image:\s*nats:2\.11\.17-alpine/);
-  assert.match(deployment, /image:\s*natsio\/prometheus-nats-exporter:0\.19\.2/);
+  assert.doesNotMatch(config, /authorization\s*\{/);
+  assert.match(
+    deployment,
+    /image:\s*nats:2\.14\.5-alpine@sha256:d4ac35882ac65aff236cd65b9d3fa4d24332c681e1a85f94eedccd3cdd65b1da/,
+  );
+  assert.match(
+    deployment,
+    /image:\s*natsio\/prometheus-nats-exporter:0\.20\.2@sha256:c623b608e148e31e1c1c878673a197f1828e58ce90de4f01d22f1baa84c8fee9/,
+  );
   assert.match(deployment, /priorityClassName:\s*system-cluster-critical/);
   assert.match(deployment, /enableServiceLinks:\s*false/);
   assert.match(
@@ -82,8 +90,29 @@ test('nats messaging app is gitops-managed and exposes client plus metrics ports
   assert.match(networkPolicy, /port:\s*8222/);
   assert.match(networkPolicy, /port:\s*7777/);
   assert.match(networkPolicy, /egress:\s*\[\]/);
+  assert.match(readme, /default-deny `NetworkPolicy` limits the client port/);
+  assert.match(readme, /no NATS-native authentication\/authorization/);
+  assert.doesNotMatch(readme, /\*\*no NetworkPolicy\*\*/);
   assert.match(pdb, /kind:\s*PodDisruptionBudget/);
   assert.match(pdb, /minAvailable:\s*1/);
+});
+
+test('unauthenticated NATS cannot enable contract settlement broadcast', async () => {
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-contract-service.deployment.yaml',
+  );
+
+  for (const failClosedGate of [
+    'SOLANA_SEND_ENABLED',
+    'SOLANA_MAINNET_SETTLEMENT_ENABLED',
+    'CONTRACT_NATS_SETTLEMENT_ENABLED',
+    'CONTRACT_NATS_SETTLEMENT_ACK_UNAUTHENTICATED_BUS',
+  ]) {
+    assert.match(
+      deployment,
+      new RegExp(`name:\\s*${failClosedGate}[\\s\\S]{0,120}?value:\\s*['"]false['"]`),
+    );
+  }
 });
 
 test('observability stack scrapes nats exporter and dashboards nats metrics', async () => {

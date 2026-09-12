@@ -230,6 +230,213 @@ test('focused workflow pins exact source and credential-free checkout', () => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Salvaged from agent/DEN-1298-slack-command-gitops.
+// These assertions are orthogonal to how the binary is delivered: they survived
+// the DEN-845 cutover from an in-pod `cargo build` to a digest-pinned image and
+// were never ported. Everything below is strictly additive to the contracts
+// above; nothing here relaxes an existing assertion.
+// ---------------------------------------------------------------------------
+
+function count(text, needle) {
+  return text.split(needle).length - 1;
+}
+
+function resourceIdentity(document) {
+  const kind = document.match(/^kind:\s*([^\s]+)\s*$/m)?.[1];
+  const lines = document.split('\n');
+  const metadataIndex = lines.findIndex((line) => line === 'metadata:');
+  assert.notEqual(metadataIndex, -1, 'resource document is missing metadata');
+  const nameLine = lines
+    .slice(metadataIndex + 1)
+    .find((line) => /^  name:\s*\S+\s*$/.test(line));
+  assert.ok(kind, 'resource document is missing kind');
+  assert.ok(nameLine, 'resource document is missing metadata.name');
+  return { kind, name: nameLine.replace(/^  name:\s*/, '').trim() };
+}
+
+function assertSecretEnv(name) {
+  const block = envBlock(deployment, name);
+  assert.match(block, /valueFrom:/);
+  assert.match(block, /secretKeyRef:/);
+  assert.match(block, /name: dd-slack-command-secrets/);
+  assert.match(block, new RegExp(`key: ${name}`));
+  // A credential secretKeyRef marked optional degrades silently to an unset
+  // variable: the pod starts, signature verification is misconfigured, and
+  // nothing fails loudly. Required means required.
+  assert.doesNotMatch(block, /optional:\s*true/);
+  assert.doesNotMatch(block, /\n\s+value:/);
+}
+
+// S4 - the bundle is a single multi-document file, so document order is part of
+// the contract, not just the set of identities.
+test('salvage: bundle inventory is exact in both count and order', () => {
+  assert.equal(documents.length, 8);
+  assert.deepEqual(
+    documents.map(resourceIdentity),
+    [
+      { kind: 'Service', name: 'dd-ai-agent-bridge' },
+      { kind: 'ExternalSecret', name: 'dd-slack-command-secrets' },
+      { kind: 'PersistentVolumeClaim', name: 'dd-slack-command-state' },
+      { kind: 'Deployment', name: 'dd-slack-command' },
+      { kind: 'Service', name: 'dd-slack-command' },
+      { kind: 'NetworkPolicy', name: 'dd-slack-command' },
+      { kind: 'PodDisruptionBudget', name: 'dd-slack-command' },
+      { kind: 'Ingress', name: 'dd-slack-command' },
+    ],
+  );
+});
+
+// S5 - the Slack resources were appended to a file that already held an
+// unrelated Service. Pin that neighbour byte-for-byte so an edit to another
+// team's resource cannot ride along inside this bundle.
+test('salvage: the pre-existing bridge Service is preserved byte-for-byte', () => {
+  const expectedBridgeService = `apiVersion: v1
+kind: Service
+metadata:
+  name: dd-ai-agent-bridge
+  namespace: default
+  labels:
+    app: dd-ai-agent-bridge
+spec:
+  selector:
+    app: dd-ai-agent-bridge
+    app.kubernetes.io/component: bridge
+  ports:
+    - name: http
+      port: 8142
+      targetPort: http
+    - name: tcp
+      port: 8143
+      targetPort: tcp`;
+  assert.equal(documents[0].replace(/^(?:#.*\n)+/, ''), expectedBridgeService);
+});
+
+// S6 - the existing ingress test asserts only what must be present. A single
+// added `pathType: Prefix` rule would publish the whole service while the three
+// exact paths remain present and `pathType: Exact` still appears three times,
+// so every positive assertion above would still pass.
+test('salvage: the public ingress cannot widen beyond three exact routes', () => {
+  assert.match(ingress, /secretName: gateway-public-tls/);
+  assert.doesNotMatch(ingress, /pathType: Prefix/);
+  assert.doesNotMatch(ingress, /path: \/(?:healthz|readyz)/);
+});
+
+// S7 - the four-property allowlist is the whole secret-scoping model. Nothing
+// currently stops it becoming a bulk import.
+test('salvage: ExternalSecret stays a four-property allowlist, never bulk-imported', () => {
+  assert.equal(count(externalSecret, 'secretKey:'), 4);
+  assert.equal(count(externalSecret, 'remoteRef:'), 4);
+  // dataFrom: would pull an entire Secrets Manager bundle into the pod env.
+  assert.doesNotMatch(externalSecret, /\bdataFrom:/);
+  assert.doesNotMatch(externalSecret, /creationPolicy:\s*(?:Merge|None)/);
+  for (const property of [
+    'SLACK_BOT_TOKEN',
+    'SLACK_SIGNING_SECRET',
+    'inbox_token',
+    'COORDINATOR_API_TOKEN',
+  ]) {
+    assert.equal(count(externalSecret, `property: ${property}`), 1);
+  }
+});
+
+// S8 - required-ness of every credential reference.
+test('salvage: credential env refs are required, never optional or inline', () => {
+  for (const name of [
+    'SLACK_BOT_TOKEN',
+    'SLACK_SIGNING_SECRET',
+    'SLACK_BRIDGE_BEARER',
+    'SLACK_COORDINATOR_BEARER',
+  ]) {
+    assertSecretEnv(name);
+  }
+});
+
+// S9 - the existing literal scan is scoped to the ExternalSecret document only.
+test('salvage: no credential-shaped literal appears anywhere in the bundle', () => {
+  assert.doesNotMatch(bundle, /\b(?:xox[baprs]-|gh[pousr]_|sk-[A-Za-z0-9])/);
+  // An app-configuration token is an admin credential and must never become a
+  // runtime environment variable.
+  assert.doesNotMatch(bundle, /SLACK_CONFIG_TOKEN/);
+  assert.doesNotMatch(manifest, /\b(?:xox[baprs]-|gh[pousr]_)/);
+  assert.doesNotMatch(workflow, /agent\/den-1041-ores-slash-commands/);
+});
+
+// S10 - the existing registry test proves no channel is bound twice. It does not
+// prove the converse blast-radius property: that one channel cannot dispatch
+// work into another channel's Linear project or repository.
+test('salvage: no two channels share a Linear project or a repository', () => {
+  const expected = registry.bindings.length;
+  const channels = new Set();
+  const projects = new Set();
+  const repositories = new Set();
+  for (const binding of registry.bindings) {
+    assert.equal(
+      typeof binding.linear_project_id,
+      'string',
+      `binding ${binding.channel_id} is missing linear_project_id`,
+    );
+    assert.equal(
+      typeof binding.default_repository,
+      'string',
+      `binding ${binding.channel_id} is missing default_repository`,
+    );
+    assert.deepEqual(binding.allowed_user_group_ids, []);
+    channels.add(binding.channel_id);
+    projects.add(binding.linear_project_id);
+    repositories.add(binding.default_repository);
+  }
+  assert.equal(channels.size, expected, 'two bindings share a channel');
+  assert.equal(projects.size, expected, 'two bindings share a Linear project');
+  assert.equal(repositories.size, expected, 'two bindings share a repository');
+});
+
+// S3 - trigger accounting. Catches the classic bug where a path is added to
+// pull_request.paths and forgotten in push.paths.
+//
+// NOTE: this is deliberately a structural parse of the `on:` block rather than
+// the simpler "each path string occurs exactly twice" count used on the source
+// branch. That count is wrong against main: the workflow names its own file a
+// third time inside the "Reject mutable workflow dependencies" step
+// (`path = Path('.github/workflows/slack-command-gitops.yml')`), so a bare
+// occurrence count reads 3 and fails on a correct workflow.
+test('salvage: every contract file triggers both PR and push CI', () => {
+  function triggerPaths(event) {
+    const block = workflow.match(
+      new RegExp(`^  ${event}:\\n(?:    .*\\n)+`, 'm'),
+    );
+    assert.ok(block, `workflow is missing the ${event} trigger`);
+    const paths = [...block[0].matchAll(/^      - '([^']+)'\s*$/gm)].map(
+      (match) => match[1],
+    );
+    assert.ok(paths.length > 0, `${event} trigger lists no paths`);
+    return paths;
+  }
+
+  const pullRequestPaths = triggerPaths('pull_request');
+  const pushPaths = triggerPaths('push');
+  assert.deepEqual(
+    pullRequestPaths,
+    pushPaths,
+    'pull_request.paths and push.paths must stay identical',
+  );
+
+  for (const tracked of [
+    workflowPath,
+    bundlePath,
+    kustomizationPath,
+    'remote/tests/general/slack-command-gitops.test.mjs',
+    // The runbook documents this exact bundle. Before this change it was in
+    // neither trigger list, so it could drift from the manifests silently.
+    'docs/alex-main-agent-slack-command-gitops.md',
+  ]) {
+    assert.ok(
+      pullRequestPaths.includes(tracked),
+      `${tracked} must trigger the contract workflow`,
+    );
+  }
+});
+
 const audit = {
   generated_at: new Date().toISOString(),
   source_sha: SOURCE_SHA,
