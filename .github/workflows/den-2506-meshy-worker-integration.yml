@@ -1,0 +1,139 @@
+name: den-2506-meshy-worker-integration
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/den-2506-meshy-worker-integration.yml"
+      - "scripts/ci/check-den-2506-meshy-worker-integration.py"
+      - "remote/deployments/fabrication-server-rs"
+      - "remote/deployments/fabrication-server-rs.source.sha"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out the deployment superproject only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify the standalone-worker integration contract
+        run: python3 scripts/ci/check-den-2506-meshy-worker-integration.py
+
+  compile-worker:
+    needs: source-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Require the owner-scoped private-checkout credential
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$K8S_SUBMODULE_APP_ID"
+          test -n "$K8S_SUBMODULE_APP_PRIVATE_KEY"
+
+      - name: Check out the deployment superproject only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Initialize the pinned fabrication source with an owner-scoped installation token
+        id: fabrication-submodule
+        continue-on-error: true
+        env:
+          SUBMODULE_REPORT_PATH: ${{ runner.temp }}/meshy-worker-submodule-access.tsv
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          GITHUB_API_VERSION: "2026-03-10"
+        run: bash scripts/ci/init-submodules-with-github-app.sh remote/deployments/fabrication-server-rs
+
+      - name: Upload sanitized fabrication-source diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: meshy-worker-submodule-access-report
+          path: ${{ runner.temp }}/meshy-worker-submodule-access.tsv
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail when the pinned fabrication source is unavailable
+        if: steps.fabrication-submodule.outcome == 'failure'
+        run: |
+          echo "The owner-scoped GitHub App could not initialize the pinned fabrication source; inspect the sanitized report."
+          exit 1
+
+      - name: Verify the exact source gitlink and reviewed sidecar pin
+        run: |
+          set -euo pipefail
+          path=remote/deployments/fabrication-server-rs
+          expected="$(git ls-files --stage -- "$path" | awk '$1 == 160000 { print $2; exit }')"
+          recorded="$(tr -d '[:space:]' < "${path}.source.sha")"
+          actual="$(git -C "$path" rev-parse HEAD)"
+          test -n "$expected"
+          test "$recorded" = "$expected"
+          test "$actual" = "$expected"
+          test -z "$(git -C "$path" status --porcelain)"
+          echo "verified standalone Meshy source at ${actual:0:12}"
+
+      - name: Verify source, release-boundary, and credential-hygiene contracts
+        working-directory: remote/deployments/fabrication-server-rs
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/check_meshy_integration.py
+          python3 scripts/ci/check_meshy_r2_archive.py
+
+      - name: Build the worker image from the compact resolver artifact
+        run: |
+          docker build \
+            -f remote/deployments/fabrication-server-rs/crates/meshy-worker/Dockerfile \
+            -t daedalus-meshy-worker:den-2506 \
+            remote/deployments/fabrication-server-rs
+
+      - name: Verify the non-root immutable runtime contract
+        run: |
+          set -euo pipefail
+          image=daedalus-meshy-worker:den-2506
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = '10001:10001'
+          test "$(docker image inspect --format '{{index .Config.Entrypoint 0}}' "$image")" = '/usr/local/bin/meshy-job-worker'
+          test -z "$(docker image inspect --format '{{join .Config.Cmd " "}}' "$image")"
+
+      - name: Verify and reconstruct the exact worker resolver artifact
+        working-directory: remote/deployments/fabrication-server-rs/crates/meshy-worker
+        run: |
+          set -euo pipefail
+          sha256sum -c Cargo.lock.gz.sha256
+          ./prepare-lock.sh
+          sha256sum -c Cargo.lock.sha256
+
+      - name: Format the independently packaged Meshy graph
+        run: |
+          set -euo pipefail
+          root=remote/deployments/fabrication-server-rs
+          cargo fmt --manifest-path "$root/crates/meshy-job/Cargo.toml" -- --check
+          cargo fmt --manifest-path "$root/crates/meshy-r2-archive/Cargo.toml" -- --check
+          cargo fmt --manifest-path "$root/crates/meshy-worker/Cargo.toml" -- --check
+
+      - name: Check and test durable job and immutable R2 packages
+        run: |
+          set -euo pipefail
+          root=remote/deployments/fabrication-server-rs
+          cargo check --manifest-path "$root/crates/meshy-job/Cargo.toml" --all-targets
+          cargo test --manifest-path "$root/crates/meshy-job/Cargo.toml" --all-targets
+          cargo check --manifest-path "$root/crates/meshy-r2-archive/Cargo.toml" --all-targets
+          cargo test --manifest-path "$root/crates/meshy-r2-archive/Cargo.toml" --all-targets
+
+      - name: Check and test the exact standalone worker graph
+        run: |
+          set -euo pipefail
+          manifest=remote/deployments/fabrication-server-rs/crates/meshy-worker/Cargo.toml
+          cargo check --locked --manifest-path "$manifest" --all-targets
+          cargo test --locked --manifest-path "$manifest" --all-targets
