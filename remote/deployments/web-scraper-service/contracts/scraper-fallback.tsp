@@ -32,6 +32,34 @@ model ScrapeFallbackRequest {
   respectRobots?: boolean;
 }
 
+@id("FallbackAttemptOutcome")
+enum FallbackAttemptOutcome {
+  success: "success",
+  error: "error",
+}
+
+@id("FallbackAttemptErrorClass")
+enum FallbackAttemptErrorClass {
+  timeout: "timeout",
+  rateLimit: "rate-limit",
+  providerServerError: "provider-server-error",
+  network: "network",
+  emptyResult: "empty-result",
+  invalidResponse: "invalid-response",
+  responseTooLarge: "response-too-large",
+  providerAuth: "provider-auth",
+  invalidRequest: "invalid-request",
+  unknown: "unknown",
+}
+
+@id("FallbackAttempt")
+model FallbackAttempt {
+  actorId: string;
+  outcome: FallbackAttemptOutcome;
+  durationMs: integer;
+  errorClass?: FallbackAttemptErrorClass;
+}
+
 @id("FallbackProvenance")
 model FallbackProvenance {
   provider: string;
@@ -42,4 +70,8 @@ model FallbackProvenance {
   durationMs: integer;
   localDurationMs?: integer;
   totalDurationMs?: integer;
+  route?: string;
+  attempts?: FallbackAttempt[];
+  maxChainAttempts?: integer;
+  maxChainChargeUsd?: float64;
 }

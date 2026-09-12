@@ -2,7 +2,7 @@
 
 ARG PLAYWRIGHT_VERSION=1.56.0
 ARG FLAGS2ENV_REV=333c2ace93c362d274171ab0e0edf613d96a8e59
-ARG TJSV_REV=8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
+ARG TJSV_REV=eb31dec0ed1ca54259adbd3396bd7e4de20e8ca6
 ARG TYPESPEC_VERSION=1.15.0
 ARG TYPESPEC_ASSET_EMITTER_VERSION=0.79.1
 
@@ -52,9 +52,8 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
 # TJSV invokes the TypeSpec compiler with the authored contract directory as
 # its cwd. Install the exact compiler/emitter pair at the scraper project root
 # so `import "@typespec/json-schema"` resolves by ordinary Node/TypeSpec package
-# lookup from contracts/*.tsp. The upstream TJSV lock also pins asset-emitter
-# 0.79.1; keep that exact transitive version so a fresh pnpm consumer does not
-# float to 0.79.2, whose compiler peer requires ^1.16.0.
+# lookup from contracts/*.tsp. TJSV #136 still pins TypeSpec 1.15.0; retain the
+# reviewed asset-emitter version instead of floating the package graph.
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm add --save-dev --lockfile=false \
       "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_REV}.tar.gz" \
@@ -68,7 +67,7 @@ COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
  && flags2env audit .cli-flags.toml \
  && APIFY_FALLBACK_ENABLED=true flags2env __dd_web_scraper__ --port=8098 >/tmp/dd-web-scraper-flags.json \
- && node -e "const fs=require('node:fs');const v=JSON.parse(fs.readFileSync('/tmp/dd-web-scraper-flags.json','utf8'));if(v.PORT!=='8098'||v.APIFY_FALLBACK_ENABLED!=='true')process.exit(1)" \
+ && node -e "const fs=require('node:fs');const v=JSON.parse(fs.readFileSync('/tmp/dd-web-scraper-flags.json','utf8'));const routes=JSON.parse(v.APIFY_DOMAIN_FALLBACKS_JSON);if(v.PORT!=='8098'||v.APIFY_FALLBACK_ENABLED!=='true'||v.APIFY_FALLBACK_ACTORS!=='apify/web-scraper,apify/playwright-scraper'||v.APIFY_FALLBACK_MAX_ATTEMPTS!=='2'||!routes['*.greenhouse.io'])process.exit(1)" \
  && pnpm exec tjsv check \
       --typespec=contracts/scraper-fallback.tsp \
       --schema=contracts/scraper-fallback.schema.json \
@@ -77,6 +76,8 @@ RUN pnpm run build \
       --quiet \
  && node --import tsx --test \
       tests/apify-fallback.test.ts \
+      tests/apify-fallback-chain.test.ts \
+      tests/apify-actor-dispatch.test.ts \
       tests/flags-runtime.test.ts \
       tests/runtime-config-guard.test.ts \
       tests/scraper-contract-fixtures.test.ts \

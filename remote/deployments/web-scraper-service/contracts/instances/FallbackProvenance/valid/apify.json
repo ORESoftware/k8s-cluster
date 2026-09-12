@@ -1,10 +1,26 @@
 {
   "provider": "apify",
-  "actorId": "apify/web-scraper",
+  "actorId": "apify/playwright-scraper",
   "trigger": "local-retriable-5xx",
   "localStatusCode": 502,
   "localStrategy": "playwright",
   "durationMs": 1250,
   "localDurationMs": 300,
-  "totalDurationMs": 1550
+  "totalDurationMs": 1550,
+  "route": "*.example.com",
+  "attempts": [
+    {
+      "actorId": "apify/web-scraper",
+      "outcome": "error",
+      "durationMs": 420,
+      "errorClass": "provider-server-error"
+    },
+    {
+      "actorId": "apify/playwright-scraper",
+      "outcome": "success",
+      "durationMs": 830
+    }
+  ],
+  "maxChainAttempts": 2,
+  "maxChainChargeUsd": 0.5
 }

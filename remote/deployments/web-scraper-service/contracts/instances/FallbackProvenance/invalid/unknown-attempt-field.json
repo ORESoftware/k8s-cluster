@@ -1,0 +1,16 @@
+{
+  "provider": "apify",
+  "actorId": "apify/playwright-scraper",
+  "trigger": "local-retriable-5xx",
+  "localStatusCode": 502,
+  "durationMs": 1000,
+  "attempts": [
+    {
+      "actorId": "apify/web-scraper",
+      "outcome": "error",
+      "durationMs": 100,
+      "errorClass": "timeout",
+      "token": "must-not-be-admitted"
+    }
+  ]
+}
