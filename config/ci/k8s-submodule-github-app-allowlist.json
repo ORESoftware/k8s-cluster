@@ -14,7 +14,6 @@
       "chat.vibe",
       "grpc-pg-general-connect-server",
       "mip-solver-node.rs",
-      "push-notification-server.rs",
       "t2v-v2t.rs",
       "tor-server.rs"
     ],
@@ -44,6 +43,9 @@
     ],
     "drone-mngr": [
       "drone-mngr-monorepo"
+    ],
+    "fanwaave": [
+      "push-notification-server.rs"
     ],
     "fiducia-cloud": [
       "fiducia-customer.rs",
