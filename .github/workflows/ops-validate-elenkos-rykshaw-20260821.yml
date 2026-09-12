@@ -1,0 +1,70 @@
+name: Validate Elenkos Rykshaw Flutter bootstrap
+run-name: Validate DEN-3838 Rykshaw source at ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-validate-elenkos-rykshaw-20260821.yml
+      - scripts/ops/elenkos_rykshaw_source_e86e8ab.tar.gz.b64
+      - scripts/ops/elenkos_rykshaw_source_e86e8ab.sha256
+      - scripts/ops/materialize_elenkos_rykshaw_20260821.sh
+      - docs/den-3838-elenkos-rykshaw-bootstrap.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-elenkos-rykshaw-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: 3.47.1
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-validate-elenkos-rykshaw-20260821.yml
+      - name: Materialize hash-pinned Rykshaw source
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/ops/materialize_elenkos_rykshaw_20260821.sh "$RUNNER_TEMP/rykshaw-source"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Run exact Flutter policy, format, analysis, tests, and debug build
+        shell: bash
+        working-directory: ${{ runner.temp }}/rykshaw-source
+        run: |
+          set -o pipefail
+          flutter --version | tee "$RUNNER_TEMP/rykshaw-flutter-version.txt"
+          bash tool/validate.sh 2>&1 | tee "$RUNNER_TEMP/rykshaw-validation.txt"
+          cp pubspec.lock "$RUNNER_TEMP/rykshaw-pubspec.lock"
+          sha256sum build/app/outputs/flutter-apk/app-debug.apk | tee "$RUNNER_TEMP/rykshaw-debug-apk.sha256"
+      - name: Upload non-secret validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-3838-rykshaw-validation-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/rykshaw-flutter-version.txt
+            ${{ runner.temp }}/rykshaw-validation.txt
+            ${{ runner.temp }}/rykshaw-pubspec.lock
+            ${{ runner.temp }}/rykshaw-debug-apk.sha256
+          if-no-files-found: warn
+          retention-days: 14
