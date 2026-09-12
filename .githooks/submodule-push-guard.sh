@@ -38,6 +38,30 @@ EMPTY_TREE='4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 is_zero() { case "$1" in *[!0]*) return 1 ;; *) return 0 ;; esac; }
 
+# A submodule's *name* need not equal its path, e.g.
+#   [submodule "drone-mngr-infra"]  path = apps/drone-mngr-infra
+# Git keys both `submodule.<name>.url` and the `modules/<name>` object store by
+# name, so a lookup by path silently finds nothing for such entries. Map the
+# path to its name first. $1 = path; stdin = a .gitmodules file.
+submodule_name() {
+    git config -f /dev/stdin --get-regexp '^submodule\..*\.path$' 2>/dev/null \
+        | while read -r key value; do
+            [ "$value" = "$1" ] || continue
+            key="${key#submodule.}"
+            printf '%s\n' "${key%.path}"
+            break
+          done
+}
+
+# Print the url a .gitmodules file (on stdin) records for path $1.
+gitmodules_url() {
+    local gm name
+    gm="$(cat)"
+    name="$(printf '%s\n' "$gm" | submodule_name "$1")"
+    [ -n "$name" ] || name="$1"
+    printf '%s\n' "$gm" | git config -f /dev/stdin --get "submodule.$name.url" 2>/dev/null
+}
+
 # Resolve a submodule path to (gitdir, url). Works for an initialized submodule
 # and for one that is configured + has a modules/ object store but no worktree.
 resolve_gitdir() {
@@ -63,8 +87,11 @@ resolve_gitdir() {
         /*) ;;
         *) common_dir="$repo_root/$common_dir" ;;
     esac
-    gd="$common_dir/modules/$path"
-    [ -n "$gd" ] && [ -d "$gd" ] && { printf '%s\n' "$gd"; return 0; }
+    local name=""
+    [ -f "$repo_root/.gitmodules" ] && name="$(submodule_name "$path" < "$repo_root/.gitmodules")"
+    for gd in ${name:+"$common_dir/modules/$name"} "$common_dir/modules/$path"; do
+        [ -d "$gd" ] && { printf '%s\n' "$gd"; return 0; }
+    done
     return 1
 }
 
@@ -74,15 +101,14 @@ resolve_url() {
         url="$(git --git-dir="$gd" config --get remote.origin.url 2>/dev/null)"
         [ -n "$url" ] && { printf '%s\n' "$url"; return 0; }
     fi
-    url="$(git config -f "$repo_root/.gitmodules" --get "submodule.$path.url" 2>/dev/null)"
+    url="$(gitmodules_url "$path" < "$repo_root/.gitmodules")"
     [ -n "$url" ] && { printf '%s\n' "$url"; return 0; }
     # The worktree's .gitmodules describes the CHECKED-OUT branch, which need not
     # contain a submodule that the pushed branch adds. Fall back to .gitmodules as
     # recorded in each commit being pushed.
     local sha
     for sha in $push_shas; do
-        url="$(git show "$sha:.gitmodules" 2>/dev/null \
-            | git config -f /dev/stdin --get "submodule.$path.url" 2>/dev/null)"
+        url="$(git show "$sha:.gitmodules" 2>/dev/null | gitmodules_url "$path")"
         [ -n "$url" ] && { printf '%s\n' "$url"; return 0; }
     done
     return 1
