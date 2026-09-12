@@ -1,0 +1,422 @@
+    return ref["object"]["sha"]
+
+
+def upsert_branch(client: GitHubClient, full: str, base_sha: str) -> None:
+    get_path = f"/repos/{q(full, '/')}/git/ref/heads/{q(BRANCH_NAME, '/')}"
+    update_path = f"/repos/{q(full, '/')}/git/refs/heads/{q(BRANCH_NAME, '/')}"
+    existing = client.optional("GET", get_path)
+    if existing is None:
+        client.request(
+            "POST",
+            f"/repos/{q(full, '/')}/git/refs",
+            {"ref": f"refs/heads/{BRANCH_NAME}", "sha": base_sha},
+            expected=(201,),
+        )
+    else:
+        client.request("PATCH", update_path, {"sha": base_sha, "force": True})
+
+
+def publish_commit(
+    client: GitHubClient,
+    site: Mapping[str, Any],
+    sites: list[dict[str, Any]],
+    default_branch: str,
+) -> str:
+    full = site["repository_full_name"]
+    base_sha = get_ref_sha(client, full, default_branch)
+    commit = client.request("GET", f"/repos/{q(full, '/')}/git/commits/{base_sha}")
+    base_tree = commit["tree"]["sha"]
+    upsert_branch(client, full, base_sha)
+    rendered = render_site(site, sites)
+    tree_entries: list[dict[str, Any]] = [
+        {"path": path, "mode": "100644", "type": "blob", "content": content}
+        for path, content in sorted(rendered.items())
+    ]
+    tree = client.request(
+        "POST",
+        f"/repos/{q(full, '/')}/git/trees",
+        {"base_tree": base_tree, "tree": tree_entries},
+        expected=(201,),
+    )
+    generated_commit = client.request(
+        "POST",
+        f"/repos/{q(full, '/')}/git/commits",
+        {
+            "message": (
+                f"Launch the source-backed {site['name']} Astro marketing site\n\n"
+                f"Render the fixed {MARKER} design, multilingual code explorer, "
+                "roadmap evidence, network directory, CI, and GitHub Pages deployment."
+            ),
+            "tree": tree["sha"],
+            "parents": [base_sha],
+        },
+        expected=(201,),
+    )
+    client.request(
+        "PATCH",
+        f"/repos/{q(full, '/')}/git/refs/heads/{q(BRANCH_NAME, '/')}",
+        {"sha": generated_commit["sha"], "force": False},
+    )
+    return generated_commit["sha"]
+
+
+def ensure_pull_request(
+    client: GitHubClient,
+    site: Mapping[str, Any],
+    default_branch: str,
+    head_sha: str,
+    trusted_source_sha: str,
+    created_repository: bool,
+) -> dict[str, Any]:
+    full = site["repository_full_name"]
+    query = urllib.parse.urlencode(
+        {"state": "open", "head": f"{site['org']}:{BRANCH_NAME}", "base": default_branch}
+    )
+    pulls = client.request("GET", f"/repos/{q(full, '/')}/pulls?{query}")
+    body = f"""## Source-backed Astro marketing surface
+
+This {'creates' if created_repository else 'refreshes'} the canonical organization site at
+[{site['site_url']}]({site['site_url']}).
+
+- product copy is grounded in the connected Linear project, GitHub issues, and recent implementation history;
+- the code explorer uses {site['source_status'].lower()} and links every tab to its source boundary;
+- unpublished clients are labeled as protocol/API previews instead of receiving fictional package names;
+- all fourteen non-test engineering sites are connected through the network directory;
+- CI tests metadata, responsive behavior, reduced motion, source links, and the language selector;
+- the Pages workflow builds and deploys Astro from `main`.
+
+Central fleet validation: `ORESoftware/k8s-cluster@{trusted_source_sha}`.
+Generated marker: `{MARKER}`.
+Expected head: `{head_sha}`.
+"""
+    title = f"Launch the source-backed {site['name']} Astro marketing site"
+    if pulls:
+        pull = pulls[0]
+        return client.request(
+            "PATCH",
+            f"/repos/{q(full, '/')}/pulls/{pull['number']}",
+            {"title": title, "body": body, "base": default_branch},
+        )
+    return client.request(
+        "POST",
+        f"/repos/{q(full, '/')}/pulls",
+        {
+            "title": title,
+            "body": body,
+            "head": BRANCH_NAME,
+            "base": default_branch,
+            "draft": False,
+            "maintainer_can_modify": True,
+        },
+        expected=(201,),
+    )
+
+
+def merge_pull_request(
+    client: GitHubClient,
+    site: Mapping[str, Any],
+    pull: Mapping[str, Any],
+    head_sha: str,
+) -> str:
+    full = site["repository_full_name"]
+    result = client.request(
+        "PUT",
+        f"/repos/{q(full, '/')}/pulls/{pull['number']}/merge",
+        {
+            "sha": head_sha,
+            "merge_method": "squash",
+            "commit_title": f"Launch the source-backed {site['name']} Astro marketing site",
+            "commit_message": (
+                "Publish the responsive marketing surface, source-linked language selector, "
+                "engineering roadmap signal, network directory, tests, and Pages workflow."
+            ),
+        },
+        expected=(200, 405, 409),
+    )
+    if not result.get("merged"):
+        message = result.get("message", "merge was not accepted")
+        raise PublicationError(f"{full} PR #{pull['number']} was not merged: {message}")
+    return result["sha"]
+
+
+def verify_source(client: GitHubClient, site: Mapping[str, Any], branch: str) -> bool:
+    full = site["repository_full_name"]
+    query = urllib.parse.urlencode({"ref": branch})
+    content = client.request(
+        "GET", f"/repos/{q(full, '/')}/contents/src/data/site.json?{query}"
+    )
+    if content.get("encoding") != "base64":
+        return False
+    raw = base64.b64decode(content["content"]).decode("utf-8")
+    payload = json.loads(raw)
+    return (
+        payload.get("marker") == MARKER
+        and payload.get("slug") == site["slug"]
+        and payload.get("site_url") == site["site_url"]
+        and len(payload.get("network", [])) == len(EXPECTED_SLUGS)
+        and len(payload.get("examples", [])) >= 3
+    )
+
+
+def workflow_runs(client: GitHubClient, full: str, workflow: str, branch: str) -> list[dict[str, Any]]:
+    query = urllib.parse.urlencode({"branch": branch, "per_page": 20})
+    response = client.request(
+        "GET", f"/repos/{q(full, '/')}/actions/workflows/{q(workflow)}/runs?{query}"
+    )
+    return response.get("workflow_runs", [])
+
+
+def dispatch_pages(client: GitHubClient, full: str, branch: str) -> None:
+    try:
+        client.request(
+            "POST",
+            f"/repos/{q(full, '/')}/actions/workflows/pages.yml/dispatches",
+            {"ref": branch},
+            expected=(204,),
+        )
+    except GitHubApiError as exc:
+        if exc.status not in {404, 409, 422}:
+            raise
+
+
+def wait_for_pages(
+    client: GitHubClient,
+    pending: dict[str, dict[str, Any]],
+    *,
+    timeout_seconds: int,
+) -> dict[str, dict[str, Any]]:
+    deadline = time.monotonic() + timeout_seconds
+    dispatched: set[str] = set()
+    while pending and time.monotonic() < deadline:
+        for slug in list(pending):
+            item = pending[slug]
+            full = item["site"]["repository_full_name"]
+            branch = item["branch"]
+            runs = workflow_runs(client, full, "pages.yml", branch)
+            matching = [
+                run for run in runs
+                if run.get("head_sha") == item["merge_sha"]
+            ]
+            if matching:
+                run = matching[0]
+                if run.get("status") == "completed":
+                    item["run"] = run
+                    del pending[slug]
+                    continue
+            elif time.monotonic() + 60 < deadline and slug not in dispatched:
+                dispatch_pages(client, full, branch)
+                dispatched.add(slug)
+        if pending:
+            time.sleep(12)
+    return pending
+
+
+def publish_fleet(
+    sites: list[dict[str, Any]],
+    client: GitHubClient,
+    trusted_source_sha: str,
+    workflow_timeout_seconds: int,
+) -> list[SiteResult]:
+    staged: list[dict[str, Any]] = []
+    for site in sites:
+        print(f"stage={site['slug']} action=repository", file=sys.stderr, flush=True)
+        repo, created = ensure_repository(client, site)
+        default_branch = repo.get("default_branch") or "main"
+        pages_enabled, pages_url, pages_note = ensure_pages(client, site["repository_full_name"])
+        print(f"stage={site['slug']} action=commit", file=sys.stderr, flush=True)
+        head_sha = publish_commit(client, site, sites, default_branch)
+        pull = ensure_pull_request(
+            client,
+            site,
+            default_branch,
+            head_sha,
+            trusted_source_sha,
+            created,
+        )
+        staged.append(
+            {
+                "site": site,
+                "created": created,
+                "branch": default_branch,
+                "head_sha": head_sha,
+                "pull": pull,
+                "pages_enabled": pages_enabled,
+                "pages_url": pages_url,
+                "notes": [pages_note] if pages_note else [],
+            }
+        )
+
+    for item in staged:
+        site = item["site"]
+        print(f"stage={site['slug']} action=merge pr={item['pull']['number']}", file=sys.stderr, flush=True)
+        item["merge_sha"] = merge_pull_request(
+            client, site, item["pull"], item["head_sha"]
+        )
+        # Pages may only become creatable after the workflow exists on main.
+        enabled, url, note = ensure_pages(client, site["repository_full_name"])
+        item["pages_enabled"] = enabled
+        item["pages_url"] = url or item["pages_url"]
+        if note:
+            item["notes"].append(note)
+
+    pending = {item["site"]["slug"]: item for item in staged}
+    unresolved = wait_for_pages(
+        client,
+        pending.copy(),
+        timeout_seconds=workflow_timeout_seconds,
+    )
+
+    results: list[SiteResult] = []
+    for item in staged:
+        site = item["site"]
+        source_ok = verify_source(client, site, item["branch"])
+        run = item.get("run")
+        pages_status = "timeout"
+        run_url = None
+        if run:
+            pages_status = str(run.get("conclusion") or run.get("status") or "unknown")
+            run_url = run.get("html_url")
+        elif site["slug"] in unresolved:
+            item["notes"].append("Pages workflow did not complete before the bounded timeout")
+        try:
+            pages = client.request("GET", f"/repos/{q(site['repository_full_name'], '/')}/pages")
+            item["pages_enabled"] = pages.get("build_type") == "workflow"
+            item["pages_url"] = pages.get("html_url") or item["pages_url"]
+        except GitHubApiError as exc:
+            if exc.status != 404:
+                raise
+            item["notes"].append("Pages API record is not available")
+        verified = (
+            source_ok
+            and item["pages_enabled"]
+            and pages_status == "success"
+            and bool(item["pages_url"])
+        )
+        results.append(
+            SiteResult(
+                slug=site["slug"],
+                repository=site["repository_full_name"],
+                site_url=site["site_url"],
+                created_repository=item["created"],
+                pull_request_url=item["pull"]["html_url"],
+                pull_request_number=item["pull"]["number"],
+                merge_sha=item["merge_sha"],
+                source_verified=source_ok,
+                pages_enabled=item["pages_enabled"],
+                pages_url=item["pages_url"],
+                pages_workflow=pages_status,
+                pages_run_url=run_url,
+                verified=verified,
+                notes=tuple(note for note in item["notes"] if note),
+            )
+        )
+    return results
+
+
+def markdown_report(results: list[SiteResult], trusted_source_sha: str) -> str:
+    verified = sum(result.verified for result in results)
+    created = sum(result.created_repository for result in results)
+    lines = [
+        "# Zed-adjacent Astro marketing fleet",
+        "",
+        f"Trusted publisher source: `ORESoftware/k8s-cluster@{trusted_source_sha}`",
+        f"Generated: {utc_now()}",
+        f"Repositories created: **{created}** · sites verified: **{verified}/{len(results)}**",
+        "",
+        "| Site | Repository | PR | Pages workflow | Verified |",
+        "|---|---|---|---|---|",
+    ]
+    for result in results:
+        site_link = f"[{result.site_url}]({result.site_url})"
+        repo_link = f"[{result.repository}](https://github.com/{result.repository})"
+        pr_link = f"[#{result.pull_request_number}]({result.pull_request_url})"
+        workflow = result.pages_workflow
+        if result.pages_run_url:
+            workflow = f"[{workflow}]({result.pages_run_url})"
+        lines.append(
+            f"| {site_link} | {repo_link} | {pr_link} | {workflow} | "
+            f"{'yes' if result.verified else 'no'} |"
+        )
+        for note in result.notes:
+            lines.append(f"<!-- {result.slug}: {note} -->")
+    lines.extend(["", f"<!-- {MARKER}-report-complete -->", ""])
+    return "\n".join(lines)
+
+
+def write_reports(
+    results: list[SiteResult],
+    trusted_source_sha: str,
+    json_path: Path | None,
+    markdown_path: Path | None,
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "marker": MARKER,
+        "mode": "execute",
+        "trusted_source_sha": trusted_source_sha,
+        "generated_at": utc_now(),
+        "sites": [result.as_dict() for result in results],
+        "verified": all(result.verified for result in results),
+    }
+    if json_path:
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    report = markdown_report(results, trusted_source_sha)
+    if markdown_path:
+        markdown_path.parent.mkdir(parents=True, exist_ok=True)
+        markdown_path.write_text(report, encoding="utf-8")
+    print(report)
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--render-dir", type=Path)
+    parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--trusted-source-sha")
+    parser.add_argument("--json-report", type=Path)
+    parser.add_argument("--markdown-report", type=Path)
+    parser.add_argument("--workflow-timeout-seconds", type=int, default=900)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv or sys.argv[1:])
+    sites = load_specs()
+    if args.render_dir:
+        render_all(args.render_dir, sites)
+    if args.validate_only:
+        for site in sites:
+            render_site(site, sites)
+        print(f"validated {len(sites)} marketing sites ({MARKER})")
+    if args.execute:
+        if not args.trusted_source_sha or not re.fullmatch(r"[0-9a-f]{40}", args.trusted_source_sha):
+            raise PublicationError("--trusted-source-sha must be a 40-character lowercase SHA")
+        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_REPOSITORY_ADMIN_TOKEN")
+        if not token:
+            raise PublicationError("GH_TOKEN is required for execute mode")
+        client = GitHubClient(token)
+        results = publish_fleet(
+            sites,
+            client,
+            args.trusted_source_sha,
+            max(120, min(args.workflow_timeout_seconds, 1800)),
+        )
+        write_reports(
+            results,
+            args.trusted_source_sha,
+            args.json_report,
+            args.markdown_report,
+        )
+        return 0 if all(result.verified for result in results) else 2
+    if not (args.render_dir or args.validate_only or args.execute):
+        raise PublicationError("choose --render-dir, --validate-only, or --execute")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except PublicationError as exc:
+        print(f"publisher-error: {exc}", file=sys.stderr)
+        raise SystemExit(1)

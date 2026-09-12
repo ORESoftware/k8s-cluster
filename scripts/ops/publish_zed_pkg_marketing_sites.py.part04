@@ -1,0 +1,448 @@
+  assert.match(explorer, /aria-live="polite"/);
+  assert.match(explorer, /navigator\.clipboard/);
+});
+
+test("metadata, responsive design, and reduced motion are retained", async () => {
+  const layout = await read("src/layouts/Layout.astro");
+  const css = await read("src/styles/global.css");
+  const page = await read("src/pages/index.astro");
+  assert.match(layout, /rel="canonical"/);
+  assert.match(layout, /application\/ld\+json/);
+  assert.match(css, /prefers-reduced-motion/);
+  assert.match(css, /@media \(max-width: 560px\)/);
+  assert.match(page, /<Network/);
+  assert.match(page, /<CodeExplorer/);
+});
+'''
+
+CI_WORKFLOW = r'''name: site-quality
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: site-quality-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+'''
+
+PAGES_WORKFLOW = r'''name: pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - run: npm run build
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: dist
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+'''
+
+MIT_LICENSE = """MIT License
+
+Copyright (c) 2026 Alexander Mills and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+
+def readme(site: Mapping[str, Any]) -> str:
+    return f"""# {site['name']} marketing site
+
+Source for [{site['site_url']}]({site['site_url']}). This Astro site is generated
+from a fixed, reviewed marketing specification that uses the connected Linear
+project, GitHub issues, client repository, and recent implementation history as
+context.
+
+## Local development
+
+```bash
+npm install --no-audit --no-fund
+npm test
+npm run build
+npm run dev
+```
+
+The language selector is progressively enhanced: every example is present in
+the rendered HTML, and the small inline script switches panels and supports the
+copy button. Reduced-motion preferences, keyboard focus, canonical metadata,
+and responsive layouts are covered by regression tests.
+
+Source evidence: [{site['source_label']}]({site['source_url']}) at
+[{site['commit_sha']}]({site['commit_url']}).
+
+<!-- {MARKER} -->
+"""
+
+
+def favicon(site: Mapping[str, Any]) -> str:
+    monogram = re.sub(r"[^A-Za-z0-9]", "", str(site["monogram"]))[:3]
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="{site['accent']}"/><stop offset="1" stop-color="{site['accent2']}"/></linearGradient></defs>
+  <rect width="64" height="64" rx="18" fill="#070b14"/>
+  <rect x="4" y="4" width="56" height="56" rx="15" fill="url(#g)"/>
+  <text x="32" y="38" text-anchor="middle" font-family="system-ui,sans-serif" font-size="18" font-weight="900" fill="white">{monogram}</text>
+</svg>\n'''
+
+
+def site_payload(site: Mapping[str, Any], sites: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    network = [
+        {
+            "slug": item["slug"],
+            "name": item["name"],
+            "site_url": item["site_url"],
+            "eyebrow": item["eyebrow"],
+            "monogram": item["monogram"],
+            "accent": item["accent"],
+        }
+        for item in sites
+    ]
+    payload = dict(site)
+    payload["network"] = network
+    payload["marker"] = MARKER
+    payload["generated_date"] = GENERATED_DATE
+    return payload
+
+
+def render_site(site: Mapping[str, Any], sites: list[Mapping[str, Any]]) -> dict[str, str]:
+    data = site_payload(site, sites)
+    files = {
+        "package.json": package_json(site),
+        "astro.config.mjs": ASTRO_CONFIG.replace("__SITE_URL__", site["site_url"]),
+        "tsconfig.json": TSCONFIG,
+        "src/data/site.json": json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        "src/layouts/Layout.astro": LAYOUT_ASTRO,
+        "src/components/CodeExplorer.astro": CODE_EXPLORER_ASTRO,
+        "src/components/Network.astro": NETWORK_ASTRO,
+        "src/pages/index.astro": INDEX_ASTRO,
+        "src/styles/global.css": GLOBAL_CSS,
+        "public/favicon.svg": favicon(site),
+        "public/robots.txt": "User-agent: *\nAllow: /\n",
+        "tests/site.test.mjs": SITE_TEST,
+        ".github/workflows/ci.yml": CI_WORKFLOW,
+        ".github/workflows/pages.yml": PAGES_WORKFLOW,
+        "README.md": readme(site),
+        "LICENSE": MIT_LICENSE,
+        ".gitignore": "node_modules/\ndist/\n.astro/\n.env\n.env.*\n",
+    }
+    validate_rendered_site(site, files)
+    return files
+
+
+def validate_rendered_site(site: Mapping[str, Any], files: Mapping[str, str]) -> None:
+    expected_paths = {
+        "package.json",
+        "astro.config.mjs",
+        "tsconfig.json",
+        "src/data/site.json",
+        "src/layouts/Layout.astro",
+        "src/components/CodeExplorer.astro",
+        "src/components/Network.astro",
+        "src/pages/index.astro",
+        "src/styles/global.css",
+        "public/favicon.svg",
+        "public/robots.txt",
+        "tests/site.test.mjs",
+        ".github/workflows/ci.yml",
+        ".github/workflows/pages.yml",
+        "README.md",
+        "LICENSE",
+        ".gitignore",
+    }
+    if set(files) != expected_paths:
+        raise PublicationError(f"{site['slug']}: rendered path set mismatch")
+    combined = "\n".join(files.values())
+    for required in (
+        MARKER,
+        site["site_url"],
+        "data-code-select",
+        "prefers-reduced-motion",
+        "application/ld+json",
+        "deploy-pages",
+    ):
+        if required not in combined:
+            raise PublicationError(f"{site['slug']}: rendered output missing {required}")
+    if "package-lock.json" in files:
+        raise PublicationError(f"{site['slug']}: package lock must not be generated")
+
+
+def render_all(output: Path, sites: list[dict[str, Any]]) -> None:
+    if output.exists():
+        shutil.rmtree(output)
+    output.mkdir(parents=True)
+    manifest: list[dict[str, Any]] = []
+    for site in sites:
+        root = output / site["slug"]
+        files = render_site(site, sites)
+        for relative, content in files.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        manifest.append(
+            {
+                "slug": site["slug"],
+                "repository": site["repository_full_name"],
+                "site_url": site["site_url"],
+                "paths": sorted(files),
+            }
+        )
+    (output / "manifest.json").write_text(
+        json.dumps({"marker": MARKER, "sites": manifest}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+class GitHubClient:
+    def __init__(self, token: str):
+        if not token or any(char.isspace() for char in token):
+            raise PublicationError("invalid GitHub token")
+        self._token = token
+        self.api = "https://api.github.com"
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: Any | None = None,
+        *,
+        expected: tuple[int, ...] = (200, 201, 202, 204),
+        accept: str = "application/vnd.github+json",
+    ) -> Any:
+        if not path.startswith("/"):
+            raise PublicationError(f"invalid GitHub API path: {path}")
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        request = urllib.request.Request(
+            self.api + path,
+            data=data,
+            method=method,
+            headers={
+                "Accept": accept,
+                "Authorization": f"Bearer {self._token}",
+                "Content-Type": "application/json",
+                "User-Agent": "zed-pkg-marketing-site-publisher/1",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        last_error: GitHubApiError | None = None
+        for attempt in range(5):
+            try:
+                with urllib.request.urlopen(request, timeout=60) as response:
+                    body = response.read()
+                    status = response.status
+                    if status not in expected:
+                        raise GitHubApiError(status, method, path, body.decode("utf-8", "replace")[:500])
+                    if not body:
+                        return None
+                    return json.loads(body.decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8", "replace")
+                if exc.code in expected:
+                    if not body:
+                        return None
+                    try:
+                        return json.loads(body)
+                    except json.JSONDecodeError:
+                        return {"message": body[:500]}
+                try:
+                    message = json.loads(body).get("message", body[:500])
+                except json.JSONDecodeError:
+                    message = body[:500]
+                error = GitHubApiError(exc.code, method, path, str(message))
+                if exc.code in {429, 500, 502, 503, 504} and attempt < 4:
+                    time.sleep(2 ** attempt)
+                    last_error = error
+                    continue
+                raise error from exc
+            except (urllib.error.URLError, TimeoutError) as exc:
+                last_error = GitHubApiError(0, method, path, str(exc))
+                if attempt < 4:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise last_error from exc
+        assert last_error is not None
+        raise last_error
+
+    def optional(self, method: str, path: str, payload: Any | None = None) -> Any | None:
+        try:
+            return self.request(method, path, payload)
+        except GitHubApiError as exc:
+            if exc.status == 404:
+                return None
+            raise
+
+
+def q(value: str, safe: str = "") -> str:
+    return urllib.parse.quote(value, safe=safe)
+
+
+def ensure_main_default(client: GitHubClient, full: str, repo: Mapping[str, Any]) -> dict[str, Any]:
+    default_branch = str(repo.get("default_branch") or "main")
+    if default_branch == "main":
+        return dict(repo)
+    source = client.request(
+        "GET", f"/repos/{q(full, '/')}/git/ref/heads/{q(default_branch, '/')}"
+    )
+    main_ref = client.optional("GET", f"/repos/{q(full, '/')}/git/ref/heads/main")
+    if main_ref is None:
+        client.request(
+            "POST",
+            f"/repos/{q(full, '/')}/git/refs",
+            {"ref": "refs/heads/main", "sha": source["object"]["sha"]},
+            expected=(201,),
+        )
+    return client.request(
+        "PATCH", f"/repos/{q(full, '/')}", {"default_branch": "main"}
+    )
+
+
+def ensure_repository(client: GitHubClient, site: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    full = site["repository_full_name"]
+    repo = client.optional("GET", f"/repos/{q(full, '/')}")
+    created = False
+    if repo is None:
+        try:
+            repo = client.request(
+                "POST",
+                f"/orgs/{q(site['org'])}/repos",
+                {
+                    "name": site["repo"],
+                    "description": site["description_short"],
+                    "homepage": site["site_url"],
+                    "private": False,
+                    "has_issues": True,
+                    "has_projects": True,
+                    "has_wiki": False,
+                    "auto_init": True,
+                },
+                expected=(201,),
+            )
+            created = True
+        except GitHubApiError as exc:
+            if exc.status != 422:
+                raise
+            repo = client.request("GET", f"/repos/{q(full, '/')}")
+    repo = client.request(
+        "PATCH",
+        f"/repos/{q(full, '/')}",
+        {
+            "description": site["description_short"],
+            "homepage": site["site_url"],
+            "has_issues": True,
+            "has_projects": True,
+            "has_wiki": False,
+            "visibility": "public",
+        },
+    )
+    repo = ensure_main_default(client, full, repo)
+    try:
+        client.request(
+            "PUT",
+            f"/repos/{q(full, '/')}/actions/permissions",
+            {"enabled": True, "allowed_actions": "all"},
+            expected=(204,),
+        )
+    except GitHubApiError as exc:
+        if exc.status not in {403, 404, 422}:
+            raise
+    return repo, created
+
+
+def ensure_pages(client: GitHubClient, full: str) -> tuple[bool, str | None, str | None]:
+    notes: str | None = None
+    try:
+        pages = client.request("GET", f"/repos/{q(full, '/')}/pages")
+    except GitHubApiError as exc:
+        if exc.status != 404:
+            raise
+        try:
+            pages = client.request(
+                "POST",
+                f"/repos/{q(full, '/')}/pages",
+                {"build_type": "workflow"},
+                expected=(201,),
+            )
+        except GitHubApiError as create_error:
+            if create_error.status in {409, 422}:
+                notes = f"Pages creation deferred ({create_error.status})"
+                return False, None, notes
+            raise
+    if pages.get("build_type") != "workflow":
+        try:
+            pages = client.request(
+                "PUT",
+                f"/repos/{q(full, '/')}/pages",
+                {"build_type": "workflow"},
+            )
+        except GitHubApiError as update_error:
+            if update_error.status in {409, 422}:
+                notes = f"Pages workflow-mode update deferred ({update_error.status})"
+            else:
+                raise
+    return pages.get("build_type") == "workflow", pages.get("html_url"), notes
+
+
+def get_ref_sha(client: GitHubClient, full: str, branch: str) -> str:
+    ref = client.request("GET", f"/repos/{q(full, '/')}/git/ref/heads/{q(branch, '/')}")
