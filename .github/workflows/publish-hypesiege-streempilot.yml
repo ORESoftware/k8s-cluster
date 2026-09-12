@@ -1,0 +1,252 @@
+name: publish HypeSiege and StreemPilot repository fleets
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/publish-hypesiege-streempilot.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-hypesiege-streempilot
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GITHUB_API_VERSION: '2026-03-10'
+      FLEET_PAYLOAD_SHA: b7f3d39df6d8514a85eca6ebe878a4ebe389c4c2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Preflight approved GitHub App installations and mint short-lived tokens
+        shell: bash
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]]; then
+            echo '::error::K8S_SUBMODULE_APP_ID is unavailable; no repository was created.'
+            exit 78
+          fi
+          if [[ -z "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}" ]]; then
+            echo '::error::K8S_SUBMODULE_APP_PRIVATE_KEY is unavailable; no repository was created.'
+            exit 78
+          fi
+
+          key_file="${RUNNER_TEMP}/repository-admin-app.pem"
+          umask 077
+          printf '%s' "$K8S_SUBMODULE_APP_PRIVATE_KEY" > "$key_file"
+          grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----$' "$key_file"
+
+          base64url() {
+            openssl base64 -A | tr '+/' '-_' | tr -d '='
+          }
+
+          now="$(date +%s)"
+          header='{"alg":"RS256","typ":"JWT"}'
+          payload="$(printf '{"iat":%s,"exp":%s,"iss":%s}' "$((now - 60))" "$((now + 540))" "$K8S_SUBMODULE_APP_ID")"
+          unsigned="$(printf '%s' "$header" | base64url).$(printf '%s' "$payload" | base64url)"
+          signature="$(printf '%s' "$unsigned" | openssl dgst -sha256 -sign "$key_file" -binary | base64url)"
+          app_jwt="${unsigned}.${signature}"
+          printf '::add-mask::%s\n' "$app_jwt"
+
+          for org in hypesiege streempilot; do
+            installation_file="${RUNNER_TEMP}/${org}-installation.json"
+            status="$(curl --silent --show-error \
+              --output "$installation_file" \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${app_jwt}" \
+              --header "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
+              "https://api.github.com/orgs/${org}/installation")"
+            if [[ "$status" != 200 ]]; then
+              echo "::error::Approved GitHub App installation is unavailable for ${org} (HTTP ${status}); no repository was created."
+              exit 78
+            fi
+
+            readarray -t installation < <(python3 - "$installation_file" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          installation_id = payload.get('id')
+          selection = payload.get('repository_selection')
+          permissions = payload.get('permissions') or {}
+          if not isinstance(installation_id, int) or installation_id <= 0:
+              raise SystemExit('invalid installation id')
+          print(installation_id)
+          print(selection or '')
+          print(permissions.get('administration') or '')
+          print(permissions.get('contents') or '')
+          PY
+            )
+
+            installation_id="${installation[0]}"
+            repository_selection="${installation[1]}"
+            administration="${installation[2]}"
+            contents="${installation[3]}"
+            if [[ "$repository_selection" != all ]]; then
+              echo "::error::${org} GitHub App installation is not configured for all repositories; no repository was created."
+              exit 78
+            fi
+            if [[ "$administration" != write || "$contents" != write ]]; then
+              echo "::error::${org} GitHub App installation lacks administration:write and contents:write; no repository was created."
+              exit 78
+            fi
+
+            request_file="${RUNNER_TEMP}/${org}-token-request.json"
+            response_file="${RUNNER_TEMP}/${org}-token-response.json"
+            printf '%s' '{"permissions":{"administration":"write","contents":"write"}}' > "$request_file"
+            status="$(curl --silent --show-error \
+              --request POST \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${app_jwt}" \
+              --header "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
+              --header 'Content-Type: application/json' \
+              --data-binary "@${request_file}" \
+              "https://api.github.com/app/installations/${installation_id}/access_tokens")"
+            if [[ "$status" != 201 ]]; then
+              echo "::error::GitHub refused a short-lived repository-administration token for ${org} (HTTP ${status}); no repository was created."
+              exit 78
+            fi
+
+            token_file="${RUNNER_TEMP}/${org}-repository-admin.token"
+            python3 - "$response_file" "$token_file" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          token = payload.get('token')
+          permissions = payload.get('permissions') or {}
+          if not isinstance(token, str) or not token:
+              raise SystemExit('token response did not contain a token')
+          if permissions.get('administration') != 'write' or permissions.get('contents') != 'write':
+              raise SystemExit('token did not receive administration:write and contents:write')
+          path = pathlib.Path(sys.argv[2])
+          path.write_text(token)
+          os.chmod(path, 0o600)
+          PY
+            token="$(<"$token_file")"
+            printf '::add-mask::%s\n' "$token"
+            unset token
+            printf 'Preflight passed for %s installation %s.\n' "$org" "$installation_id"
+          done
+
+          rm -f "$key_file"
+          unset app_jwt K8S_SUBMODULE_APP_PRIVATE_KEY
+
+      - name: Reconstruct and validate the sealed 32-repository fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /mnt/data
+          sudo chown "$(id -u):$(id -g)" /mnt/data
+          payload="${RUNNER_TEMP}/generator.py.gz.b64"
+          : > "$payload"
+          base="https://raw.githubusercontent.com/ORESoftware/ai-agent-coordinator.rs/${FLEET_PAYLOAD_SHA}/repository-fleets/hypesiege-streempilot"
+          for part in 00 01 02 03 04 05; do
+            curl --fail --location --silent --show-error \
+              "${base}/generator.py.gz.b64.part-${part}" >> "$payload"
+          done
+          base64 --decode "$payload" | gzip --decompress > "${RUNNER_TEMP}/generate-fleet.py"
+          python3 -m py_compile "${RUNNER_TEMP}/generate-fleet.py"
+          python3 "${RUNNER_TEMP}/generate-fleet.py"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('/mnt/data/hypesiege-streempilot-fleet/publish.py')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          expected = [
+              "        askpass.write_text('#!/bin/sh",
+              "case \"$1\" in *Username*) echo x-access-token;; *) echo \"$GITHUB_REPOSITORY_ADMIN_TOKEN\";; esac",
+              "')",
+          ]
+          if lines[70:73] != expected:
+              raise SystemExit(f'unexpected publisher transport defect: {lines[70:73]!r}')
+          lines[70:73] = [
+              '        askpass.write_text(',
+              "            '#!/bin/sh\\ncase \"$1\" in *Username*) echo x-access-token;; *) echo \"$GITHUB_REPOSITORY_ADMIN_TOKEN\";; esac\\n'",
+              '        )',
+          ]
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+          python3 -m py_compile /mnt/data/hypesiege-streempilot-fleet/publish.py
+          python3 /mnt/data/hypesiege-streempilot-fleet/publish.py
+          test "$(git -C /mnt/data/hypesiege-streempilot-fleet/hypesiege/hypesiege-monorepo ls-files --stage apps | awk '$1 == 160000 {count++} END {print count+0}')" = 14
+          test "$(git -C /mnt/data/hypesiege-streempilot-fleet/streempilot/streempilot-monorepo ls-files --stage apps | awk '$1 == 160000 {count++} END {print count+0}')" = 16
+
+      - name: Create repositories, push sealed main histories, and verify remote heads
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cleanup() {
+            for org in hypesiege streempilot; do
+              token_file="${RUNNER_TEMP}/${org}-repository-admin.token"
+              if [[ -f "$token_file" ]]; then
+                token="$(<"$token_file")"
+                curl --silent --show-error \
+                  --request DELETE \
+                  --output /dev/null \
+                  --header 'Accept: application/vnd.github+json' \
+                  --header "Authorization: Bearer ${token}" \
+                  --header "X-GitHub-Api-Version: ${GITHUB_API_VERSION}" \
+                  https://api.github.com/installation/token || true
+                rm -f "$token_file"
+              fi
+            done
+          }
+          trap cleanup EXIT
+
+          for org in hypesiege streempilot; do
+            export GITHUB_REPOSITORY_ADMIN_TOKEN="$(<"${RUNNER_TEMP}/${org}-repository-admin.token")"
+            printf '::add-mask::%s\n' "$GITHUB_REPOSITORY_ADMIN_TOKEN"
+            python3 /mnt/data/hypesiege-streempilot-fleet/publish.py --execute --org "$org"
+
+            python3 - "$org" <<'PY'
+          import json
+          import os
+          import pathlib
+          import sys
+          import urllib.request
+
+          org = sys.argv[1]
+          token = os.environ['GITHUB_REPOSITORY_ADMIN_TOKEN']
+          root = pathlib.Path('/mnt/data/hypesiege-streempilot-fleet')
+          manifest = json.loads((root / 'MANIFEST.json').read_text())
+          records = [record for record in manifest['repositories'] if record['org'] == org]
+          for record in records:
+              request = urllib.request.Request(
+                  f"https://api.github.com/repos/{record['full_name']}/commits/main",
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'X-GitHub-Api-Version': '2026-03-10',
+                      'User-Agent': 'hypesiege-streempilot-remote-verifier',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  actual = json.load(response)['sha']
+              if actual != record['commit']:
+                  raise SystemExit(f"{record['full_name']}: {actual} != {record['commit']}")
+          print(f"verified {len(records)} remote main heads for {org}")
+          PY
+            unset GITHUB_REPOSITORY_ADMIN_TOKEN
+          done
