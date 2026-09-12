@@ -37,6 +37,8 @@ import {
 } from './captcha.js';
 import { captchaAutoSolveAllowed } from './scrape-policy.js';
 import { registerBrowserAgentRoutes, closeAllSessions } from './browser-agent.js';
+import { closeWithTimeout } from './bounded-close.js';
+import { OriginPoliteness, OriginPolitenessError } from './origin-politeness.js';
 
 const STRATEGIES = [
   'native-fetch',
@@ -115,6 +117,14 @@ const config = {
   allowRobotsOverride: readBooleanEnv('SCRAPER_ALLOW_ROBOTS_OVERRIDE', false),
   robotsCacheTtlMs: readNumberEnv('SCRAPER_ROBOTS_CACHE_TTL_MS', 3_600_000),
   minOriginDelayMs: readNumberEnv('SCRAPER_MIN_ORIGIN_DELAY_MS', 1_000),
+  maxPerOriginConcurrent: Math.max(
+    1,
+    Math.floor(readNumberEnv('SCRAPER_MAX_PER_ORIGIN_CONCURRENT', 2)),
+  ),
+  maxOriginWaitMs: readNumberEnv('SCRAPER_MAX_ORIGIN_WAIT_MS', 30_000),
+  originBackoffBaseMs: readNumberEnv('SCRAPER_ORIGIN_BACKOFF_BASE_MS', 2_000),
+  originBackoffMaxMs: readNumberEnv('SCRAPER_ORIGIN_BACKOFF_MAX_MS', 300_000),
+  browserContextCloseTimeoutMs: 5_000,
   browserHeadless: readBooleanEnv('SCRAPER_BROWSER_HEADLESS', true),
   captureFailureScreenshots: readBooleanEnv('SCRAPER_CAPTURE_FAILURE_SCREENSHOTS', true),
   failureScreenshotQuality: clampNumber(
@@ -205,6 +215,8 @@ type FetchedDocument = {
   contentType?: string;
   truncated: boolean;
   failureScreenshot?: FailureScreenshot;
+  /** Target's Retry-After header, fed to per-origin back-off only. */
+  retryAfter?: string;
 };
 
 type ProxyInfo = {
@@ -336,6 +348,9 @@ type StatusDescriptor = {
   respectRobots: boolean;
   allowRobotsOverride: boolean;
   minOriginDelayMs: number;
+  maxPerOriginConcurrent: number;
+  maxOriginWaitMs: number;
+  originBackoffMaxMs: number;
   allowCaptchaSolving: boolean;
 };
 
@@ -402,6 +417,7 @@ const metrics = {
   robotsChecks: 0,
   robotsDenials: 0,
   robotsOverrides: 0,
+  browserCleanupProblems: new Map<string, number>(),
 };
 
 type CaptchaMetricEvent = 'detected' | 'solved' | 'failed';
@@ -422,7 +438,12 @@ let puppeteerBrowserPromise: Promise<PuppeteerBrowser> | null = null;
 const parserWorkerSemaphore = new Semaphore(config.parserWorkerConcurrency);
 let activeCaptchaSolves = 0;
 const robotsCache = new Map<string, { body: string; expiresAt: number }>();
-const originNextRequestAt = new Map<string, number>();
+const originPoliteness = new OriginPoliteness({
+  maxPerOrigin: config.maxPerOriginConcurrent,
+  maxWaitMs: config.maxOriginWaitMs,
+  baseBackoffMs: config.originBackoffBaseMs,
+  maxBackoffMs: config.originBackoffMaxMs,
+});
 
 /**
  * DNS lookup used at connection time so the address we connect to is the same
@@ -538,7 +559,7 @@ fastify.post('/scrape', async (request, reply) => {
   }
 
   if (metrics.inFlight >= config.maxConcurrent) {
-    return reply.code(429).send({
+    return reply.code(429).header('retry-after', '1').send({
       ok: false,
       error: 'scraper concurrency limit reached',
       maxConcurrent: config.maxConcurrent,
@@ -568,6 +589,24 @@ fastify.post('/scrape', async (request, reply) => {
     recordMetric(strategy, 'error', durationMs);
     const message = error instanceof Error ? error.message : String(error);
     const failureScreenshot = getFailureScreenshot(error);
+    if (error instanceof OriginPolitenessError) {
+      // A courtesy deferral, not a failure: 429 keeps the supervisor from ever
+      // escalating it to a paid remote provider, and Retry-After tells the
+      // caller (e.g. the Benefactor orchestrator) when to requeue.
+      return reply
+        .code(429)
+        .header('retry-after', String(Math.max(1, Math.ceil(error.retryAfterMs / 1_000))))
+        .send({
+          ok: false,
+          requestId,
+          strategy,
+          requestedStrategy,
+          durationMs,
+          error: message,
+          errorCode: error.code,
+          retryAfterMs: error.retryAfterMs,
+        });
+    }
     const statusCode = isClientPolicyError(message) ? 400 : 500;
     return reply.code(statusCode).send({
       ok: false,
@@ -591,13 +630,19 @@ async function runScrape(
 ): Promise<Omit<ScrapeResponse, 'durationMs'>> {
   const targetUrl = await validateTargetUrl(input.url);
   const ctx = await createScrapeContext(input, targetUrl, strategy);
-  await enforceResponsibleScrapingPolicy(input, targetUrl, ctx);
+  const releaseOrigin = await enforceResponsibleScrapingPolicy(input, targetUrl, ctx);
   let fetched: FetchedDocument;
   try {
     fetched = await fetchByStrategy(input, targetUrl, strategy, ctx);
   } catch (error) {
     reportProxyOutcome(ctx, false);
     throw error;
+  } finally {
+    releaseOrigin();
+  }
+  // browserless reports the Content API's status, not the target's.
+  if (strategy !== 'browserless') {
+    originPoliteness.recordResponse(targetUrl.origin, fetched.status, fetched.retryAfter);
   }
 
   // Non-browser strategies can detect a challenge but cannot solve it (no page
@@ -697,6 +742,7 @@ async function fetchStaticDocument(
         status: response.status,
         contentType: response.headers.get('content-type') ?? undefined,
         truncated: read.truncated,
+        retryAfter: response.headers.get('retry-after') ?? undefined,
       };
     }
 
@@ -721,10 +767,13 @@ async function fetchWithPlaywright(
     extraHTTPHeaders: buildHeaders(input, targetUrl, targetUrl),
     ...(ctx.proxy ? { proxy: playwrightProxy(ctx.proxy) } : {}),
   });
-  const page = await context.newPage();
+  let page: PlaywrightPage | undefined;
   let blockedRequestError: Error | null = null;
   let failureScreenshot: FailureScreenshot | undefined;
   try {
+    // Created inside the try so a newPage() failure still closes the context.
+    const livePage = await context.newPage();
+    page = livePage;
     await page.route('**/*', async (route) => {
       try {
         await assertAllowedBrowserRequest(route.request().url());
@@ -752,9 +801,9 @@ async function fetchWithPlaywright(
     }
     await orchestrateCaptcha(
       {
-        content: () => page.content(),
-        url: () => page.url(),
-        evaluate: (script) => page.evaluate(script),
+        content: () => livePage.content(),
+        url: () => livePage.url(),
+        evaluate: (script) => livePage.evaluate(script),
       },
       input,
       ctx,
@@ -770,14 +819,15 @@ async function fetchWithPlaywright(
       contentType: response?.headers()['content-type'],
       truncated: html.length >= getMaxHtmlChars(input),
       failureScreenshot,
+      retryAfter: response?.headers()['retry-after'],
     };
   } catch (error) {
-    if (shouldCaptureFailureScreenshot(input, 'playwright')) {
+    if (page && shouldCaptureFailureScreenshot(input, 'playwright')) {
       failureScreenshot ??= await capturePlaywrightFailureScreenshot(page, 'playwright');
     }
     throw attachFailureScreenshot(error, failureScreenshot);
   } finally {
-    await context.close();
+    await releaseBrowserContext('playwright', () => context.close());
   }
 }
 
@@ -790,10 +840,13 @@ async function fetchWithPuppeteer(
   const context = await browser.createBrowserContext(
     ctx.proxy ? { proxyServer: ctx.proxy.label } : {},
   );
-  const page = await context.newPage();
+  let page: PuppeteerPage | undefined;
   let blockedRequestError: Error | null = null;
   let failureScreenshot: FailureScreenshot | undefined;
   try {
+    // Created inside the try so a newPage() failure still closes the context.
+    const livePage = await context.newPage();
+    page = livePage;
     if (ctx.proxy && (ctx.proxy.username || ctx.proxy.password)) {
       await page.authenticate({ username: ctx.proxy.username, password: ctx.proxy.password });
     }
@@ -831,9 +884,9 @@ async function fetchWithPuppeteer(
     }
     await orchestrateCaptcha(
       {
-        content: () => page.content(),
-        url: () => page.url(),
-        evaluate: (script) => page.evaluate(script) as Promise<unknown>,
+        content: () => livePage.content(),
+        url: () => livePage.url(),
+        evaluate: (script) => livePage.evaluate(script) as Promise<unknown>,
       },
       input,
       ctx,
@@ -849,15 +902,38 @@ async function fetchWithPuppeteer(
       contentType: response?.headers()['content-type'],
       truncated: html.length >= getMaxHtmlChars(input),
       failureScreenshot,
+      retryAfter: response?.headers()['retry-after'],
     };
   } catch (error) {
-    if (shouldCaptureFailureScreenshot(input, 'puppeteer')) {
+    if (page && shouldCaptureFailureScreenshot(input, 'puppeteer')) {
       failureScreenshot ??= await capturePuppeteerFailureScreenshot(page, 'puppeteer');
     }
     throw attachFailureScreenshot(error, failureScreenshot);
   } finally {
-    await context.close();
+    await releaseBrowserContext('puppeteer', () => context.close());
   }
+}
+
+/**
+ * Close a per-request browser context without masking the scrape's own error
+ * (a crashed browser rejects close()) or hanging on a wedged browser.
+ */
+async function releaseBrowserContext(
+  strategy: BrowserStrategyName,
+  close: () => Promise<unknown>,
+): Promise<void> {
+  await closeWithTimeout(close, config.browserContextCloseTimeoutMs, (outcome, error) => {
+    const key = `${strategy}:${outcome}`;
+    metrics.browserCleanupProblems.set(key, (metrics.browserCleanupProblems.get(key) ?? 0) + 1);
+    fastify.log.warn(
+      {
+        strategy,
+        outcome,
+        error: error instanceof Error ? error.message.slice(0, 200) : undefined,
+      },
+      'browser context cleanup problem',
+    );
+  });
 }
 
 async function fetchWithBrowserless(
@@ -1600,7 +1676,7 @@ async function enforceResponsibleScrapingPolicy(
   input: ScrapeRequest,
   targetUrl: URL,
   ctx: ScrapeContext,
-): Promise<void> {
+): Promise<() => void> {
   const respectRobots = input.respectRobots ?? config.respectRobots;
   let crawlDelayMs = config.minOriginDelayMs;
   if (!respectRobots) {
@@ -1633,7 +1709,9 @@ async function enforceResponsibleScrapingPolicy(
       );
     }
   }
-  await waitForOriginTurn(targetUrl.origin, crawlDelayMs);
+  // Per-origin concurrency cap + crawl-delay spacing + 429/503 back-off, bounded
+  // by the request's own timeout so a slot is never held by an unbounded sleep.
+  return originPoliteness.acquire(targetUrl.origin, crawlDelayMs, getTimeoutMs(input));
 }
 
 async function loadRobotsText(robotsUrl: URL, ctx: ScrapeContext): Promise<string> {
@@ -1671,18 +1749,6 @@ async function loadRobotsText(robotsUrl: URL, ctx: ScrapeContext): Promise<strin
     if (proxyDispatcher) {
       await proxyDispatcher.close().catch(() => undefined);
     }
-  }
-}
-
-async function waitForOriginTurn(origin: string, delayMs: number): Promise<void> {
-  const now = Date.now();
-  const scheduledAt = Math.max(now, originNextRequestAt.get(origin) ?? now);
-  originNextRequestAt.set(origin, scheduledAt + delayMs);
-  if (originNextRequestAt.size > 1_024) {
-    originNextRequestAt.delete(originNextRequestAt.keys().next().value!);
-  }
-  if (scheduledAt > now) {
-    await sleep(scheduledAt - now);
   }
 }
 
@@ -2019,6 +2085,26 @@ function renderMetrics(): string {
     '# HELP dd_web_scraper_robots_overrides_total Authorized robots.txt overrides used.',
     '# TYPE dd_web_scraper_robots_overrides_total counter',
     `dd_web_scraper_robots_overrides_total ${metrics.robotsOverrides}`,
+    '# HELP dd_web_scraper_origin_politeness_rejections_total Requests deferred with 429 because an origin could not be visited politely within budget.',
+    '# TYPE dd_web_scraper_origin_politeness_rejections_total counter',
+    `dd_web_scraper_origin_politeness_rejections_total ${originPoliteness.counters.rejections}`,
+    '# HELP dd_web_scraper_origin_backoffs_total Per-origin back-offs applied after a target answered 429/503.',
+    '# TYPE dd_web_scraper_origin_backoffs_total counter',
+    `dd_web_scraper_origin_backoffs_total ${originPoliteness.counters.backoffs}`,
+    '# HELP dd_web_scraper_origins_in_backoff Origins currently in a 429/503 back-off window.',
+    '# TYPE dd_web_scraper_origins_in_backoff gauge',
+    `dd_web_scraper_origins_in_backoff ${originPoliteness.snapshot().originsInBackoff}`,
+    '# HELP dd_web_scraper_origin_waiting_requests Requests waiting for a per-origin concurrency slot.',
+    '# TYPE dd_web_scraper_origin_waiting_requests gauge',
+    `dd_web_scraper_origin_waiting_requests ${originPoliteness.snapshot().waitingRequests}`,
+    '# HELP dd_web_scraper_browser_context_cleanup_problems_total Browser context closes that failed or timed out.',
+    '# TYPE dd_web_scraper_browser_context_cleanup_problems_total counter',
+    ...(['playwright', 'puppeteer'] as const).flatMap((strategy) =>
+      (['failed', 'timed-out'] as const).map(
+        (outcome) =>
+          `dd_web_scraper_browser_context_cleanup_problems_total{strategy="${strategy}",outcome="${outcome}"} ${metrics.browserCleanupProblems.get(`${strategy}:${outcome}`) ?? 0}`,
+      ),
+    ),
     '# HELP dd_web_scraper_captcha_total CAPTCHA orchestration events by outcome and type.',
     '# TYPE dd_web_scraper_captcha_total counter',
   );
@@ -2099,6 +2185,9 @@ function statusDescriptor(): StatusDescriptor {
     respectRobots: config.respectRobots,
     allowRobotsOverride: config.allowRobotsOverride,
     minOriginDelayMs: config.minOriginDelayMs,
+    maxPerOriginConcurrent: config.maxPerOriginConcurrent,
+    maxOriginWaitMs: config.maxOriginWaitMs,
+    originBackoffMaxMs: config.originBackoffMaxMs,
     allowCaptchaSolving: config.allowCaptchaSolving,
   };
 }
