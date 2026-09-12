@@ -49,6 +49,18 @@ export type ApifyFallbackChainResult = {
   attempts: FallbackAttempt[];
 };
 
+export class ApifyFallbackChainError extends Error {
+  readonly selection: FallbackChainSelection;
+  readonly attempts: FallbackAttempt[];
+
+  constructor(message: string, selection: FallbackChainSelection, attempts: FallbackAttempt[]) {
+    super(message);
+    this.name = 'ApifyFallbackChainError';
+    this.selection = { route: selection.route, actors: [...selection.actors] };
+    this.attempts = attempts.map((attempt) => ({ ...attempt }));
+  }
+}
+
 export type ApifyFallbackRunner = typeof runApifyFallback;
 
 const MAX_DOMAIN_ROUTES = 64;
@@ -105,7 +117,7 @@ export async function runApifyFallbackChain(
 ): Promise<ApifyFallbackChainResult> {
   const selection = selectFallbackActors(request.url, chainConfig);
   const actors = selection.actors.slice(0, chainConfig.maxAttempts);
-  if (actors.length === 0) throw new Error('Apify fallback chain has no configured Actor');
+  if (actors.length === 0) throw new ApifyFallbackChainError('Apify fallback chain has no configured Actor', selection, []);
 
   const localBudgetMs = clampInteger(
     request.timeoutMs ?? baseConfig.localDefaultTimeoutMs,
@@ -114,7 +126,11 @@ export async function runApifyFallbackChain(
   );
   const providerWindowMs = baseConfig.maxTotalTimeoutMs - localBudgetMs - baseConfig.minDelayMs;
   if (providerWindowMs < 1_000) {
-    throw new Error(`Apify fallback chain total timeout budget is exhausted (remaining=${providerWindowMs}ms)`);
+    throw new ApifyFallbackChainError(
+      `Apify fallback chain total timeout budget is exhausted (remaining=${providerWindowMs}ms)`,
+      selection,
+      [],
+    );
   }
 
   // Apify's maxTotalChargeUsd is a per-run cap. Divide the chain ceiling over
@@ -125,7 +141,11 @@ export async function runApifyFallbackChain(
     chainConfig.maxChainTotalChargeUsd / actors.length,
   );
   if (!Number.isFinite(perAttemptChargeCap) || perAttemptChargeCap < 0.01) {
-    throw new Error('Apify fallback chain charge budget is too small for configured attempts');
+    throw new ApifyFallbackChainError(
+      'Apify fallback chain charge budget is too small for configured attempts',
+      selection,
+      [],
+    );
   }
 
   const attempts: FallbackAttempt[] = [];
@@ -185,10 +205,12 @@ export async function runApifyFallbackChain(
   }
 
   const summary = attempts.map((attempt) => `${attempt.actorId}:${attempt.errorClass ?? attempt.outcome}`).join(',');
-  throw new Error(
+  throw new ApifyFallbackChainError(
     `Apify fallback chain failed after ${attempts.length}/${actors.length} attempt(s)` +
       (summary ? ` [${summary}]` : '') +
       (lastError ? `: ${lastError.message}` : ''),
+    selection,
+    attempts,
   );
 }
 
