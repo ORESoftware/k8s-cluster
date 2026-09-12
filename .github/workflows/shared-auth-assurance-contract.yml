@@ -1,0 +1,40 @@
+name: shared-auth-assurance-contract
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-auth-assurance-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile dependency-free validator
+        run: python3 -m py_compile security/verify_shared_auth_assurance.py
+      - name: Prove validator catches policy regressions
+        run: python3 security/verify_shared_auth_assurance.py --self-test
+      - name: Validate merged Shared Auth assurance boundary
+        run: python3 security/verify_shared_auth_assurance.py src/service.rs
+      - name: Record evidence boundary
+        if: always()
+        run: |
+          {
+            echo '### Shared Auth assurance evidence'
+            echo
+            echo 'This job is dependency-free and always runs on an allocated runner.'
+            echo 'It does **not** replace locked Cargo check, Clippy, or Rust tests.'
+            echo 'Credential-dependent Cargo steps must be reported separately and may not be treated as passing when skipped.'
+          } >> "$GITHUB_STEP_SUMMARY"

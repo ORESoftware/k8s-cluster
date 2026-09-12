@@ -1,0 +1,80 @@
+name: agent instructions
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-instructions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Validate canonical instructions and root-to-leaf discovery
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path.cwd()
+          canonical = root / "agents.md"
+          assert canonical.is_file(), "missing lowercase agents.md"
+          text = canonical.read_text(encoding="utf-8")
+          for phrase in (
+              "github.com/sonus-auris",
+              "Linear project: `github.com/sonus-auris`",
+              "Resolve conflicts semantically",
+              "git fetch --all --prune",
+              "<<<<<<<",
+              "Supabase Auth",
+              "Postgres RLS",
+              "Never auto-link identities by email",
+          ):
+              assert phrase in text, f"agents.md missing {phrase}"
+
+          pointers = {
+              "AGENTS.md": "# Canonical agent instructions\n\nRead and apply [`agents.md`](agents.md). This compatibility file must not duplicate repository instructions.\n",
+              ".claude/CLAUDE.md": "# Canonical agent instructions\n\nRead and apply [`../agents.md`](../agents.md). Do not duplicate repository instructions here.\n",
+              ".gemini/GEMINI.md": "# Canonical agent instructions\n\nRead and apply [`../agents.md`](../agents.md). Do not duplicate repository instructions here.\n",
+              ".openai/AGENTS.md": "# Canonical agent instructions\n\nRead and apply [`../agents.md`](../agents.md). Do not duplicate repository instructions here.\n",
+          }
+          for relative, expected in pointers.items():
+              path = root / relative
+              assert path.is_file(), f"missing {relative}"
+              assert path.read_text(encoding="utf-8") == expected, f"{relative} duplicates or diverges"
+
+          start = (root / "src").resolve(strict=True)
+          ancestors = list(start.parents)
+          ancestors.reverse()
+          ancestors.append(start)
+          chain = []
+          seen = set()
+          for directory in ancestors:
+              candidate = directory / "agents.md"
+              if not candidate.exists():
+                  continue
+              resolved = candidate.resolve(strict=True)
+              candidate.read_text(encoding="utf-8")
+              if resolved in seen:
+                  continue
+              seen.add(resolved)
+              chain.append(resolved)
+          assert chain == [canonical.resolve()], f"wrong agents.md chain: {chain}"
+          print("agents.md chain for src/:")
+          for path in chain:
+              print(f"  - {path.relative_to(root)}")
+          PY
