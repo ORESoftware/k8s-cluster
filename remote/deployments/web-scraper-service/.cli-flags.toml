@@ -278,6 +278,13 @@ type = "integer"
 default = 1
 help = "Maximum simultaneous Apify fallback runs per pod."
 
+[flags.apify-max-per-minute]
+env = "APIFY_FALLBACK_MAX_PER_MINUTE"
+aliases = ["apify-max-per-minute"]
+type = "integer"
+default = 20
+help = "Maximum costed Apify fallback starts admitted per rolling 60-second window per pod."
+
 [flags.apify-min-delay-ms]
 env = "APIFY_FALLBACK_MIN_DELAY_MS"
 aliases = ["apify-min-delay-ms"]
