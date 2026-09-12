@@ -1,0 +1,129 @@
+name: Reconcile DEN-319 publisher hardening on current main
+
+on:
+  push:
+    branches:
+      - semantic/den-319-publisher-browser-canary-current-main
+    paths:
+      - .github/workflows/temporary-den-319-semantic-reconcile.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-319-publisher-browser-current-main-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/semantic/den-319-publisher-browser-canary-current-main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact semantic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: semantic/den-319-publisher-browser-canary-current-main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Import reviewed hardening without replacing newer mainline contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          reviewed_sha='3fcf7a7822bc3c571453d527efb8925cf8a23ac3'
+          git fetch --no-tags origin "$reviewed_sha"
+          test "$(git rev-parse FETCH_HEAD)" = "$reviewed_sha"
+
+          reviewed_paths=(
+            .github/workflows/critical-org-fleet-browser-canary.yml
+            .github/workflows/critical-org-fleet-workflow-contract.yml
+            .github/workflows/ops-run-canonical-fleet-isolated.yml
+            remote/tests/browser/critical-org-fleet-publication.test.mjs
+            scripts/ops/tests/test_critical_org_fleet_workflows.py
+          )
+          git checkout "$reviewed_sha" -- "${reviewed_paths[@]}"
+
+          git rm -f --ignore-unmatch \
+            .github/workflows/ops-dispatch-full-critical-org-fleet-publication.yml \
+            .github/workflows/ops-supervise-full-critical-org-fleet-publication.yml \
+            .github/workflows/ops-trigger-full-critical-org-fleet-publication.yml
+
+          # Preserve the newer mainline dispatcher and exact public-fleet finalizer.
+          test -f .github/workflows/ops-dispatch-isolated-fleet-from-comment.yml
+          test -f .github/workflows/critical-org-fleet-finalizer-contract.yml
+          test -f scripts/ops/finalize_missing_org_repositories.py
+          test -f scripts/ops/tests/test_finalize_missing_org_repositories.py
+
+          rm -f .github/workflows/temporary-den-319-semantic-reconcile.yml
+
+      - name: Validate the conceptual merge
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
+            scripts/ops/finalize_missing_org_repositories.py \
+            scripts/ops/tests/test_finalize_missing_org_repositories.py \
+            scripts/ops/tests/test_critical_org_fleet_workflows.py
+          python3 -m unittest -v \
+            scripts.ops.tests.test_finalize_missing_org_repositories \
+            scripts.ops.tests.test_critical_org_fleet_workflows
+          node --check remote/tests/browser/critical-org-fleet-publication.test.mjs
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+
+          publisher = Path('.github/workflows/ops-run-canonical-fleet-isolated.yml')
+          workflow = yaml.safe_load(publisher.read_text(encoding='utf-8'))
+          triggers = workflow.get('on') if 'on' in workflow else workflow.get(True)
+          if not isinstance(triggers, dict) or set(triggers) != {'workflow_dispatch'}:
+              raise SystemExit(f'publisher must be explicit dispatch only: {triggers!r}')
+          text = publisher.read_text(encoding='utf-8')
+          required = (
+              'critical-org-fleet-publication',
+              'trusted_sha="$GITHUB_SHA"',
+              'trusted_to_current_after_auth',
+              '(.organizations.hypesiege.repositories | length) == 15',
+              '(.organizations.StreemPilot.repositories | length) == 17',
+          )
+          for fragment in required:
+              if fragment not in text:
+                  raise SystemExit(f'missing publisher invariant: {fragment}')
+          PY
+
+          test -f .github/workflows/ops-dispatch-isolated-fleet-from-comment.yml
+          test -f .github/workflows/critical-org-fleet-finalizer-contract.yml
+          test ! -e .github/workflows/ops-dispatch-full-critical-org-fleet-publication.yml
+          test ! -e .github/workflows/ops-supervise-full-critical-org-fleet-publication.yml
+          test ! -e .github/workflows/ops-trigger-full-critical-org-fleet-publication.yml
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- .; then
+            echo 'conflict markers remain' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Commit the reconciled current-main tree
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git add -A
+          git diff --cached --check
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            .github/workflows/critical-org-fleet-browser-canary.yml \
+            .github/workflows/critical-org-fleet-workflow-contract.yml \
+            .github/workflows/ops-dispatch-full-critical-org-fleet-publication.yml \
+            .github/workflows/ops-run-canonical-fleet-isolated.yml \
+            .github/workflows/ops-supervise-full-critical-org-fleet-publication.yml \
+            .github/workflows/ops-trigger-full-critical-org-fleet-publication.yml \
+            .github/workflows/temporary-den-319-semantic-reconcile.yml \
+            remote/tests/browser/critical-org-fleet-publication.test.mjs \
+            scripts/ops/tests/test_critical_org_fleet_workflows.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git config user.name ORESoftware
+          git config user.email 11139560+ORESoftware@users.noreply.github.com
+          git commit -m 'harden(DEN-319): reconcile isolated publisher on current main'
+          git push origin HEAD:semantic/den-319-publisher-browser-canary-current-main
