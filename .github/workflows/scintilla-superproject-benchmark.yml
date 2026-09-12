@@ -1,0 +1,342 @@
+name: Scintilla superproject multi-architecture benchmark
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/scintilla-superproject-benchmark.yml"
+      - "docs/scintilla-superproject-benchmark.md"
+      - ".gitmodules"
+  workflow_dispatch:
+    inputs:
+      runner_repository:
+        description: Scintilla runner repository to overlay into the pinned monorepo path
+        required: true
+        default: scintilla-run/gleam-lambda-runner
+        type: string
+      runner_ref:
+        description: Branch, tag, or immutable commit to build
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scintilla-superproject-benchmark-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILDX_VERSION: v0.37.0
+  RUNNER_PATH: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
+  RUNNER_REPOSITORY: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_repository || 'scintilla-run/gleam-lambda-runner' }}
+  RUNNER_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.runner_ref || '25689f71870a4b975ec519d384a30fd2a1409626' }}
+
+jobs:
+  build-and-benchmark:
+    name: Build and benchmark ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+            runner_machine: x86_64
+            compatibility_dockerfile: Dockerfile.x86-64.dkf
+            lean_dockerfile: runtime-images/control-plane-lean-amd64.Dockerfile
+            iterations: 7
+            startup_timeout_ms: 60000
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            runner_machine: aarch64
+            compatibility_dockerfile: Dockerfile.arm64.dkf
+            lean_dockerfile: runtime-images/control-plane-lean-arm64.Dockerfile
+            iterations: 7
+            startup_timeout_ms: 60000
+    env:
+      COMPATIBILITY_IMAGE: scintilla-compatibility:${{ matrix.arch }}-${{ github.run_id }}
+      LEAN_IMAGE: scintilla-lean:${{ matrix.arch }}-${{ github.run_id }}
+
+    steps:
+      - name: Check out the cluster superproject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Verify native runner architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(uname -m)"
+          if [[ "$actual" != "${{ matrix.runner_machine }}" ]]; then
+            echo "runner architecture $actual does not match ${{ matrix.runner_machine }}" >&2
+            exit 1
+          fi
+          docker version
+
+      - name: Use the Node release supported by tjsv and the runtime probes
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+
+      - name: Use the Python runtime represented by the child adapter
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Use the Ruby runtime represented by the child adapter
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "3.3"
+
+      - name: Resolve the immutable shared-library and monorepo gitlinks
+        id: pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          libs_sha="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          monorepo_sha="$(git ls-files --stage -- remote/deployments/scintilla-run-monorepo | awk '$1 == 160000 { print $2; exit }')"
+          for pair in "libs:$libs_sha" "monorepo:$monorepo_sha"; do
+            name="${pair%%:*}"
+            sha="${pair#*:}"
+            if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "$name does not resolve to one mode-160000 gitlink" >&2
+              exit 1
+            fi
+          done
+          printf 'libs_sha=%s\n' "$libs_sha" >> "$GITHUB_OUTPUT"
+          printf 'monorepo_sha=%s\n' "$monorepo_sha" >> "$GITHUB_OUTPUT"
+          mkdir -p remote remote/deployments/scintilla-run-monorepo/apps
+
+      - name: Mint a repository-restricted shared-libraries token
+        id: libs-app-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: ORESoftware
+          repositories: k8s-libs-and-shared-defs
+          permission-contents: read
+
+      - name: Mint a repository-restricted Scintilla token
+        id: scintilla-app-token
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        with:
+          app-id: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          private-key: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          owner: scintilla-run
+          repositories: gleam-lambda-runner
+          permission-contents: read
+
+      - name: Check out the exact pinned shared-library tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.pins.outputs.libs_sha }}
+          path: remote/libs
+          fetch-depth: 1
+          persist-credentials: false
+          token: ${{ steps.libs-app-token.outputs.token }}
+
+      - name: Overlay the exact candidate runner at its canonical nested path
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.RUNNER_REPOSITORY }}
+          ref: ${{ env.RUNNER_REF }}
+          path: remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
+          fetch-depth: 1
+          persist-credentials: false
+          token: ${{ steps.scintilla-app-token.outputs.token }}
+
+      - name: Verify every authoritative source revision and contract gate
+        shell: bash
+        env:
+          EXPECTED_LIBS_SHA: ${{ steps.pins.outputs.libs_sha }}
+          EXPECTED_MONOREPO_SHA: ${{ steps.pins.outputs.monorepo_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_LIBS_SHA"
+          actual_monorepo_pin="$(git ls-files --stage -- remote/deployments/scintilla-run-monorepo | awk '$1 == 160000 { print $2; exit }')"
+          test "$actual_monorepo_pin" = "$EXPECTED_MONOREPO_SHA"
+          candidate="$(git -C "$RUNNER_PATH" rev-parse HEAD)"
+          if [[ "$RUNNER_REF" =~ ^[0-9a-f]{40}$ ]] && [[ "$candidate" != "$RUNNER_REF" ]]; then
+            echo "candidate runner resolved to $candidate instead of $RUNNER_REF" >&2
+            exit 1
+          fi
+          grep -qF \
+            'ORESoftware/typespec-json-schema-validator@03ccc0ecdfc70f9198c3ccf80718910961d3fde1' \
+            "$RUNNER_PATH/.github/workflows/runtime-wire-contract.yml"
+          for required in \
+            contracts/runtime-wire/main.tsp \
+            contracts/runtime-wire/authored.schema.json \
+            scripts/capture-runtime-wire-evidence.mjs \
+            test/runtime-wire-contract.test.mjs \
+            test/runtime-wire-execution.test.mjs; do
+            test -f "$RUNNER_PATH/$required" || {
+              echo "candidate is missing runtime-contract input: $required" >&2
+              exit 1
+            }
+          done
+          printf 'remote/libs=%s\nmonorepo-gitlink=%s\nrunner=%s\n' \
+            "$EXPECTED_LIBS_SHA" "$EXPECTED_MONOREPO_SHA" "$candidate"
+
+      - name: Execute child runtimes and capture observed wire instances
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_PATH/artifacts/runtime-wire"
+          mkdir -p "$RUNNER_PATH/artifacts/runtime-wire/instances"
+          cp -R \
+            "$RUNNER_PATH/contracts/runtime-wire/instances/." \
+            "$RUNNER_PATH/artifacts/runtime-wire/instances/"
+          node "$RUNNER_PATH/scripts/capture-runtime-wire-evidence.mjs"
+
+      - name: Compare the candidate's independent TypeSpec and JSON Schema authorities
+        uses: ORESoftware/typespec-json-schema-validator@03ccc0ecdfc70f9198c3ccf80718910961d3fde1
+        with:
+          typespec: ${{ env.RUNNER_PATH }}/contracts/runtime-wire/main.tsp
+          schema: ${{ env.RUNNER_PATH }}/contracts/runtime-wire/authored.schema.json
+          instances: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/instances
+          report: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/tjsv-report.json
+          sarif: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/tjsv-report.sarif
+          contract_ir: ${{ env.RUNNER_PATH }}/artifacts/runtime-wire/contract-ir.json
+          output_dir: ${{ env.RUNNER_PATH }}/.typespec-json-schema-validator/runtime-wire
+          max_probes: "64"
+          int64_strategy: string
+          seal_object_schemas: "false"
+          polymorphic_models_strategy: oneOf
+          quiet: "false"
+
+      - name: Prove the candidate's parity and concrete runtime evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - "$RUNNER_PATH" <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = process.argv[2];
+          const load = (name) => JSON.parse(
+            fs.readFileSync(path.join(root, 'artifacts/runtime-wire', name), 'utf8'),
+          );
+          const report = load('tjsv-report.json');
+          const contractIr = load('contract-ir.json');
+          const execution = load('runtime-execution-evidence.json');
+          if (
+            report.schema !== 'ores.typespec-json-schema-validator.report/v1' ||
+            report.status !== 'passed' ||
+            report.zeroUnexplainedFindings !== true ||
+            !Array.isArray(report.findings) ||
+            report.findings.length !== 0
+          ) {
+            throw new Error('candidate TJSV receipt did not authorize the build');
+          }
+          if (
+            contractIr.status !== 'passed' ||
+            contractIr.admissible !== true ||
+            contractIr.editableAuthority !== false
+          ) {
+            throw new Error('candidate Contract IR is not admissible');
+          }
+          const runtimes = execution.runtimes.map(({ runtime }) => runtime);
+          if (
+            execution.schemaVersion !==
+              'scintilla.run/runtime-wire-execution-evidence.v1' ||
+            execution.directRuntimeCount !== 4 ||
+            JSON.stringify(runtimes) !==
+              JSON.stringify(['nodejs', 'python3', 'ruby', 'bash'])
+          ) {
+            throw new Error('candidate runtime execution evidence is incomplete');
+          }
+          NODE
+          (
+            cd "$RUNNER_PATH"
+            node --test \
+              test/runtime-wire-contract.test.mjs \
+              test/runtime-wire-execution.test.mjs
+          )
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+
+      - name: Build compatibility image from the full cluster-root context
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform "${{ matrix.platform }}" \
+            --file "$RUNNER_PATH/${{ matrix.compatibility_dockerfile }}" \
+            --tag "$COMPATIBILITY_IMAGE" \
+            --cache-from "type=gha,scope=scintilla-compatibility-${{ matrix.arch }}" \
+            --cache-to "type=gha,mode=max,scope=scintilla-compatibility-${{ matrix.arch }}" \
+            --provenance=false \
+            --sbom=false \
+            --load \
+            .
+
+      - name: Build lean image from the full cluster-root context
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform "${{ matrix.platform }}" \
+            --file "$RUNNER_PATH/${{ matrix.lean_dockerfile }}" \
+            --tag "$LEAN_IMAGE" \
+            --cache-from "type=gha,scope=scintilla-lean-${{ matrix.arch }}" \
+            --cache-to "type=gha,mode=max,scope=scintilla-lean-${{ matrix.arch }}" \
+            --provenance=false \
+            --sbom=false \
+            --load \
+            .
+
+      - name: Verify loaded OCI architectures
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Architecture}}' "$COMPATIBILITY_IMAGE")" = "${{ matrix.arch }}"
+          test "$(docker image inspect --format '{{.Architecture}}' "$LEAN_IMAGE")" = "${{ matrix.arch }}"
+
+      - name: Measure image size and create-to-health cold start
+        id: benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/scintilla-benchmark-${{ matrix.arch }}"
+          mkdir -p "$output"
+          node "$RUNNER_PATH/scripts/benchmark-container-cold-start.mjs" \
+            --platform "${{ matrix.platform }}" \
+            --legacy-image "$COMPATIBILITY_IMAGE" \
+            --lean-image "$LEAN_IMAGE" \
+            --iterations "${{ matrix.iterations }}" \
+            --timeout-ms "${{ matrix.startup_timeout_ms }}" \
+            --output "$output/results.json" \
+            --markdown "$output/results.md"
+          cp -R "$RUNNER_PATH/artifacts/runtime-wire" "$output/runtime-wire"
+          {
+            printf 'runner_sha=%s\n' "$(git -C "$RUNNER_PATH" rev-parse HEAD)"
+            printf 'libs_sha=%s\n' "$(git -C remote/libs rev-parse HEAD)"
+            printf 'monorepo_gitlink=%s\n' "${{ steps.pins.outputs.monorepo_sha }}"
+            printf 'compatibility_dockerfile=%s\n' "${{ matrix.compatibility_dockerfile }}"
+            printf 'lean_dockerfile=%s\n' "${{ matrix.lean_dockerfile }}"
+            printf 'tjsv_run_id=%s\n' \
+              "$(jq -r .runId "$RUNNER_PATH/artifacts/runtime-wire/tjsv-report.json")"
+            printf 'runtime_execution_sha256=%s\n' \
+              "$(sha256sum "$RUNNER_PATH/artifacts/runtime-wire/runtime-execution-evidence.json" | awk '{print $1}')"
+          } > "$output/provenance.env"
+          printf 'output=%s\n' "$output" >> "$GITHUB_OUTPUT"
+          cat "$output/results.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish benchmark and contract evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: scintilla-superproject-${{ matrix.arch }}-${{ github.run_id }}
+          path: ${{ steps.benchmark.outputs.output }}
+          if-no-files-found: error
+          retention-days: 30
