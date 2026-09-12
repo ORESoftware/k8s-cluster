@@ -1,0 +1,358 @@
+{
+  "fleet": {
+    "default_visibility": "private",
+    "production_org": "evento-globolo",
+    "repositories": [
+      {
+        "kind": "client",
+        "languages": [
+          "rust"
+        ],
+        "name": "evento-clients-rust",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the Rust event-management SDK through Cargo, Zed, and pinned git source while enforcing event, venue, organizer, attendee, and error models.",
+        "source_refs": [
+          "clients",
+          "libs"
+        ],
+        "suites": [
+          "sdk-surface",
+          "event-model",
+          "timezone",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "typescript"
+        ],
+        "name": "evento-clients-typescript",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the TypeScript event-management SDK through npm, Zed, and pinned git source in browser and Node environments.",
+        "source_refs": [
+          "clients",
+          "libs"
+        ],
+        "suites": [
+          "sdk-surface",
+          "event-model",
+          "browser-node-parity",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "dart"
+        ],
+        "name": "evento-clients-dart",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the Dart event-management SDK through pub, Zed, and pinned git source across Flutter and web.",
+        "source_refs": [
+          "clients",
+          "libs"
+        ],
+        "suites": [
+          "sdk-surface",
+          "event-model",
+          "flutter-web-parity",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "api",
+        "languages": [
+          "python"
+        ],
+        "name": "evento-api-contract",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate events, venues, organizers, attendees, ticketing, publishing, authentication, pagination, idempotency, and webhooks.",
+        "source_refs": [
+          "api",
+          "clients",
+          "libs"
+        ],
+        "suites": [
+          "openapi-contract",
+          "webhooks",
+          "idempotency",
+          "pagination"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "typescript"
+        ],
+        "name": "evento-web-playwright",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Test event creation, editing, publishing, discovery, registration, checkout, cancellation, and organizer dashboards in all browser engines.",
+        "source_refs": [
+          "web",
+          "api"
+        ],
+        "suites": [
+          "chromium",
+          "firefox",
+          "webkit",
+          "organizer-flows"
+        ]
+      },
+      {
+        "kind": "device",
+        "languages": [
+          "dart"
+        ],
+        "name": "evento-flutter-emulators",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest"
+        ],
+        "purpose": "Run attendee and organizer Flutter flows on Android and iOS with offline tickets, camera/QR handoff, notifications, and deep links.",
+        "source_refs": [
+          "flutter",
+          "clients",
+          "api"
+        ],
+        "suites": [
+          "android-emulator",
+          "ios-simulator",
+          "offline-ticket",
+          "deep-links"
+        ]
+      },
+      {
+        "kind": "contract",
+        "languages": [
+          "python"
+        ],
+        "name": "evento-timezone-locale",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Exercise DST boundaries, recurring events, local-day semantics, translated content, locale formatting, currencies, and organizer/attendee timezone differences.",
+        "source_refs": [
+          "libs",
+          "api",
+          "clients"
+        ],
+        "suites": [
+          "dst",
+          "recurrence",
+          "locales",
+          "currency"
+        ]
+      },
+      {
+        "kind": "interop",
+        "languages": [
+          "python"
+        ],
+        "name": "evento-calendar-interop",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Round-trip ICS, Google Calendar, Outlook, CalDAV, reminders, updates, recurrence exceptions, and cancellation semantics.",
+        "source_refs": [
+          "api",
+          "libs",
+          "connectors"
+        ],
+        "suites": [
+          "ics",
+          "google-calendar",
+          "outlook",
+          "caldav"
+        ]
+      },
+      {
+        "kind": "interop",
+        "languages": [
+          "typescript",
+          "python"
+        ],
+        "name": "evento-crosspost-connectors",
+        "package_managers": [
+          "npm",
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate sandbox cross-posting adapters, provider field mapping, media, retries, rate limits, partial failures, and reconciliation.",
+        "source_refs": [
+          "connectors",
+          "api",
+          "clients"
+        ],
+        "suites": [
+          "meta",
+          "eventbrite",
+          "meetup",
+          "reconciliation"
+        ]
+      },
+      {
+        "kind": "payments",
+        "languages": [
+          "python"
+        ],
+        "name": "evento-ticketing-sandbox",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Exercise ticket inventory, holds, checkout, refunds, webhook replay, duplicate delivery, tax/currency boundaries, and payment-provider sandboxes.",
+        "source_refs": [
+          "api",
+          "clients"
+        ],
+        "suites": [
+          "inventory-holds",
+          "checkout",
+          "refunds",
+          "webhook-replay"
+        ]
+      },
+      {
+        "kind": "load",
+        "languages": [
+          "javascript"
+        ],
+        "name": "evento-notification-load",
+        "package_managers": [
+          "npm",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Measure email, push, webhook, reminder, and event-update fan-out with retries, rate limits, backpressure, and dead letters.",
+        "services": [
+          "postgres",
+          "nats"
+        ],
+        "source_refs": [
+          "api",
+          "infra"
+        ],
+        "suites": [
+          "fanout",
+          "rate-limit",
+          "retry",
+          "dead-letter"
+        ]
+      }
+    ],
+    "sources": {
+      "api": {
+        "alias": "api",
+        "repository": "evento-globolo/evento-globolo-api-server.rs",
+        "required": false,
+        "role": "api",
+        "zed_dependency": false
+      },
+      "clients": {
+        "alias": "clients",
+        "repository": "evento-globolo/evento-globolo-clients",
+        "required": false,
+        "role": "clients",
+        "zed_dependency": true
+      },
+      "connectors": {
+        "alias": "connectors",
+        "repository": "evento-globolo/evento-globolo-connectors",
+        "required": false,
+        "role": "connectors",
+        "zed_dependency": false
+      },
+      "flutter": {
+        "alias": "flutter",
+        "repository": "evento-globolo/evento-globolo-flutter",
+        "required": false,
+        "role": "ui",
+        "zed_dependency": false
+      },
+      "infra": {
+        "alias": "infra",
+        "repository": "evento-globolo/evento-globolo-infra",
+        "required": false,
+        "role": "infra",
+        "zed_dependency": false
+      },
+      "libs": {
+        "alias": "libs",
+        "repository": "evento-globolo/evento-globolo-libs",
+        "required": false,
+        "role": "lib",
+        "zed_dependency": true
+      },
+      "web": {
+        "alias": "web",
+        "repository": "evento-globolo/evento-globolo-web-server.rs",
+        "required": false,
+        "role": "ui",
+        "zed_dependency": false
+      }
+    },
+    "summary": "Planned SDK, API, browser, mobile, timezone, calendar, cross-posting, ticketing, and notification coverage."
+  },
+  "test_org": "evento-globolo-test"
+}

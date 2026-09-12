@@ -1,0 +1,120 @@
+name: Publish test organization repository fleets
+run-name: Publish test organization repository fleets @ ${{ github.sha }}
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/ops-publish-test-org-repository-fleets.yml'
+      - 'config/test_org_repository_fleets/**'
+      - 'scripts/ops/bootstrap_test_org_repository_fleets.py'
+      - 'scripts/ops/test_fleet_publisher/**'
+      - 'scripts/ops/run_protected_test_org_repository_fleet_publisher.sh'
+      - 'tests/ops/test_bootstrap_test_org_repository_fleets.py'
+      - 'docs/operations/test-org-repository-fleets.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/ops-publish-test-org-repository-fleets.yml'
+      - 'config/test_org_repository_fleets/**'
+      - 'scripts/ops/bootstrap_test_org_repository_fleets.py'
+      - 'scripts/ops/test_fleet_publisher/**'
+      - 'scripts/ops/run_protected_test_org_repository_fleet_publisher.sh'
+      - 'tests/ops/test_bootstrap_test_org_repository_fleets.py'
+      - 'docs/operations/test-org-repository-fleets.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ops-test-organization-repository-fleets
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind validation to the exact head revision
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+
+      - name: Validate the bounded fleet publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/run_protected_test_org_repository_fleet_publisher.sh
+          python3 -m py_compile scripts/ops/bootstrap_test_org_repository_fleets.py
+          python3 -m unittest discover \
+            -s tests/ops \
+            -p 'test_bootstrap_test_org_repository_fleets.py' \
+            -v
+
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Bind publication to exact trusted main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Validate before credential access
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/ops/run_protected_test_org_repository_fleet_publisher.sh
+          python3 -m py_compile scripts/ops/bootstrap_test_org_repository_fleets.py
+          python3 -m unittest discover \
+            -s tests/ops \
+            -p 'test_bootstrap_test_org_repository_fleets.py' \
+            -v
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: test-org-repository-fleet-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Create, commit, open PRs, merge when allowed, and verify the fixed fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/test-org-repository-fleet.md"
+          bash scripts/ops/run_protected_test_org_repository_fleet_publisher.sh \
+            "$GITHUB_SHA" \
+            "$GITHUB_WORKSPACE" \
+            | tee "$report"
+          grep -Fq '<!-- test-org-repository-fleet-report-complete -->' "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"

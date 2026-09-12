@@ -1,0 +1,293 @@
+{
+  "fleet": {
+    "default_visibility": "private",
+    "production_org": "embedded-alerts",
+    "repositories": [
+      {
+        "kind": "client",
+        "languages": [
+          "rust"
+        ],
+        "name": "eal-clients-rust",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the Rust embedded-alerts SDK through Cargo, Zed, and pinned git source while enforcing delivery, acknowledgement, and error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "serialization",
+          "delivery-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "typescript"
+        ],
+        "name": "eal-clients-typescript",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the TypeScript embedded-alerts SDK through npm, Zed, and pinned git source in browser and Node environments.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "browser-node-parity",
+          "delivery-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "dart"
+        ],
+        "name": "eal-clients-dart",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the Dart embedded-alerts SDK through pub, Zed, and pinned git source across Flutter and web.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "flutter-web-parity",
+          "delivery-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "api",
+        "languages": [
+          "python"
+        ],
+        "name": "embedded-alerts-api-contract",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate alert creation, targeting, acknowledgement, pagination, authentication, idempotency, retries, and realtime delivery.",
+        "source_refs": [
+          "api",
+          "interfaces",
+          "clients"
+        ],
+        "suites": [
+          "openapi-contract",
+          "targeting",
+          "acknowledgement",
+          "realtime"
+        ]
+      },
+      {
+        "kind": "load",
+        "languages": [
+          "javascript"
+        ],
+        "name": "embedded-alerts-api-load",
+        "package_managers": [
+          "npm",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Measure fan-out, acknowledgement, retry queues, rate limits, and websocket delivery under sustained and burst traffic.",
+        "services": [
+          "postgres",
+          "nats"
+        ],
+        "source_refs": [
+          "api"
+        ],
+        "suites": [
+          "k6-smoke",
+          "burst",
+          "fanout",
+          "websocket-load"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "dart"
+        ],
+        "name": "embedded-alerts-flutter-ui",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest"
+        ],
+        "purpose": "Run Flutter widget, golden, navigation, accessibility, Android emulator, and iOS simulator tests for embedded alert surfaces.",
+        "source_refs": [
+          "flutter",
+          "clients"
+        ],
+        "suites": [
+          "widget",
+          "golden",
+          "android-emulator",
+          "ios-simulator"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "typescript"
+        ],
+        "name": "embedded-alerts-web-playwright",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Test embedded web alerts in Chromium, Firefox, and WebKit across host applications, tenant themes, and responsive layouts.",
+        "source_refs": [
+          "web",
+          "clients"
+        ],
+        "suites": [
+          "chromium",
+          "firefox",
+          "webkit",
+          "responsive-layout"
+        ]
+      },
+      {
+        "kind": "security",
+        "languages": [
+          "typescript"
+        ],
+        "name": "embedded-alerts-cross-origin-embed",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate iframe and script embedding, CSP, CORS, postMessage boundaries, tenant isolation, untrusted hosts, and clickjacking defenses.",
+        "source_refs": [
+          "web",
+          "api",
+          "clients"
+        ],
+        "suites": [
+          "iframe",
+          "csp",
+          "cors",
+          "tenant-isolation"
+        ]
+      },
+      {
+        "kind": "chaos",
+        "languages": [
+          "typescript",
+          "dart"
+        ],
+        "name": "embedded-alerts-offline-reconnect",
+        "package_managers": [
+          "npm",
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Queue, reconnect, deduplicate, order, acknowledge, and expire alerts across browser and Flutter clients after network loss.",
+        "services": [
+          "toxiproxy"
+        ],
+        "source_refs": [
+          "clients",
+          "api",
+          "flutter",
+          "web"
+        ],
+        "suites": [
+          "offline-queue",
+          "reconnect",
+          "deduplication",
+          "expiry"
+        ]
+      }
+    ],
+    "sources": {
+      "api": {
+        "alias": "api",
+        "repository": "embedded-alerts/embedded-alerts-api-server.rs",
+        "required": false,
+        "role": "api",
+        "zed_dependency": false
+      },
+      "clients": {
+        "alias": "clients",
+        "repository": "embedded-alerts/eal-clients",
+        "required": false,
+        "role": "clients",
+        "zed_dependency": true
+      },
+      "flutter": {
+        "alias": "flutter",
+        "repository": "embedded-alerts/embedded-alerts-flutter",
+        "required": false,
+        "role": "ui",
+        "zed_dependency": false
+      },
+      "interfaces": {
+        "alias": "interfaces",
+        "repository": "embedded-alerts/embedded-alerts-interfaces",
+        "required": false,
+        "role": "interfaces",
+        "zed_dependency": true
+      },
+      "web": {
+        "alias": "web",
+        "repository": "embedded-alerts/embedded-alerts-web-server.rs",
+        "required": false,
+        "role": "ui",
+        "zed_dependency": false
+      }
+    },
+    "summary": "Planned SDK, API, Flutter, web embedding, load, security, and offline coverage."
+  },
+  "test_org": "embedded-alerts-test"
+}

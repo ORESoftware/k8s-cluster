@@ -1,0 +1,11 @@
+    if args.fail_on_open_pr and open_prs:
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except FleetError as exc:
+        print(f"fleet publisher failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)
