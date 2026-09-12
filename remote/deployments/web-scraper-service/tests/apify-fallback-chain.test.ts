@@ -81,9 +81,15 @@ test('domain routes use exact host before wildcard and longest wildcard suffix',
 });
 
 test('unsafe or malformed domain routing configuration fails closed', () => {
+  const overlongLabel = `${'a'.repeat(64)}.example.com`;
   for (const value of [
     '{not-json',
     JSON.stringify({ '*.internal': ['apify/web-scraper'] }),
+    JSON.stringify({ '127.0.0.1': ['apify/web-scraper'] }),
+    JSON.stringify({ '::1': ['apify/web-scraper'] }),
+    JSON.stringify({ 'bad-.example.com': ['apify/web-scraper'] }),
+    JSON.stringify({ '-bad.example.com': ['apify/web-scraper'] }),
+    JSON.stringify({ [overlongLabel]: ['apify/web-scraper'] }),
     JSON.stringify({ '*.example.com': ['not an actor id'] }),
     JSON.stringify({ '*.example.com': 'apify/web-scraper' }),
     JSON.stringify({
@@ -100,6 +106,32 @@ test('unsafe or malformed domain routing configuration fails closed', () => {
       /APIFY_DOMAIN_FALLBACKS_JSON|invalid fallback domain|Actor|array|contain 1\.\.3/,
     );
   }
+});
+
+test('aggregate charge policy fails startup if any configured chain cannot receive one cent per attempt', () => {
+  assert.throws(
+    () =>
+      readApifyFallbackChainConfig(
+        {
+          APIFY_FALLBACK_ACTORS: 'apify/web-scraper,apify/playwright-scraper,apify/puppeteer-scraper',
+          APIFY_FALLBACK_MAX_ATTEMPTS: '3',
+          APIFY_FALLBACK_CHAIN_MAX_TOTAL_CHARGE_USD: '0.02',
+        },
+        baseConfig,
+      ),
+    /must fund at least USD 0\.01 per configured Actor attempt/,
+  );
+
+  assert.doesNotThrow(() =>
+    readApifyFallbackChainConfig(
+      {
+        APIFY_FALLBACK_ACTORS: 'apify/web-scraper,apify/playwright-scraper,apify/puppeteer-scraper',
+        APIFY_FALLBACK_MAX_ATTEMPTS: '3',
+        APIFY_FALLBACK_CHAIN_MAX_TOTAL_CHARGE_USD: '0.03',
+      },
+      baseConfig,
+    ),
+  );
 });
 
 test('retriable first Actor failure advances to second Actor with aggregate charge and wall-clock bounds', async () => {
