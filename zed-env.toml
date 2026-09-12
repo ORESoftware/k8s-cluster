@@ -6,10 +6,18 @@ description = "Install the exact local-test dependency lock without lifecycle ho
 run = ["pnpm --dir remote/tests install --frozen-lockfile --ignore-scripts"]
 
 [tasks.config-contracts]
-description = "Check patch hygiene and browser MCP credential/config boundaries"
+description = "Check patch hygiene and browser/scraper credential, config, and resource boundaries"
 run = [
   "git diff --check",
-  "pnpm --dir remote/tests exec tsx --test general/browser-mcp-exposure.test.ts",
+  "pnpm --dir remote/tests exec tsx --test general/browser-mcp-exposure.test.ts general/web-scraper-config.test.ts ../deployments/web-scraper-service/tests/bounded-close.test.ts ../deployments/web-scraper-service/tests/origin-politeness.test.ts",
+]
+
+[tasks.namespace-contracts]
+description = "Run the existing credential-free namespace classifier and deterministic manifest gates"
+run = [
+  "python3 tools/test_namespace_migration.py",
+  "python3 tools/test_namespace_manifest.py",
+  "python3 tools/namespace_manifest.py check --root . --format text",
 ]
 
 [tasks.audit]
@@ -17,5 +25,5 @@ description = "Run the installed ORES CLI's read-only repository audit; findings
 run = ["oresc audit repo --path . --profile baseline --required-paths zed-env.toml"]
 
 [tasks.check]
-description = "Run local config regressions (separate from the full cloud/runtime acceptance gates)"
-depends = ["config-contracts"]
+description = "Run local config and namespace regressions (separate from full cloud/runtime acceptance)"
+depends = ["config-contracts", "namespace-contracts"]

@@ -37,6 +37,9 @@ Do not resolve the licensing finding by inventing a license grant.
 - The browser MCP exposure/config suite passes 6/6, including Secret delivery,
   non-root container, OAuth gateway limits, both cluster registrations, and
   environment-only credential declarations.
+- The merged-base scraper config, bounded cleanup, and origin-politeness suites
+  pass 22/22. Namespace classifier and manifest suites pass 32/32 and 20/20.
+  The root `check` task runs all 80 of these local tests.
 - Zed 0.3.0 successfully lists, plans, and executes `zed task run check`.
 
 Run local checks from the repository root:
@@ -220,6 +223,44 @@ Paths below are relative to `remote/deployments/`.
   The repaired parser derives numeric locations from its already-bounded input;
   it does not reopen the file to sanitize an error after the fact.
 
+## Exact-head hosted follow-up
+
+Published changes: [ores-cli#266](https://github.com/ORESoftware/ores-cli/pull/266)
+and [k8s-cluster#1574](https://github.com/ORESoftware/k8s-cluster/pull/1574).
+The K8s branch merged current `dev` at
+`f2f8e32b61267ed8e42fdf6160fdc608c66c66a7` before its first published head,
+`97cc35271fc1c4557624c9cf4e21bd152b9e3f28`.
+
+Unlike the ORES CLI zero-step run, K8s hosted jobs executed real steps. GitOps
+composition, Kustomize rendering, and browser workflow/security contracts passed.
+The browser workflow's live AWS/Hetzner OAuth tier was skipped, not certified.
+
+The namespace manifest job exposed a pre-existing stale `registrySha256` after
+owner-registry changes. Its inputs and generator were identical to `origin/dev`;
+the failure was not caused by the three URL corrections. Canonical regeneration
+changed only that digest. All 1,276 entries, grants, targets, and execution-safety
+settings are unchanged. The manifest check now reports zero diagnostics, and all
+52 classifier/manifest tests pass locally. An exact-head hosted rerun and the
+independent credential-free test-organization canary are still acceptance gates.
+
+Other failures in [repo checks run 34712953867](https://github.com/ORESoftware/k8s-cluster/actions/runs/34712953867)
+are outside the TOML/identity patch; their source/config files match `origin/dev`:
+
+- Private backend initialization rejects `anticaptrad/act-monorepo` because it
+  is absent from the GitHub App allowlist. The subsequent artifact upload has no
+  report to upload. Do not invent an App installation or widen token access.
+- Observability coverage lacks `dd-ci-profile-runner`, `dd-des-web`, and
+  `dd-project-automation` in both watch lists. It also rejects console/fetch
+  replacement in the two benefactor-orchestrator bridge modules. The same gate
+  fails locally.
+- Fiducia secret-delivery tests pass 6/8 locally. Two stale phase-1 assertions
+  expect a plaintext ESO URL and inert TLS, while current manifests have the
+  verified-HTTPS store and TLS listener. Reconcile tests against the coordinated
+  TLS acceptance contract; do not revert transport security to satisfy them.
+
+Both PRs remain drafts. No existing ORES CLI PR was merged without passing gates,
+and no Linear issue was closed or marked complete on unmerged evidence.
+
 ## Remaining work
 
 1. Resolve and certify the two producer package publications, generate a real
@@ -233,3 +274,5 @@ Paths below are relative to `remote/deployments/`.
    explicit and the nine nested CLI contracts cannot be mistaken for root coverage.
 5. Continue the namespace migration and local Kubernetes acceptance work under
    DEN-2786; cloud unavailability and a static audit are not live runtime evidence.
+6. Resolve the exact-head CI gaps above with the appropriate topology,
+   observability, and TLS owners, retaining fail-closed authorization checks.
