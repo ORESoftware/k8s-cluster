@@ -139,3 +139,10 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-359ded0dadd5-merge-remote-alexanderdmills-den-912-935 ---
+.direnv/
+/target/
+result
+temp/worktrees
+tmp/worktrees
