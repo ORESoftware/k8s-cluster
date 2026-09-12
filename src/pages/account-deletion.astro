@@ -1,0 +1,80 @@
+---
+import { publisher } from "../data/publisher";
+import Legal from "../layouts/Legal.astro";
+---
+
+<Legal
+  title="Delete your account and data"
+  description="How to delete your Sonus Auris account and associated data, in-app or by request."
+>
+  <h1>Delete your Sonus Auris account and data</h1>
+
+  <p>
+    You can delete your account directly in the app: open <strong>Settings → Delete
+    account</strong>. This confirms with you, deletes your account and Sonus Auris
+    backend data (including encrypted backups), and wipes app-private on-device
+    recordings, keys, and tokens.
+  </p>
+
+  <p>
+    To request deletion <strong>without the app</strong>, email
+    <a href={`mailto:${publisher.contactEmail}?subject=Delete%20my%20Sonus%20Auris%20account`}>
+      {publisher.contactEmail}
+    </a>
+    from the address associated with your account (or include the device/account ID
+    shown in the app's Settings) with the subject "Delete my account". We will verify
+    the request and complete deletion, normally within 30 days.
+  </p>
+
+  <h2>What gets deleted vs. retained</h2>
+  <table>
+    <thead>
+      <tr><th>Data</th><th>On deletion</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Account record, Supabase Auth user, auth/device tokens</td>
+        <td>Deleted</td>
+      </tr>
+      <tr>
+        <td>Clip metadata and encrypted backups held by Sonus Auris</td>
+        <td>Deleted</td>
+      </tr>
+      <tr>
+        <td>App-private on-device recordings, keys, tokens</td>
+        <td>Wiped by in-app deletion; a web/email request cannot remotely erase a device</td>
+      </tr>
+      <tr>
+        <td>
+          Local copies you deliberately exported through the system share sheet or a
+          user-selected desktop destination
+        </td>
+        <td>
+          Outside Sonus Auris app storage and automatic retention; you control these
+          copies and must delete them from the destination you selected
+        </td>
+      </tr>
+      <tr>
+        <td>Clips you backed up to <strong>your own</strong> storage (S3/Drive/OneDrive/iCloud)</td>
+        <td>You control these; delete them in that service</td>
+      </tr>
+      <tr>
+        <td>Minimal transaction logs required by law</td>
+        <td>Retained only as long as legally required, then deleted</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    Exporting a local copy does not delay deletion of the app-private recording and
+    does not make the exported destination part of your Sonus Auris account.
+  </p>
+
+  <p>Target: complete deletion within 30 days of a verified request.</p>
+
+  <h2>Questions</h2>
+  <p>
+    Contact <a href={`mailto:${publisher.contactEmail}`}>{publisher.contactEmail}</a>
+    or write to {publisher.name}, {publisher.postalAddress}.
+  </p>
+</Legal>

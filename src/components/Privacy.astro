@@ -1,0 +1,185 @@
+---
+// Privacy section (#privacy). Dark green band making the privacy-first pitch:
+// a copy column with the `promises` grid (on-device encryption, zero-knowledge
+// cloud, no ads/resale, deletable) plus a decorative "encrypted vault" card.
+const promises = [
+  { icon: "🔐", title: "Encrypted on-device", body: "Audio is encrypted the instant it's captured, using keys derived on your phone." },
+  { icon: "🙈", title: "Zero-knowledge cloud", body: "Your backups are ciphertext to us. We store bytes we can't read — by design." },
+  { icon: "🚫", title: "No ads, no resale", body: "We don't sell, mine, or train on your audio. Ever. The app is the product, not you." },
+  { icon: "🗑️", title: "Yours to delete", body: "Wipe a clip, a day, or everything — locally and in the cloud — whenever you want." },
+];
+---
+
+<section class="section privacy" id="privacy">
+  <div class="container privacy-inner">
+    <div class="privacy-copy">
+      <span class="eyebrow light">🔒 Privacy is the whole point</span>
+      <h2>An always-on recorder you can actually trust</h2>
+      <p>
+        An app that listens all day only makes sense if it's locked down all day.
+        Sonus Auris is built privacy-first: encrypted on your device, stored as
+        ciphertext we can't read, and never sold, mined, or used to train
+        anything. Core recording and available audio analysis run on-device.
+        Features that use an external recognition service are separately
+        disclosed and opt-in; encrypted backup never makes the service a silent
+        listener. You hold the recording keys — full stop.
+      </p>
+
+      <div class="promises">
+        {promises.map((p) => (
+          <div class="promise">
+            <span class="promise-icon">{p.icon}</span>
+            <div>
+              <strong>{p.title}</strong>
+              <span>{p.body}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <p class="legal-note">
+        🎧 <strong>Record responsibly.</strong> Recording and evidence laws vary
+        by place, and whether any recording is admissible is always up to the
+        court. Sonus Auris gives you tamper-evident clip metadata, capture times,
+        optional location tags, and the controls to manage them — it does not
+        certify authenticity or admissibility. You stay in charge of when and
+        where it listens.
+      </p>
+    </div>
+
+    <aside class="vault card" aria-hidden="true">
+      <div class="vault-top">
+        <span class="lock">🔒</span>
+        <div>
+          <strong>Your vault</strong>
+          <small>end-to-end encrypted</small>
+        </div>
+        <span class="dot"></span>
+      </div>
+      <ul class="vault-list">
+        <li><span>🎸 Late-night riff</span><code>•••••••</code></li>
+        <li><span>🚗 Drive to the coast</span><code>•••••••</code></li>
+        <li><span>🎉 Friday session</span><code>•••••••</code></li>
+        <li><span>🎹 Chord idea #42</span><code>•••••••</code></li>
+      </ul>
+      <div class="vault-foot">
+        <span>🔑 Keys held on your device</span>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<style>
+  .privacy {
+    background: linear-gradient(160deg, var(--green-900), var(--green-700));
+    color: #fffdf8;
+  }
+  .privacy-inner {
+    display: grid;
+    gap: 44px;
+    align-items: center;
+  }
+  .eyebrow.light {
+    background: rgba(255, 253, 248, 0.12);
+    border-color: rgba(255, 253, 248, 0.22);
+    color: #ffe0bd;
+  }
+  .privacy-copy h2 {
+    font-size: clamp(1.9rem, 4vw, 2.9rem);
+  }
+  .privacy-copy > p {
+    color: rgba(255, 253, 248, 0.86);
+    font-size: 1.12rem;
+    max-width: 560px;
+  }
+  .promises {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: 1fr;
+    margin: 28px 0 24px;
+  }
+  .promise {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .promise-icon {
+    font-size: 1.5rem;
+    flex: none;
+  }
+  .promise strong {
+    display: block;
+  }
+  .promise span {
+    color: rgba(255, 253, 248, 0.78);
+    font-size: 0.96rem;
+  }
+  .legal-note {
+    font-size: 0.92rem;
+    color: rgba(255, 253, 248, 0.72);
+    background: rgba(255, 253, 248, 0.08);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin: 0;
+  }
+  .vault {
+    background: rgba(255, 253, 248, 0.97);
+    color: var(--ink);
+    padding: 22px;
+    width: 100%;
+    max-width: 380px;
+    justify-self: center;
+  }
+  .vault-top {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(12, 59, 46, 0.1);
+  }
+  .vault-top .lock { font-size: 1.6rem; }
+  .vault-top strong { display: block; }
+  .vault-top small { color: var(--ink-soft); font-size: 0.8rem; }
+  .vault-top .dot {
+    margin-left: auto;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--green-500);
+    box-shadow: 0 0 0 4px var(--green-50);
+  }
+  .vault-list {
+    list-style: none;
+    padding: 0;
+    margin: 14px 0;
+    display: grid;
+    gap: 10px;
+  }
+  .vault-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--green-50);
+    border-radius: 12px;
+    padding: 11px 14px;
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .vault-list code {
+    color: var(--green-700);
+    letter-spacing: 2px;
+  }
+  .vault-foot {
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.86rem;
+    color: var(--green-700);
+    padding-top: 6px;
+  }
+  @media (min-width: 900px) {
+    .privacy-inner {
+      grid-template-columns: 1.2fr 0.8fr;
+    }
+    .promises { grid-template-columns: 1fr 1fr; }
+  }
+</style>
