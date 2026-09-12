@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "operation": "publish-sealed-hypesiege-streempilot-fleet",
+  "publication_pr": 270,
+  "coordinator_sha": "e125b9c7c0be1d625abad3ff276311639d52585e",
+  "repository_count": 32,
+  "organization_counts": {
+    "hypesiege": 15,
+    "StreemPilot": 17
+  }
+}
