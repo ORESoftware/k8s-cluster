@@ -1,0 +1,98 @@
+name: Materialize DEN-319 native publisher region contract
+
+on:
+  push:
+    branches:
+      - fix/den-319-native-publisher-region-contract-20260731
+    paths:
+      - .github/workflows/materialize-den-319-native-region-contract.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-den-319-native-region-contract
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-319-native-publisher-region-contract-20260731
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Replace runtime source rewriting with a native region contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          script_path = Path('scripts/ops/run_protected_missing_org_publisher.sh')
+          script = script_path.read_text(encoding='utf-8')
+          anchor = '''trusted_sha="${1:?trusted k8s-cluster SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          stage=initialization
+          '''
+          replacement = '''trusted_sha="${1:?trusted k8s-cluster SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          publisher_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+          [[ "$publisher_region" =~ ^[a-z]{2}(-gov)?-[a-z0-9-]+-[0-9]$ ]]
+          stage=initialization
+          '''
+          if script.count(anchor) != 1:
+              raise SystemExit(f'expected trusted-SHA anchor once, found {script.count(anchor)}')
+          script = script.replace(anchor, replacement, 1)
+          if script.count('--region us-east-1') != 2:
+              raise SystemExit(f'expected two hard-coded region reads, found {script.count("--region us-east-1")}')
+          script = script.replace('--region us-east-1', '--region "$publisher_region"')
+          cleanup = '  unset encoded_pat raw_pat secret_json credential_source ec2_home\n'
+          if script.count(cleanup) != 1:
+              raise SystemExit('unexpected cleanup contract')
+          script = script.replace(
+              cleanup,
+              '  unset encoded_pat raw_pat secret_json credential_source ec2_home publisher_region\n',
+              1,
+          )
+          script_path.write_text(script, encoding='utf-8')
+
+          workflow_path = Path('.github/workflows/ops-publish-missing-org-repositories-v2.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          lines = workflow.splitlines()
+          matches = [i for i, line in enumerate(lines) if line.lstrip().startswith('remote_command=')]
+          if len(matches) != 1:
+              raise SystemExit(f'expected one remote_command line, found {len(matches)}')
+          old_line = lines[matches[0]]
+          for required in ('grep -Fc', 'sed -i', "AWS_REGION='$target_region'"):
+              if required not in old_line:
+                  raise SystemExit(f'remote command lacks expected legacy fragment: {required}')
+          lines[matches[0]] = r'''          remote_command="set -Eeuo pipefail; work=\$(mktemp -d /tmp/missing-org-publisher-launcher.XXXXXX); trap 'rm -rf \"\$work\"' EXIT; git init \"\$work/k8s-cluster\"; git -C \"\$work/k8s-cluster\" remote add origin https://github.com/ORESoftware/k8s-cluster.git; git -C \"\$work/k8s-cluster\" fetch --depth=1 origin '$trusted_sha'; git -C \"\$work/k8s-cluster\" checkout --detach FETCH_HEAD; test \"\$(git -C \"\$work/k8s-cluster\" rev-parse HEAD)\" = '$trusted_sha'; launcher=\"\$work/k8s-cluster/scripts/ops/run_protected_missing_org_publisher.sh\"; AWS_REGION='$target_region' AWS_DEFAULT_REGION='$target_region' bash \"\$launcher\" '$trusted_sha'"'''
+          workflow_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+          bash -n scripts/ops/run_protected_missing_org_publisher.sh
+          test "$(grep -Fc -- '--region "$publisher_region"' scripts/ops/run_protected_missing_org_publisher.sh)" = 2
+          ! grep -Fq -- '--region us-east-1' scripts/ops/run_protected_missing_org_publisher.sh
+          ! grep -Fq 'grep -Fc' .github/workflows/ops-publish-missing-org-repositories-v2.yml
+          ! grep -Fq 'sed -i' .github/workflows/ops-publish-missing-org-repositories-v2.yml
+          grep -Fq "AWS_REGION='\$target_region' AWS_DEFAULT_REGION='\$target_region'" .github/workflows/ops-publish-missing-org-repositories-v2.yml
+          rm .github/workflows/materialize-den-319-native-region-contract.yml
+          git diff --check
+
+      - name: Commit only the canonical semantic repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            scripts/ops/run_protected_missing_org_publisher.sh \
+            .github/workflows/ops-publish-missing-org-repositories-v2.yml \
+            .github/workflows/materialize-den-319-native-region-contract.yml
+          git commit -m 'fix(DEN-319): make protected publisher region a native contract'
+          git push origin HEAD:fix/den-319-native-publisher-region-contract-20260731
