@@ -53,6 +53,7 @@
     "test:cli:nats-subject-contract": "pnpm exec tsx --test general/nats-subject-contract.test.ts",
     "test:cli:nats-shadow-handoff": "pnpm exec tsx --test general/nats-shadow-handoff.test.ts",
     "test:cli:multicloud-data-plane": "pnpm exec tsx --test general/multicloud-data-plane.test.ts",
+    "test:e2e:multicloud-nats-supercluster": "node integration/multicloud-nats-supercluster.e2e.mjs",
     "test:cli:observability-config": "pnpm exec tsx --test general/observability-config.test.ts",
     "test:cli:prometheus-applications": "pnpm exec tsx --test general/prometheus-application-scrape.test.ts general/prometheus-pod-discovery-prerequisites.test.ts",
     "test:cli:pg-defs-bindings": "pnpm exec tsx --test general/pg-defs-bindings.test.ts",

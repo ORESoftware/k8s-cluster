@@ -2,9 +2,6 @@ config:
   cluster:
     merge:
       name: ores-gcp
-  jetstream:
-    merge:
-      domain: ORES_GCP
   gateway:
     merge:
       name: ores-gcp

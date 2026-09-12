@@ -10,8 +10,10 @@ on:
       - 'remote/argocd/clusters/azure/**'
       - 'remote/argocd/multicloud-data-plane/**'
       - 'remote/tests/general/multicloud-data-plane.test.ts'
+      - 'remote/tests/integration/multicloud-nats-supercluster.e2e.mjs'
       - 'remote/tests/package.json'
       - 'remote/tests/pnpm-lock.yaml'
+      - 'scripts/ci/test-multicloud-data-plane-kind.sh'
   push:
     branches: [dev, main]
     paths:
@@ -22,8 +24,10 @@ on:
       - 'remote/argocd/clusters/azure/**'
       - 'remote/argocd/multicloud-data-plane/**'
       - 'remote/tests/general/multicloud-data-plane.test.ts'
+      - 'remote/tests/integration/multicloud-nats-supercluster.e2e.mjs'
       - 'remote/tests/package.json'
       - 'remote/tests/pnpm-lock.yaml'
+      - 'scripts/ci/test-multicloud-data-plane-kind.sh'
   workflow_dispatch:
 
 permissions:
@@ -35,7 +39,7 @@ concurrency:
 
 jobs:
   render-and-contract:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out cluster repository
@@ -121,3 +125,55 @@ jobs:
               -f remote/argocd/multicloud-data-plane/nats/values/common.yaml \
               -f "remote/argocd/multicloud-data-plane/nats/values/${provider}.yaml" >/dev/null
           done
+
+  api-server-contract:
+    name: Pinned CRDs and Kubernetes API validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out cluster repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Validate payloads against an ephemeral Kubernetes API server
+        shell: bash
+        run: bash scripts/ci/test-multicloud-data-plane-kind.sh
+
+  nats-supercluster-e2e:
+    name: Nine-server NATS supercluster and region-loss test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out cluster repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.3'
+          cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.1'
+
+      - name: Install exact NATS test binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/nats-e2e-bin"
+          GOBIN="${RUNNER_TEMP}/nats-e2e-bin" go install github.com/nats-io/nats-server/v2@v2.14.6
+          GOBIN="${RUNNER_TEMP}/nats-e2e-bin" go install github.com/nats-io/natscli/nats@v0.3.0
+
+      - name: Exercise supercluster placement, authentication, outage, and rejoin
+        shell: bash
+        env:
+          NATS_SERVER_BIN: ${{ runner.temp }}/nats-e2e-bin/nats-server
+          NATS_CLI_BIN: ${{ runner.temp }}/nats-e2e-bin/nats
+        run: node remote/tests/integration/multicloud-nats-supercluster.e2e.mjs
