@@ -1,0 +1,40 @@
+name: bootstrap gh cli artifact
+
+on:
+  push:
+    branches:
+      - agent/bootstrap-gh-cli-2.97.0
+    paths:
+      - .github/workflows/bootstrap-gh-cli-artifact.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap-gh-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Package the runner's official GitHub CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p gh-cli
+          gh --version | tee gh-cli/version.txt
+          cp "$(command -v gh)" gh-cli/gh
+          chmod 0755 gh-cli/gh
+          sha256sum gh-cli/gh | tee gh-cli/sha256sum.txt
+          file gh-cli/gh | tee gh-cli/file.txt
+
+      - name: Upload verified CLI artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gh-cli-linux-amd64-${{ github.sha }}
+          path: gh-cli
+          if-no-files-found: error
+          retention-days: 1
