@@ -10,6 +10,7 @@ on:
       - 'remote/tests/general/slack-command-gitops.test.mjs'
       - 'remote/deployments/ai-agent-bridge'
       - 'docs/ai-agent-bridge-immutable-rollout-2026-08-07.md'
+      - 'docs/alex-main-agent-slack-command-gitops.md'
   push:
     branches: [dev]
     paths:
@@ -19,6 +20,7 @@ on:
       - 'remote/tests/general/slack-command-gitops.test.mjs'
       - 'remote/deployments/ai-agent-bridge'
       - 'docs/ai-agent-bridge-immutable-rollout-2026-08-07.md'
+      - 'docs/alex-main-agent-slack-command-gitops.md'
   workflow_dispatch:
 
 permissions:
@@ -139,14 +141,125 @@ jobs:
         with:
           version: v1.31.0
 
-      - name: Build applied runtime overlay
-        run: kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
+      - name: Render and inspect the applied dd-next-runtime overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v kubectl
+          kubectl version --client
+          rendered="${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime > "$rendered"
+
+          EXPECTED_IMAGE="$SLACK_COMMAND_IMAGE" RENDERED_PATH="$rendered" python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path(os.environ['RENDERED_PATH'])
+          text = path.read_text(encoding='utf-8')
+          documents = [document.strip() for document in text.split('\n---\n') if document.strip()]
+          if not documents:
+              raise SystemExit('rendered overlay is empty')
+
+          def identity(document):
+              kind_match = re.search(r'^kind:\s*(\S+)\s*$', document, re.MULTILINE)
+              metadata_match = re.search(r'^metadata:\n(?P<body>(?:  .*(?:\n|$))*)', document, re.MULTILINE)
+              if not kind_match or not metadata_match:
+                  return None
+              name_match = re.search(r'^  name:\s*(\S+)\s*$', metadata_match.group('body'), re.MULTILINE)
+              if not name_match:
+                  return None
+              return (kind_match.group(1), name_match.group(1))
+
+          relevant_names = {
+              'dd-slack-command',
+              'dd-slack-command-secrets',
+              'dd-slack-command-state',
+          }
+          relevant = sorted(
+              item for document in documents
+              if (item := identity(document)) and item[1] in relevant_names
+          )
+          expected = sorted([
+              ('ExternalSecret', 'dd-slack-command-secrets'),
+              ('PersistentVolumeClaim', 'dd-slack-command-state'),
+              ('Deployment', 'dd-slack-command'),
+              ('Service', 'dd-slack-command'),
+              ('NetworkPolicy', 'dd-slack-command'),
+              ('PodDisruptionBudget', 'dd-slack-command'),
+              ('Ingress', 'dd-slack-command'),
+          ])
+          if relevant != expected:
+              raise SystemExit(f'rendered Slack resource inventory mismatch: {relevant!r}')
+
+          deployment = next(
+              document for document in documents
+              if identity(document) == ('Deployment', 'dd-slack-command')
+          )
+          if not re.search(r'- name: SLACK_COMMAND_DRY_RUN\n\s+value: ["\']?true["\']?', deployment):
+              raise SystemExit('rendered deployment is not pinned to dry-run mode')
+          expected_image = os.environ['EXPECTED_IMAGE']
+          if not re.fullmatch(r'\S+@sha256:[0-9a-f]{64}', expected_image):
+              raise SystemExit(f'SLACK_COMMAND_IMAGE is not digest-pinned: {expected_image!r}')
+          if f'image: {expected_image}' not in deployment:
+              raise SystemExit('rendered deployment lost its immutable image reference')
+
+          ingress = next(
+              document for document in documents
+              if identity(document) == ('Ingress', 'dd-slack-command')
+          )
+          # Kustomize re-emits list items without the leading '- ', so the
+          # source-file regex ('^\s*-\s+path:') finds NOTHING here. Match the
+          # rendered form, and assert the match count explicitly so a future
+          # regex edit fails loudly instead of passing on an empty result.
+          paths = re.findall(r'^\s*path:\s*(\S+)\s*$', ingress, re.MULTILINE)
+          if len(paths) != 3:
+              raise SystemExit(
+                  f'rendered ingress path parse found {len(paths)} paths, expected 3 '
+                  '(check the regex against the rendered, not the source, form)'
+              )
+          expected_paths = [
+              '/slack/commands/ores-claude',
+              '/slack/commands/ores-chatgpt',
+              '/slack/interactions',
+          ]
+          if paths != expected_paths:
+              raise SystemExit(f'rendered ingress paths mismatch: {paths!r}')
+          if len(re.findall(r'^\s+pathType:\s*Exact\s*$', ingress, re.MULTILINE)) != 3:
+              raise SystemExit('rendered ingress must contain three exact paths')
+          if re.search(r'^\s+pathType:\s*Prefix\s*$', ingress, re.MULTILINE):
+              raise SystemExit('rendered ingress must not expose a prefix route')
+          PY
+
+      - name: Reject credential material in the reviewed files and evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/slack-command-gitops.yml
+            docs/alex-main-agent-slack-command-gitops.md
+            remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+            remote/argocd/dd-next-runtime/kustomization.yaml
+            remote/tests/general/slack-command-gitops.test.mjs
+            "${RUNNER_TEMP}/slack-command-gitops-audit.json"
+            "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
+          )
+          for file in "${files[@]}"; do
+            test -f "$file" || continue
+            if grep -E '(xox[baprs]-[A-Za-z0-9-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,})' "$file"; then
+              echo "credential-shaped material found in ${file}" >&2
+              exit 1
+            fi
+          done
 
       - name: Upload immutable GitOps audit
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: slack-command-gitops-audit-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/slack-command-gitops-audit.json
+          path: |
+            ${{ runner.temp }}/slack-command-gitops-audit.json
+            ${{ runner.temp }}/dd-next-runtime.rendered.yaml
           retention-days: 14
           if-no-files-found: warn
