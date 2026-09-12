@@ -38,8 +38,8 @@ Do not resolve the licensing finding by inventing a license grant.
   non-root container, OAuth gateway limits, both cluster registrations, and
   environment-only credential declarations.
 - The merged-base scraper config, bounded cleanup, and origin-politeness suites
-  pass 22/22. Namespace classifier and manifest suites pass 32/32 and 20/20.
-  The root `check` task runs all 80 of these local tests.
+  pass 22/22. Namespace classifier, test-owner and manifest suites pass 32/32,
+  10/10 and 20/20. The root `check` task runs all 90 of these local tests.
 - Zed 0.3.0 successfully lists, plans, and executes `zed task run check`.
 
 Run local checks from the repository root:
@@ -235,13 +235,30 @@ Unlike the ORES CLI zero-step run, K8s hosted jobs executed real steps. GitOps
 composition, Kustomize rendering, and browser workflow/security contracts passed.
 The browser workflow's live AWS/Hetzner OAuth tier was skipped, not certified.
 
-The namespace manifest job exposed a pre-existing stale `registrySha256` after
-owner-registry changes. Its inputs and generator were identical to `origin/dev`;
-the failure was not caused by the three URL corrections. Canonical regeneration
-changed only that digest. All 1,276 entries, grants, targets, and execution-safety
-settings are unchanged. The manifest check now reports zero diagnostics, and all
-52 classifier/manifest tests pass locally. An exact-head hosted rerun and the
-independent credential-free test-organization canary are still acceptance gates.
+The namespace manifest job first exposed a pre-existing stale `registrySha256`
+after owner-registry changes. Its inputs and generator were identical to
+`origin/dev`; the failure was not caused by the three URL corrections. The first
+repair changed only that digest and preserved the 1,276-row committed ledger.
+
+The next [exact-head run 34713196263](https://github.com/ORESoftware/k8s-cluster/actions/runs/34713196263)
+passed all classifier/manifest tests but failed after regenerating the actual
+inventory: current source contained 1,367 occurrences. The committed inventory
+and canonical manifest have now been refreshed together, and explicit count
+assertions updated to 1,367 total / 770 unclassified. No invariant was removed.
+
+The reviewed delta is 98 added and seven removed exact occurrence identities:
+all 1,269 shared manifest rows are byte-for-byte semantically unchanged. Ninety
+added identities are unclassified and blocked with no target; five retain
+review-required platform rules, and three use existing Fiducia metadata rules.
+Most removed identities moved with source lines; the retired Fiducia client-label
+occurrence is no longer present. No owner, grant, target rule or generator was
+changed. Execution and destructive cleanup remain disabled for the whole ledger.
+
+Fresh inventory reproduction, deterministic manifest validation, all 62 namespace
+tests, workflow lint and no-new-debt ratchet are required evidence. The full root
+test task also includes the 28 browser/scraper tests. Exact-head hosted rerun and
+independent credential-free test-organization canary remain acceptance gates
+until their run results are attached to the PR.
 
 Other failures in [repo checks run 34712953867](https://github.com/ORESoftware/k8s-cluster/actions/runs/34712953867)
 are outside the TOML/identity patch; their source/config files match `origin/dev`:

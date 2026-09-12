@@ -16,6 +16,7 @@ run = [
 description = "Run the existing credential-free namespace classifier and deterministic manifest gates"
 run = [
   "python3 tools/test_namespace_migration.py",
+  "python3 tools/test_namespace_test_owner_contract.py",
   "python3 tools/test_namespace_manifest.py",
   "python3 tools/namespace_manifest.py check --root . --format text",
 ]
