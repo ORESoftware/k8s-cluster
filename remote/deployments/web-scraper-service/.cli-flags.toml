@@ -248,7 +248,35 @@ env = "APIFY_ACTOR_ID"
 aliases = ["apify-actor-id"]
 type = "string"
 default = "apify/web-scraper"
-help = "Apify Actor ID for fallback."
+help = "Compatibility/default Apify Actor ID when no fallback Actor chain is configured."
+
+[flags.apify-fallback-actors]
+env = "APIFY_FALLBACK_ACTORS"
+aliases = ["apify-fallback-actors"]
+type = "string"
+default = "apify/web-scraper"
+help = "Ordered comma-separated fallback Actor IDs, limited to three. Known Playwright/Puppeteer Actors use explicit input adapters; other Actors must accept the Web Scraper-compatible single-page input contract."
+
+[flags.apify-fallback-max-attempts]
+env = "APIFY_FALLBACK_MAX_ATTEMPTS"
+aliases = ["apify-fallback-max-attempts"]
+type = "integer"
+default = 2
+help = "Maximum ordered Apify Actor attempts after one eligible local failure; hard-capped at three."
+
+[flags.apify-fallback-chain-max-total-charge-usd]
+env = "APIFY_FALLBACK_CHAIN_MAX_TOTAL_CHARGE_USD"
+aliases = ["apify-fallback-chain-max-total-charge-usd"]
+type = "double"
+default = 0.5
+help = "Worst-case aggregate ceiling across all configured Actor run charge caps in one fallback chain."
+
+[flags.apify-domain-fallbacks-json]
+env = "APIFY_DOMAIN_FALLBACKS_JSON"
+aliases = ["apify-domain-fallbacks-json"]
+type = "string"
+default = "{}"
+help = "JSON object mapping exact hostnames or *.suffix patterns to ordered arrays of 1-3 Apify Actor IDs."
 
 [flags.apify-api-base-url]
 env = "APIFY_API_BASE_URL"
@@ -262,42 +290,42 @@ env = "APIFY_FALLBACK_TIMEOUT_MS"
 aliases = ["apify-timeout-ms"]
 type = "integer"
 default = 90000
-help = "External fallback HTTP and Actor run timeout."
+help = "Maximum timeout for one external fallback Actor run; chain orchestration partitions the remaining total budget across attempts."
 
 [flags.apify-max-request-retries]
 env = "APIFY_MAX_REQUEST_RETRIES"
 aliases = ["apify-max-request-retries"]
 type = "integer"
 default = 2
-help = "Maximum page retries inside the single-page Apify fallback."
+help = "Maximum page retries inside one single-page Apify fallback Actor."
 
 [flags.apify-max-concurrent]
 env = "APIFY_FALLBACK_MAX_CONCURRENT"
 aliases = ["apify-max-concurrent"]
 type = "integer"
 default = 1
-help = "Maximum simultaneous Apify fallback runs per pod."
+help = "Maximum simultaneous Apify fallback chains per pod."
 
 [flags.apify-min-delay-ms]
 env = "APIFY_FALLBACK_MIN_DELAY_MS"
 aliases = ["apify-min-delay-ms"]
 type = "integer"
 default = 1000
-help = "Minimum delay before a remote fallback after the local attempt."
+help = "Minimum delay before a remote fallback chain after the local attempt."
 
 [flags.apify-failure-cooldown-ms]
 env = "APIFY_FALLBACK_FAILURE_COOLDOWN_MS"
 aliases = ["apify-failure-cooldown-ms"]
 type = "integer"
 default = 60000
-help = "Cooldown after a provider failure to avoid cost/error amplification."
+help = "Cooldown after an exhausted provider chain to avoid cost/error amplification."
 
 [flags.apify-max-total-charge-usd]
 env = "APIFY_MAX_TOTAL_CHARGE_USD"
 aliases = ["apify-max-total-charge-usd"]
 type = "double"
 default = 0.25
-help = "Per-fallback Actor run charge ceiling."
+help = "Per-Actor-run charge ceiling; chain orchestration additionally enforces an aggregate run-cap ceiling."
 
 [flags.apify-explicit-strategies]
 env = "APIFY_FALLBACK_FOR_EXPLICIT_STRATEGY"
@@ -312,4 +340,4 @@ env = "APIFY_MAX_RESPONSE_BYTES"
 aliases = ["apify-max-response-bytes"]
 type = "integer"
 default = 2000000
-help = "Maximum Apify dataset response bytes buffered by the supervisor."
+help = "Maximum Apify dataset response bytes buffered for each Actor attempt."
