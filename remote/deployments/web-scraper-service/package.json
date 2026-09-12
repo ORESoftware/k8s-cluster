@@ -4,15 +4,15 @@
   "description": "Long-running Fastify web scraping service for the remote Kubernetes runtime.",
   "private": true,
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/entrypoint.js",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
-    "start:src": "tsx src/server.ts",
+    "dev": "tsx src/entrypoint.ts",
+    "start": "node dist/entrypoint.js",
+    "start:src": "tsx src/entrypoint.ts",
     "test": "pnpm run build && node --test test/*.test.mjs && node --import tsx --test tests/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
