@@ -6,9 +6,11 @@ on:
     paths:
       - scripts/ops/bootstrap_org_dotgithub_repositories.py
       - scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+      - scripts/ops/select_org_dotgithub_owner_token.py
       - scripts/ops/run_protected_org_dotgithub_publisher.sh
       - tests/ops/test_bootstrap_org_dotgithub_repositories.py
       - tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py
+      - tests/ops/test_bootstrap_org_dotgithub_repositories_owner_token_selector.py
       - tests/ops/test_bootstrap_org_dotgithub_protected_runner.py
       - .github/workflows/ops-bootstrap-org-dotgithub-fleet.yml
   issue_comment:
@@ -39,7 +41,8 @@ jobs:
           bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
-            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
+            scripts/ops/select_org_dotgithub_owner_token.py
           python3 -m unittest discover \
             -s tests/ops \
             -p 'test_bootstrap_org_dotgithub*.py' \
@@ -72,7 +75,8 @@ jobs:
           bash -n scripts/ops/run_protected_org_dotgithub_publisher.sh
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
-            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
+            scripts/ops/select_org_dotgithub_owner_token.py
           python3 -m unittest discover \
             -s tests/ops \
             -p 'test_bootstrap_org_dotgithub*.py' \
