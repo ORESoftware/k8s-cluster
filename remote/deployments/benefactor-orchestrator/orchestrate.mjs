@@ -26,6 +26,7 @@ import {
   sanitizeLogValue,
 } from './pipeline-lib.mjs';
 import { createSearchProviders } from './providers/index.mjs';
+import { createBenefactorRuntime } from './orchestrator-runtime.mjs';
 
 const require = createRequire('/work/package.json');
 const pg = require('pg');
@@ -79,6 +80,10 @@ if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(config.category)) {
 if (!/^[a-z0-9][a-z0-9._:-]{0,127}$/i.test(config.scrapeRequestType)) {
   throw new Error('SCRAPE_REQUEST_TYPE contains unsupported characters');
 }
+const runtime = createBenefactorRuntime({
+  scraperUrl: config.scraperUrl,
+  requireRoleEmail: config.requireRoleEmail,
+});
 const statuses = providerStatuses(config);
 const searchProviders = createSearchProviders({
   braveKey: config.braveKey,
@@ -101,14 +106,16 @@ function errorSummary(error) {
 }
 
 function providerLog(provider, message) {
-  console.warn(`[benefactor-pipeline] provider=${provider} ${sanitizeLogValue(message)}`);
+  const line = `[benefactor-pipeline] provider=${provider} ${sanitizeLogValue(message)}`;
+  console.warn(line);
+  runtime.recordProviderWarning(line);
 }
 
 async function fetchJson(url, init, { timeoutMs, maxBytes }) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
+    const response = await runtime.fetch(url, { ...init, signal: controller.signal });
     if (!response.ok) throw new Error(`upstream_http_${response.status}`);
     return await readJsonCapped(response, {
       maxBytes,
@@ -544,6 +551,7 @@ async function run() {
     counters,
   });
   console.log(`BENEFACTOR_PIPELINE_REPORT ${canonicalJson(report)}`);
+  console.log(runtime.providerDiagnosticsLine());
   console.log(`[benefactor-pipeline] done category=${config.category} mode=${config.dryRun ? 'dry-run' : 'persist'} contacts=${collected.size} inserted=${counters.leadsInserted} report=${report.reportDigest}`);
 }
 

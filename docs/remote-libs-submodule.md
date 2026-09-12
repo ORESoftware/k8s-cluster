@@ -43,20 +43,25 @@ superproject gitlink; never replace it with the current head of `main` during CI
 `K8S_LIBS_DEPLOY_KEY`, limited to that repository. It is deliberately separate
 from the cross-organization GitHub App used for `remote/deployments/*`.
 
-- **Repository checks** — `actions/checkout` installs the narrow deploy key, then
-  runs this exact helper command:
+- **Repository checks** — the local `.github/actions/checkout-remote-libs` action
+  receives the narrow deploy key, resolves the exact `remote/libs` gitlink, and
+  checks out `ORESoftware/k8s-libs-and-shared-defs` at that SHA with
+  `persist-credentials: false`:
 
-  ```bash
-  SUBMODULE_AUTH_MODE=ssh bash scripts/ci/init-submodules-with-report.sh remote/libs
+  ```yaml
+  uses: ./.github/actions/checkout-remote-libs
+  with:
+    ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
   ```
 
-  The helper recursively initializes the exact mode-`160000` gitlink, verifies
-  the checkout SHA against the superproject pin, and reports a mismatch without
-  printing credentials.
-- **pg-defs checks** — `.github/actions/checkout-remote-libs` resolves the exact
-  gitlink SHA, checks out `ORESoftware/k8s-libs-and-shared-defs` at that commit
-  with `persist-credentials: false`, and verifies a clean checkout. A caller that
-  needs nested repositories must initialize only those reviewed nested paths.
+  The action verifies the checkout SHA against the superproject pin and reports
+  a mismatch without printing credentials. A caller that needs nested
+  repositories must initialize only those reviewed nested paths.
+- **Recursive submodule checks** — jobs that need the complete shared tree use
+  `SUBMODULE_AUTH_MODE=ssh bash scripts/ci/init-submodules-with-report.sh
+  remote/libs`. The helper recursively initializes the exact mode-`160000`
+  gitlink, verifies every checkout against its recorded pin, and reports a
+  mismatch without printing credentials.
 - **Deployment fleet checks** — owner-scoped, short-lived GitHub App installation
   tokens are used for `remote/deployments/*`. Those tokens do not replace or
   broaden `K8S_LIBS_DEPLOY_KEY`.
@@ -111,8 +116,8 @@ no longer changes inside this repository.
 - Rust/Gleam path dependencies are **unchanged** — the on-disk paths
   (`remote/libs/pg-defs/...`, etc.) are identical once the submodule is checked
   out, so no consumer manifest needed editing.
-- Repository checks gained a dedicated deploy-key helper with recursive pin
-  verification. The standalone pg-defs workflow gained the reusable
+- Submodule checks gained a dedicated deploy-key action plus a recursive helper
+  with pin verification. The standalone pg-defs workflow gained the reusable
   `.github/actions/checkout-remote-libs` exact-gitlink action, and its trigger
   watches the `remote/libs` gitlink.
 
