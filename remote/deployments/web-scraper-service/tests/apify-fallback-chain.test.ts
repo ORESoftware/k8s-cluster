@@ -55,8 +55,8 @@ test('domain routes use exact host before wildcard and longest wildcard suffix',
       APIFY_FALLBACK_MAX_ATTEMPTS: '3',
       APIFY_DOMAIN_FALLBACKS_JSON: JSON.stringify({
         '*.example.com': ['apify/playwright-scraper', 'apify/web-scraper'],
-        '*.docs.example.com': ['apify/website-content-crawler', 'apify/web-scraper'],
-        'api.docs.example.com': ['apify/cheerio-scraper', 'apify/web-scraper'],
+        '*.docs.example.com': ['private/web-compatible-a', 'apify/web-scraper'],
+        'api.docs.example.com': ['private/web-compatible-b', 'apify/web-scraper'],
       }),
     },
     baseConfig,
@@ -64,11 +64,11 @@ test('domain routes use exact host before wildcard and longest wildcard suffix',
 
   assert.deepEqual(selectFallbackActors('https://api.docs.example.com/path', config), {
     route: 'api.docs.example.com',
-    actors: ['apify/cheerio-scraper', 'apify/web-scraper'],
+    actors: ['private/web-compatible-b', 'apify/web-scraper'],
   });
   assert.deepEqual(selectFallbackActors('https://guide.docs.example.com/path', config), {
     route: '*.docs.example.com',
-    actors: ['apify/website-content-crawler', 'apify/web-scraper'],
+    actors: ['private/web-compatible-a', 'apify/web-scraper'],
   });
   assert.deepEqual(selectFallbackActors('https://www.example.com/path', config), {
     route: '*.example.com',
@@ -86,15 +86,23 @@ test('unsafe or malformed domain routing configuration fails closed', () => {
     JSON.stringify({ '*.internal': ['apify/web-scraper'] }),
     JSON.stringify({ '*.example.com': ['not an actor id'] }),
     JSON.stringify({ '*.example.com': 'apify/web-scraper' }),
+    JSON.stringify({
+      '*.example.com': [
+        'apify/web-scraper',
+        'apify/playwright-scraper',
+        'apify/puppeteer-scraper',
+        'private/fourth',
+      ],
+    }),
   ]) {
     assert.throws(
       () => readApifyFallbackChainConfig({ APIFY_DOMAIN_FALLBACKS_JSON: value }, baseConfig),
-      /APIFY_DOMAIN_FALLBACKS_JSON|invalid fallback domain|Actor|array/,
+      /APIFY_DOMAIN_FALLBACKS_JSON|invalid fallback domain|Actor|array|contain 1\.\.3/,
     );
   }
 });
 
-test('retriable first Actor failure advances to second Actor with aggregate charge bound', async () => {
+test('retriable first Actor failure advances to second Actor with aggregate charge and wall-clock bounds', async () => {
   const chain = readApifyFallbackChainConfig(
     {
       APIFY_FALLBACK_ACTORS: 'apify/web-scraper,apify/playwright-scraper',
@@ -131,12 +139,19 @@ test('retriable first Actor failure advances to second Actor with aggregate char
     baseConfig,
     { statusCode: 500, error: 'navigation timeout' },
     chain,
-    runner as any,
+    runner,
   );
 
   assert.deepEqual(seen.map((entry) => entry.actorId), ['apify/web-scraper', 'apify/playwright-scraper']);
   assert.ok(seen.every((entry) => entry.maxTotalChargeUsd <= 0.2));
-  assert.ok(seen.every((entry) => entry.timeoutMs <= 44_500));
+  assert.ok((seen[0]?.timeoutMs ?? Infinity) <= 44_500);
+  assert.ok(seen.every((entry) => entry.timeoutMs <= baseConfig.timeoutMs));
+  assert.ok(
+    seen.every(
+      (entry) =>
+        entry.maxTotalTimeoutMs === 30_000 + baseConfig.minDelayMs + entry.timeoutMs,
+    ),
+  );
   assert.equal(result.attempts.length, 2);
   assert.equal(result.attempts[0]?.outcome, 'error');
   assert.equal(result.attempts[0]?.errorClass, 'provider-server-error');
@@ -154,7 +169,7 @@ test('retriable first Actor failure advances to second Actor with aggregate char
 test('provider authentication failure stops the chain instead of multiplying bad paid calls', async () => {
   const chain = readApifyFallbackChainConfig(
     {
-      APIFY_FALLBACK_ACTORS: 'apify/web-scraper,apify/playwright-scraper,apify/cheerio-scraper',
+      APIFY_FALLBACK_ACTORS: 'apify/web-scraper,apify/playwright-scraper,apify/puppeteer-scraper',
       APIFY_FALLBACK_MAX_ATTEMPTS: '3',
     },
     baseConfig,
@@ -172,7 +187,7 @@ test('provider authentication failure stops the chain instead of multiplying bad
         baseConfig,
         { statusCode: 500, error: 'navigation timeout' },
         chain,
-        runner as any,
+        runner,
       ),
     /provider-auth.*HTTP 401|HTTP 401.*provider-auth/,
   );
