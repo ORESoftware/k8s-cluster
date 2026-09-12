@@ -1,9 +1,9 @@
 import {
-  runApifyFallback,
   type ApifyFallbackConfig,
   type ApifyRunResult,
   type ScrapeFallbackRequest,
 } from './apify-fallback.js';
+import { runApifyActorFallback } from './apify-actor-dispatch.js';
 
 export type DomainFallbackRoute = {
   pattern: string;
@@ -61,7 +61,11 @@ export class ApifyFallbackChainError extends Error {
   }
 }
 
-export type ApifyFallbackRunner = typeof runApifyFallback;
+export type ApifyFallbackRunner = (
+  request: ScrapeFallbackRequest,
+  config: ApifyFallbackConfig,
+  localFailure: { statusCode: number; strategy?: string; error?: string },
+) => Promise<ApifyRunResult>;
 
 const MAX_DOMAIN_ROUTES = 64;
 const MAX_ACTORS_PER_ROUTE = 3;
@@ -113,7 +117,7 @@ export async function runApifyFallbackChain(
   baseConfig: ApifyFallbackConfig,
   localFailure: { statusCode: number; strategy?: string; error?: string },
   chainConfig: ApifyFallbackChainConfig,
-  runner: ApifyFallbackRunner = runApifyFallback,
+  runner: ApifyFallbackRunner = runApifyActorFallback,
 ): Promise<ApifyFallbackChainResult> {
   const selection = selectFallbackActors(request.url, chainConfig);
   const actors = selection.actors.slice(0, chainConfig.maxAttempts);
@@ -267,9 +271,12 @@ function parseDomainRoutes(value: string | undefined, maxAttempts: number): Doma
     if (!Array.isArray(rawActors) || rawActors.some((actor) => typeof actor !== 'string')) {
       throw new TypeError(`fallback route ${pattern} must be an array of Actor IDs`);
     }
-    const actors = dedupeActors(rawActors.map((actor) => normalizeActorId(actor))).slice(0, maxAttempts);
-    if (actors.length === 0 || actors.length > MAX_ACTORS_PER_ROUTE) {
+    if (rawActors.length < 1 || rawActors.length > MAX_ACTORS_PER_ROUTE) {
       throw new TypeError(`fallback route ${pattern} must contain 1..${MAX_ACTORS_PER_ROUTE} Actor IDs`);
+    }
+    const actors = dedupeActors(rawActors.map((actor) => normalizeActorId(actor))).slice(0, maxAttempts);
+    if (actors.length === 0) {
+      throw new TypeError(`fallback route ${pattern} must contain at least one distinct Actor ID`);
     }
     routes.push({ pattern, actors });
   }
