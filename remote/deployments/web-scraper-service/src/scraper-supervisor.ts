@@ -14,10 +14,15 @@ import { fileURLToPath } from 'node:url';
 import {
   classifyFallback,
   readApifyFallbackConfig,
-  runApifyFallback,
   type FallbackDecisionReason,
   type ScrapeFallbackRequest,
 } from './apify-fallback.js';
+import {
+  ApifyFallbackChainError,
+  readApifyFallbackChainConfig,
+  runApifyFallbackChain,
+  type FallbackAttempt,
+} from './apify-fallback-chain.js';
 
 const externalHost = process.env.HOST ?? '0.0.0.0';
 const externalPort = readIntegerEnv('PORT', 8097, 1, 65_535);
@@ -32,6 +37,7 @@ const maxCoreResponseBytes = readIntegerEnv(
   25_000_000,
 );
 const apifyConfig = readApifyFallbackConfig();
+const apifyChainConfig = readApifyFallbackChainConfig(process.env, apifyConfig);
 
 if (corePort === externalPort && (externalHost === coreHost || externalHost === '127.0.0.1')) {
   throw new Error('SCRAPER_CORE_PORT must differ from PORT');
@@ -43,6 +49,7 @@ const fallbackMetrics = {
   failure: 0,
   skipped: new Map<FallbackDecisionReason, number>(),
 };
+const actorAttemptMetrics = new Map<string, { attempts: number; success: number; failure: number }>();
 
 let shuttingDown = false;
 let child: ChildProcess | null = null;
@@ -83,7 +90,10 @@ async function main(): Promise<void> {
     corePort,
     apifyFallbackEnabled: apifyConfig.enabled,
     apifyFallbackConfigured: apifyConfig.enabled && Boolean(apifyConfig.token),
-    apifyActorId: apifyConfig.actorId,
+    apifyDefaultActors: apifyChainConfig.defaultActors,
+    apifyDomainRouteCount: apifyChainConfig.domainRoutes.length,
+    apifyMaxChainAttempts: apifyChainConfig.maxAttempts,
+    apifyMaxChainChargeUsd: apifyChainConfig.maxChainTotalChargeUsd,
   });
 }
 
@@ -206,13 +216,19 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
   apifyInFlight += 1;
   try {
     if (apifyConfig.minDelayMs > 0) await delay(apifyConfig.minDelayMs);
-    const fallback = await runApifyFallback(requestBody, apifyConfig, {
-      statusCode: local.statusCode,
-      strategy: typeof localJson?.strategy === 'string' ? localJson.strategy : undefined,
-      error: localError,
-    });
+    const fallback = await runApifyFallbackChain(
+      requestBody,
+      apifyConfig,
+      {
+        statusCode: local.statusCode,
+        strategy: typeof localJson?.strategy === 'string' ? localJson.strategy : undefined,
+        error: localError,
+      },
+      apifyChainConfig,
+    );
+    recordActorAttempts(fallback.attempts);
     fallbackMetrics.success += 1;
-    const payload = fallback.response;
+    const payload = fallback.result.response;
     payload.durationMs = Date.now() - startedAt;
     if (isRecord(payload.fallback)) {
       if (typeof localJson?.durationMs === 'number') payload.fallback.localDurationMs = localJson.durationMs;
@@ -222,10 +238,12 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
   } catch (error) {
     fallbackMetrics.failure += 1;
     apifyCooldownUntil = Date.now() + apifyConfig.failureCooldownMs;
+    if (error instanceof ApifyFallbackChainError) recordActorAttempts(error.attempts);
     const fallbackError = redactToken(safeErrorMessage(error), apifyConfig.token);
     log('warning', 'apify_fallback_failed', {
       error: fallbackError,
       localStatusCode: local.statusCode,
+      chainAttempts: error instanceof ApifyFallbackChainError ? error.attempts.length : null,
       requestId: typeof localJson?.requestId === 'string' ? localJson.requestId : requestBody.requestId ?? null,
     });
     const original = localJson ?? { ok: false, error: localError };
@@ -233,6 +251,12 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
       provider: 'apify',
       attempted: true,
       outcome: 'error',
+      ...(error instanceof ApifyFallbackChainError
+        ? {
+            route: error.selection.route,
+            attempts: error.attempts.map((attempt) => ({ ...attempt })),
+          }
+        : {}),
       error: fallbackError,
     };
     respondJson(response, local.statusCode, original);
@@ -422,6 +446,10 @@ function fallbackStatus(): Record<string, unknown> {
       enabled: apifyConfig.enabled,
       configured: apifyConfig.enabled && Boolean(apifyConfig.token),
       actorId: apifyConfig.actorId,
+      defaultActors: apifyChainConfig.defaultActors,
+      maxChainAttempts: apifyChainConfig.maxAttempts,
+      maxChainChargeUsd: apifyChainConfig.maxChainTotalChargeUsd,
+      domainRouteCount: apifyChainConfig.domainRoutes.length,
       timeoutMs: apifyConfig.timeoutMs,
       maxRequestRetries: apifyConfig.maxRequestRetries,
       maxTotalChargeUsd: apifyConfig.maxTotalChargeUsd,
@@ -437,25 +465,45 @@ function fallbackStatus(): Record<string, unknown> {
 
 function renderFallbackMetrics(): string {
   const lines = [
-    '# HELP dd_web_scraper_external_fallback_attempts_total External fallback attempts after a retriable local scrape failure.',
+    '# HELP dd_web_scraper_external_fallback_attempts_total External fallback chains after a retriable local scrape failure.',
     '# TYPE dd_web_scraper_external_fallback_attempts_total counter',
     `dd_web_scraper_external_fallback_attempts_total{provider="apify"} ${fallbackMetrics.attempts}`,
-    '# HELP dd_web_scraper_external_fallback_success_total Successful external fallback scrapes.',
+    '# HELP dd_web_scraper_external_fallback_success_total Successful external fallback chains.',
     '# TYPE dd_web_scraper_external_fallback_success_total counter',
     `dd_web_scraper_external_fallback_success_total{provider="apify"} ${fallbackMetrics.success}`,
-    '# HELP dd_web_scraper_external_fallback_failure_total Failed external fallback scrapes.',
+    '# HELP dd_web_scraper_external_fallback_failure_total Failed external fallback chains.',
     '# TYPE dd_web_scraper_external_fallback_failure_total counter',
     `dd_web_scraper_external_fallback_failure_total{provider="apify"} ${fallbackMetrics.failure}`,
-    '# HELP dd_web_scraper_external_fallback_in_flight Current external fallback calls.',
+    '# HELP dd_web_scraper_external_fallback_in_flight Current external fallback chains.',
     '# TYPE dd_web_scraper_external_fallback_in_flight gauge',
     `dd_web_scraper_external_fallback_in_flight{provider="apify"} ${apifyInFlight}`,
+    '# HELP dd_web_scraper_external_fallback_actor_attempts_total Apify Actor calls made inside fallback chains.',
+    '# TYPE dd_web_scraper_external_fallback_actor_attempts_total counter',
+  ];
+  for (const [actorId, counters] of actorAttemptMetrics.entries()) {
+    lines.push(
+      `dd_web_scraper_external_fallback_actor_attempts_total{provider="apify",actor="${actorId}",outcome="success"} ${counters.success}`,
+      `dd_web_scraper_external_fallback_actor_attempts_total{provider="apify",actor="${actorId}",outcome="error"} ${counters.failure}`,
+    );
+  }
+  lines.push(
     '# HELP dd_web_scraper_external_fallback_skipped_total Local failures not sent to an external fallback.',
     '# TYPE dd_web_scraper_external_fallback_skipped_total counter',
-  ];
+  );
   for (const [reason, count] of fallbackMetrics.skipped.entries()) {
     lines.push(`dd_web_scraper_external_fallback_skipped_total{provider="apify",reason="${reason}"} ${count}`);
   }
   return `${lines.join('\n')}\n`;
+}
+
+function recordActorAttempts(attempts: FallbackAttempt[]): void {
+  for (const attempt of attempts) {
+    const current = actorAttemptMetrics.get(attempt.actorId) ?? { attempts: 0, success: 0, failure: 0 };
+    current.attempts += 1;
+    if (attempt.outcome === 'success') current.success += 1;
+    else current.failure += 1;
+    actorAttemptMetrics.set(attempt.actorId, current);
+  }
 }
 
 function incrementSkipped(reason: FallbackDecisionReason): void {
