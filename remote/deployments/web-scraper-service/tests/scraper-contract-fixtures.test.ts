@@ -35,12 +35,23 @@ test('recorded ScrapeFallbackRequest instance crosses the runtime adapter withou
   assert.equal(serialized.includes('authorization'), false);
 });
 
-test('recorded fallback provenance remains provider-scoped and secret-free', () => {
+test('recorded fallback-chain provenance remains provider-scoped and secret-free', () => {
   const provenance = loadJson<Record<string, unknown>>(
     '../contracts/instances/FallbackProvenance/valid/apify.json',
   );
   assert.equal(provenance.provider, 'apify');
   assert.equal(provenance.trigger, 'local-retriable-5xx');
-  assert.equal(Object.hasOwn(provenance, 'token'), false);
-  assert.equal(Object.hasOwn(provenance, 'authorization'), false);
+  assert.equal(provenance.route, '*.example.com');
+  assert.equal(provenance.maxChainAttempts, 2);
+  assert.equal(provenance.maxChainChargeUsd, 0.5);
+  const attempts = provenance.attempts as Array<Record<string, unknown>>;
+  assert.equal(attempts.length, 2);
+  assert.deepEqual(
+    attempts.map((attempt) => attempt.actorId),
+    ['apify/web-scraper', 'apify/playwright-scraper'],
+  );
+  const serialized = JSON.stringify(provenance).toLowerCase();
+  for (const forbidden of ['token', 'authorization', 'cookie', 'password', 'secret']) {
+    assert.equal(serialized.includes(forbidden), false, forbidden);
+  }
 });
