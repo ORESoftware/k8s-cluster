@@ -1,0 +1,5 @@
+target=ORESoftware/sustainable-bike
+tracking=DEN-3843
+bundle_sha256=ba05db2234aa7fb51d3784d3b725cca757b5d2a4b3399b4b60f8fc62982ab756
+bundle_size=240001
+action=dispatch-protected-bundle-import

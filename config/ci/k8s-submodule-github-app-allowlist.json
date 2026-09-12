@@ -14,7 +14,6 @@
       "chat.vibe",
       "k8s-libs-and-shared-defs",
       "mip-solver-node.rs",
-      "push-notification-server.rs",
       "t2v-v2t.rs",
       "tor-server.rs"
     ],
@@ -45,6 +44,9 @@
     "drone-mngr": [
       "drone-mngr-monorepo"
     ],
+    "fanwaave": [
+      "push-notification-server.rs"
+    ],
     "fiducia-cloud": [
       "fiducia-customer.rs",
       "fiducia-marketing.web",
@@ -61,7 +63,9 @@
       "scintilla-run-monorepo"
     ],
     "shared-auth": [
-      "shared-auth-monorepo"
+      "shared-auth-infra",
+      "shared-auth-monorepo",
+      "shared-auth-server.rs"
     ],
     "sonus-auris": [
       "sonus-auris-api-server.rs",

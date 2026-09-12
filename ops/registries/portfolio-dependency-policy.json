@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "schedule": {
+    "cron": "0 2 * * *",
+    "timezone": "America/Chicago",
+    "localTime": "02:00"
+  },
+  "scope": {
+    "portfolioRegistry": "ops/registries/portfolio-project-links.csv",
+    "includeArchivedRepositories": false,
+    "includeForks": false,
+    "maxOrganizationsInFlight": 3,
+    "maxRepositoriesPerOrganization": 500
+  },
+  "discovery": {
+    "gitSubmodules": true,
+    "nix": true,
+    "zedPackage": true,
+    "paths": [
+      ".gitmodules",
+      "flake.nix",
+      "flake.lock",
+      "nix/sources.json",
+      ".zpkg.toml",
+      ".zpkg.lock"
+    ]
+  },
+  "updates": {
+    "allowPatchOnly": false,
+    "allowMinor": true,
+    "allowMajor": false,
+    "branchTipAdvancementIsMinor": true,
+    "trackedBranches": [
+      "main",
+      "master",
+      "release",
+      "release/*",
+      "releases/*"
+    ],
+    "patchOnlyDisposition": "ignore",
+    "majorDisposition": "linear_issue",
+    "candidateSearch": "binary_search_with_descending_verification",
+    "maxCandidatesPerDependency": 512
+  },
+  "testing": {
+    "worker": "gha-indie-worker",
+    "pollSeconds": 15,
+    "timeoutSeconds": 2700,
+    "repairAttempts": 2,
+    "profilePriority": [
+      "nix-verify",
+      "rust-verify",
+      "flutter-verify",
+      "node-verify",
+      "python-verify"
+    ]
+  },
+  "pullRequests": {
+    "branchPrefix": "bot/portfolio-deps/",
+    "titlePrefix": "chore(deps):",
+    "managedMarker": "portfolio-dependency-bot:v1",
+    "oneDependencyPerPullRequest": true,
+    "closeSuperseded": true,
+    "draftAfterPassingTests": false,
+    "maximumPerRun": 200
+  },
+  "linear": {
+    "managedMarker": "portfolio-dependency-bot:v1",
+    "majorLabel": "dependency-major",
+    "blockedLabel": "dependency-blocked"
+  }
+}

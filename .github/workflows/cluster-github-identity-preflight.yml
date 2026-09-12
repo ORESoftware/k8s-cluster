@@ -1,0 +1,283 @@
+name: preflight cluster-synced GitHub publication identities
+
+on:
+  push:
+    branches:
+      - agent/publish-hypesiege-streempilot-20260731
+    paths:
+      - .github/workflows/cluster-github-identity-preflight.yml
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/cluster-github-identity-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: cluster-github-identity-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Assume the existing remote-maintenance role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Inspect cluster-synced GitHub identities without exposing credentials
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${INSTANCE_ID:-}" ]]; then
+            echo '::error::AWS_SSM_INSTANCE_ID is unavailable.'
+            exit 78
+          fi
+
+          cat > /tmp/github-identity-preflight.py <<'PY'
+          import base64
+          import json
+          import pathlib
+          import re
+          import ssl
+          import subprocess
+          import tempfile
+          import time
+          import urllib.error
+          import urllib.request
+
+          API = 'https://api.github.com'
+          VERSION = '2026-03-10'
+          ALLOWED_NAMESPACES = {'default', 'ai-agent-coordinator', 'arc-runners'}
+          SECRET_NAME_RE = re.compile(r'(agent|github|coordinator|arc)', re.I)
+          TOKEN_KEY_RE = re.compile(r'(github|gh|pat|token)', re.I)
+          APP_ID_KEY_RE = re.compile(r'(github.*app.*id|app.*id)', re.I)
+          APP_KEY_KEY_RE = re.compile(r'(github.*app.*private.*key|app.*private.*key)', re.I)
+          context = ssl.create_default_context()
+
+          def request_json(url, *, token=None, app_jwt=None, body=None):
+              headers = {
+                  'Accept': 'application/vnd.github+json',
+                  'X-GitHub-Api-Version': VERSION,
+                  'User-Agent': 'cluster-github-identity-preflight',
+              }
+              if token:
+                  headers['Authorization'] = f'Bearer {token}'
+              elif app_jwt:
+                  headers['Authorization'] = f'Bearer {app_jwt}'
+              data = None
+              if body is not None:
+                  data = json.dumps(body, separators=(',', ':')).encode()
+                  headers['Content-Type'] = 'application/json'
+              request = urllib.request.Request(url, data=data, headers=headers)
+              try:
+                  with urllib.request.urlopen(request, timeout=20, context=context) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as error:
+                  try:
+                      json.load(error)
+                  except Exception:
+                      pass
+                  return error.code, None
+              except Exception:
+                  return 0, None
+
+          def b64url(raw):
+              return base64.urlsafe_b64encode(raw).rstrip(b'=').decode()
+
+          def make_app_jwt(app_id, private_key):
+              now = int(time.time())
+              header = b64url(b'{"alg":"RS256","typ":"JWT"}')
+              payload = b64url(json.dumps(
+                  {'iat': now - 60, 'exp': now + 540, 'iss': int(app_id)},
+                  separators=(',', ':'),
+              ).encode())
+              unsigned = f'{header}.{payload}'
+              with tempfile.TemporaryDirectory() as directory:
+                  key_path = pathlib.Path(directory) / 'key.pem'
+                  key_path.write_text(private_key)
+                  key_path.chmod(0o600)
+                  result = subprocess.run(
+                      ['openssl', 'dgst', '-sha256', '-sign', str(key_path), '-binary'],
+                      input=unsigned.encode(),
+                      stdout=subprocess.PIPE,
+                      stderr=subprocess.DEVNULL,
+                      check=True,
+                  )
+              return f'{unsigned}.{b64url(result.stdout)}'
+
+          result = subprocess.run(
+              ['kubectl', 'get', 'secrets', '--all-namespaces', '-o', 'json'],
+              text=True,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.DEVNULL,
+              check=True,
+          )
+          items = json.loads(result.stdout).get('items') or []
+          token_candidates = []
+          app_candidates = []
+
+          for item in items:
+              metadata = item.get('metadata') or {}
+              namespace = metadata.get('namespace') or ''
+              name = metadata.get('name') or ''
+              if namespace not in ALLOWED_NAMESPACES or not SECRET_NAME_RE.search(name):
+                  continue
+              decoded = {}
+              for key, value in (item.get('data') or {}).items():
+                  try:
+                      decoded[key] = base64.b64decode(value).decode().strip()
+                  except Exception:
+                      continue
+              for key, value in decoded.items():
+                  if TOKEN_KEY_RE.search(key) and 20 <= len(value) <= 1024 and 'PRIVATE KEY' not in value:
+                      token_candidates.append(value)
+              app_ids = [value for key, value in decoded.items() if APP_ID_KEY_RE.search(key) and value.isdigit()]
+              app_keys = [value for key, value in decoded.items() if APP_KEY_KEY_RE.search(key) and 'PRIVATE KEY' in value]
+              for app_id in app_ids:
+                  for private_key in app_keys:
+                      app_candidates.append((app_id, private_key))
+
+          token_candidates = list(dict.fromkeys(token_candidates))
+          unique_apps = []
+          seen_apps = set()
+          for app_id, private_key in app_candidates:
+              fingerprint = (app_id, private_key[:64], len(private_key))
+              if fingerprint not in seen_apps:
+                  seen_apps.add(fingerprint)
+                  unique_apps.append((app_id, private_key))
+          app_candidates = unique_apps
+
+          print(f'token_candidates={len(token_candidates)} app_candidates={len(app_candidates)}')
+          authenticated_tokens = 0
+          authorized_tokens = 0
+          for index, token in enumerate(token_candidates, start=1):
+              status, user = request_json(f'{API}/user', token=token)
+              if status != 200 or not isinstance(user, dict) or not user.get('login'):
+                  print(f'token_candidate_{index}: authenticated=false http_status={status}')
+                  continue
+              authenticated_tokens += 1
+              login = user['login']
+              query = {
+                  'query': 'query { viewer { login } hypesiege: organization(login: "hypesiege") { viewerIsAMember viewerCanAdminister viewerCanCreateRepositories } streempilot: organization(login: "streempilot") { viewerIsAMember viewerCanAdminister viewerCanCreateRepositories } }'
+              }
+              graph_status, graph = request_json(f'{API}/graphql', token=token, body=query)
+              data = graph.get('data') if isinstance(graph, dict) else None
+              allowed = True
+              capabilities = []
+              for org in ('hypesiege', 'streempilot'):
+                  capability = data.get(org) if isinstance(data, dict) else None
+                  member = isinstance(capability, dict) and capability.get('viewerIsAMember') is True
+                  can_create = isinstance(capability, dict) and capability.get('viewerCanCreateRepositories') is True
+                  can_admin = isinstance(capability, dict) and capability.get('viewerCanAdminister') is True
+                  capabilities.append(f'{org}:member={str(member).lower()},create={str(can_create).lower()},admin={str(can_admin).lower()}')
+                  allowed = allowed and member and can_create
+              print(f'token_candidate_{index}: authenticated=true viewer={login} graphql_status={graph_status} ' + ' '.join(capabilities))
+              if allowed:
+                  authorized_tokens += 1
+                  target = pathlib.Path('/tmp/hypesiege-streempilot-authorized.token')
+                  target.write_text(token)
+                  target.chmod(0o600)
+                  break
+
+          authorized_apps = 0
+          for index, (app_id, private_key) in enumerate(app_candidates, start=1):
+              try:
+                  jwt = make_app_jwt(app_id, private_key)
+              except Exception:
+                  print(f'app_candidate_{index}: jwt_valid=false')
+                  continue
+              status, _ = request_json(f'{API}/app', app_jwt=jwt)
+              if status != 200:
+                  print(f'app_candidate_{index}: jwt_valid=false http_status={status}')
+                  continue
+              allowed = True
+              capabilities = []
+              for org in ('hypesiege', 'streempilot'):
+                  install_status, installation = request_json(f'{API}/orgs/{org}/installation', app_jwt=jwt)
+                  permissions = installation.get('permissions') if isinstance(installation, dict) else None
+                  selection = installation.get('repository_selection') if isinstance(installation, dict) else None
+                  admin = isinstance(permissions, dict) and permissions.get('administration') == 'write'
+                  contents = isinstance(permissions, dict) and permissions.get('contents') == 'write'
+                  installed = install_status == 200
+                  capabilities.append(f'{org}:installed={str(installed).lower()},all={str(selection == "all").lower()},admin_write={str(admin).lower()},contents_write={str(contents).lower()}')
+                  allowed = allowed and installed and selection == 'all' and admin and contents
+              print(f'app_candidate_{index}: jwt_valid=true ' + ' '.join(capabilities))
+              if allowed:
+                  authorized_apps += 1
+
+          print(f'authenticated_tokens={authenticated_tokens} authorized_tokens={authorized_tokens} authorized_apps={authorized_apps}')
+          if authorized_tokens == 0 and authorized_apps == 0:
+              raise SystemExit(78)
+          PY
+
+          payload="$(base64 -w0 /tmp/github-identity-preflight.py)"
+          python3 - "$payload" > /tmp/github-identity-preflight-commands.json <<'PY'
+          import json
+          import shlex
+          import sys
+
+          payload = sys.argv[1]
+          remote = f'''set -euo pipefail
+          script=/tmp/github-identity-preflight.py
+          cleanup() {{ rm -f "$script" /tmp/hypesiege-streempilot-authorized.token; }}
+          trap cleanup EXIT
+          printf %s {shlex.quote(payload)} | base64 -d > "$script"
+          chmod 700 "$script"
+          chown ec2-user:ec2-user "$script"
+          sudo -u ec2-user -H python3 "$script"
+          '''
+          print(json.dumps({'commands': [remote]}))
+          PY
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment 'Preflight cluster-synced GitHub publication identities' \
+              --parameters file:///tmp/github-identity-preflight-commands.json \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=${command_id}"
+
+          status=''
+          for attempt in $(seq 1 120); do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'Status' \
+              --output text 2>/dev/null || true)"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 2
+          done
+
+          stdout="$(aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text 2>/dev/null || true)"
+          stderr="$(aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardErrorContent' \
+            --output text 2>/dev/null || true)"
+          printf '%s\n' "$stdout"
+          if [[ -n "$stderr" && "$stderr" != None ]]; then
+            printf '%s\n' "$stderr" >&2
+          fi
+          if [[ "$status" != Success ]]; then
+            echo "::error::SSM preflight ended with status ${status:-unknown}."
+            exit 78
+          fi

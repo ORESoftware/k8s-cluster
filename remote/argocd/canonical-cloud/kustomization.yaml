@@ -9,6 +9,11 @@ resources:
   - web.deployment.yaml
   - web.service.yaml
   - web.networkpolicy.yaml
+  - api.externalsecret.yaml
+  - api.deployment.yaml
+  - api.service.yaml
+  - api.networkpolicy.yaml
+  - public.ingress.yaml
   - revoker.externalsecret.yaml
   - revoker.deployment.yaml
   - revoker.networkpolicy.yaml

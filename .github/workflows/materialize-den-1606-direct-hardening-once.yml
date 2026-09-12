@@ -1,0 +1,804 @@
+name: Materialize DEN-1606 direct clone-server hardening once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/workflows/materialize-den-1606-direct-hardening-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-den-1606-direct-clone-server-hardening
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-clone-server-direct-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact current-dev branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-clone-server-direct-hardening
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Apply explicit bounded-lane hardening
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          crate = Path('remote/deployments/gha-clone-server-rs')
+          lib_path = crate / 'src/lib.rs'
+          main_path = crate / 'src/main.rs'
+          readme_path = crate / 'README.md'
+          docs_path = Path('docs/gha-indie-worker-clone-reconciliation.md')
+
+          lib = lib_path.read_text()
+          parse_marker = '''    let workflow: Value = serde_yaml::from_str(&request.workflow_yaml)
+                  .map_err(|error| vec![format!("workflowYaml is not valid YAML: {error}")])?;
+          '''.replace('          ', '')
+          parse_replacement = '''    validate_workflow_document(&request.workflow_yaml).map_err(|error| vec![error])?;
+              let workflow: Value = serde_yaml::from_str(&request.workflow_yaml)
+                  .map_err(|error| vec![format!("workflowYaml is not valid YAML: {error}")])?;
+          '''.replace('          ', '')
+          if lib.count(parse_marker) != 1:
+              raise SystemExit('unexpected workflow parse site')
+          lib = lib.replace(parse_marker, parse_replacement, 1)
+
+          compile_marker = 'fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPlan, Vec<String>> {'
+          validator = r'''fn validate_workflow_document(source: &str) -> Result<(), String> {
+              let mut parents = Vec::<(usize, String)>::new();
+              let mut seen = BTreeMap::<String, BTreeSet<String>>::new();
+              let mut block_scalar_indent = None::<usize>;
+
+              for (index, raw_line) in source.lines().enumerate() {
+                  if raw_line.contains('\t') {
+                      return Err(format!(
+                          "workflowYaml line {} contains a tab; indentation must use spaces",
+                          index + 1
+                      ));
+                  }
+                  let indent = raw_line.bytes().take_while(|byte| *byte == b' ').count();
+                  let trimmed = raw_line.trim();
+                  if trimmed.is_empty() || trimmed.starts_with('#') {
+                      continue;
+                  }
+                  if block_scalar_indent.is_some_and(|block_indent| indent > block_indent) {
+                      continue;
+                  }
+                  block_scalar_indent = None;
+                  if matches!(trimmed, "---" | "...") {
+                      return Err("workflowYaml must contain exactly one document without YAML document markers".into());
+                  }
+
+                  while parents.last().is_some_and(|(parent_indent, _)| *parent_indent >= indent) {
+                      parents.pop();
+                  }
+
+                  let (sequence_item, content) = match trimmed.strip_prefix("- ") {
+                      Some(content) => (true, content.trim_start()),
+                      None => (false, trimmed),
+                  };
+                  if content.starts_with(['!', '&', '*']) {
+                      return Err(format!(
+                          "workflowYaml line {} uses a YAML tag, anchor, or alias",
+                          index + 1
+                      ));
+                  }
+                  let Some((raw_key, raw_value)) = content.split_once(':') else {
+                      continue;
+                  };
+                  let key = raw_key.trim().trim_matches(['\'', '"']);
+                  let value = raw_value.trim_start();
+                  if key == "<<" {
+                      return Err(format!(
+                          "workflowYaml line {} uses a YAML merge key",
+                          index + 1
+                      ));
+                  }
+                  if value.starts_with(['!', '&', '*']) {
+                      return Err(format!(
+                          "workflowYaml line {} uses a YAML tag, anchor, or alias",
+                          index + 1
+                      ));
+                  }
+                  if !key.is_ascii() {
+                      return Err(format!(
+                          "workflowYaml line {} has a non-ASCII mapping key",
+                          index + 1
+                      ));
+                  }
+                  if !sequence_item && !key.is_empty() {
+                      let scope = parents
+                          .iter()
+                          .map(|(_, parent)| parent.as_str())
+                          .collect::<Vec<_>>()
+                          .join("/");
+                      let normalized = key.to_ascii_lowercase();
+                      if !seen.entry(scope).or_default().insert(normalized) {
+                          return Err(format!(
+                              "workflowYaml line {} repeats mapping key {key:?}",
+                              index + 1
+                          ));
+                      }
+                  }
+                  if value.starts_with('|') || value.starts_with('>') {
+                      block_scalar_indent = Some(indent);
+                  } else if !sequence_item && value.is_empty() && !key.is_empty() {
+                      parents.push((indent, key.to_ascii_lowercase()));
+                  }
+              }
+              Ok(())
+          }
+
+          '''.replace('          ', '')
+          if lib.count(compile_marker) != 1:
+              raise SystemExit('unexpected compile_job declaration')
+          lib = lib.replace(compile_marker, validator + compile_marker, 1)
+
+          old_path = '''fn valid_workflow_path(value: &str) -> bool {
+              value.starts_with(".github/workflows/")
+                  && (value.ends_with(".yml") || value.ends_with(".yaml"))
+                  && !value.contains("..")
+                  && !value.contains('\\')
+                  && value.len() <= 256
+          }
+          '''.replace('          ', '')
+          new_path = '''fn valid_workflow_path(value: &str) -> bool {
+              let Some(name) = value.strip_prefix(".github/workflows/") else {
+                  return false;
+              };
+              !name.is_empty()
+                  && !name.contains('/')
+                  && (name.ends_with(".yml") || name.ends_with(".yaml"))
+                  && !name.contains("..")
+                  && !name.contains('\\')
+                  && value.len() <= 256
+          }
+          '''.replace('          ', '')
+          if lib.count(old_path) != 1:
+              raise SystemExit('unexpected planner workflow-path validator')
+          lib = lib.replace(old_path, new_path, 1)
+
+          path_test_marker = '''        let errors = build_plan(&invalid_path_request, &PlannerLimits::default())
+                      .unwrap_err()
+                      .join("\\n");
+                  assert!(errors.contains("workflowPath"));
+
+                  let limits = PlannerLimits {
+          '''.replace('          ', '')
+          path_test_replacement = '''        let errors = build_plan(&invalid_path_request, &PlannerLimits::default())
+                      .unwrap_err()
+                      .join("\\n");
+                  assert!(errors.contains("workflowPath"));
+
+                  let mut nested_path_request = request("jobs: {}");
+                  nested_path_request.workflow_path = ".github/workflows/nested/ci.yml".into();
+                  assert!(build_plan(&nested_path_request, &PlannerLimits::default())
+                      .unwrap_err()
+                      .join("\\n")
+                      .contains("workflowPath"));
+
+                  let limits = PlannerLimits {
+          '''.replace('          ', '')
+          if lib.count(path_test_marker) != 1:
+              raise SystemExit('unexpected workflow path test')
+          lib = lib.replace(path_test_marker, path_test_replacement, 1)
+
+          ambiguity_marker = '''    #[test]
+              fn workflow_and_working_directory_semantics_are_not_silently_ignored() {
+          '''.replace('          ', '')
+          ambiguity_test = r'''    #[test]
+              fn yaml_ambiguity_fails_closed_before_planning() {
+                  for yaml in [
+                      "---\njobs: {}\n---\njobs: {}\n",
+                      "defaults: &defaults\n  run: cargo test\njobs: {}\n",
+                      "defaults:\n  <<: *defaults\njobs: {}\n",
+                      "jobs:\n  test:\n    runs-on: ubuntu-latest\n  test:\n    runs-on: ubuntu-latest\n",
+                      "jоbs: {}\n",
+                  ] {
+                      assert!(build_plan(&request(yaml), &PlannerLimits::default()).is_err());
+                  }
+                  let block_scalar = request(
+                      "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          printf '%s\\n' '---' '<<: *not-yaml'\n",
+                  );
+                  assert!(build_plan(&block_scalar, &PlannerLimits::default()).is_ok());
+              }
+
+          '''.replace('          ', '')
+          if lib.count(ambiguity_marker) != 1:
+              raise SystemExit('unexpected workflow semantics test marker')
+          lib = lib.replace(ambiguity_marker, ambiguity_test + ambiguity_marker, 1)
+          lib_path.write_text(lib)
+
+          main = main_path.read_text()
+          main = main.replace(
+              '''            build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")
+                              .map(|value| value.trim_end_matches('/').to_string()),
+              '''.replace('              ', ''),
+              '''            build_server_url: build_server_url_from_env()?,
+              '''.replace('              ', ''),
+              1,
+          )
+          replacements = {
+              'max_workflow_bytes: env_usize(': 'max_workflow_bytes: env_nonzero_usize(',
+              'max_jobs: env_usize(': 'max_jobs: env_nonzero_usize(',
+              'max_steps_per_job: env_usize(': 'max_steps_per_job: env_nonzero_usize(',
+              'build_poll_seconds: env_u64(': 'build_poll_seconds: env_nonzero_u64(',
+              'build_timeout_seconds: env_u64(': 'build_timeout_seconds: env_nonzero_u64(',
+              'max_runs: env_usize(': 'max_runs: env_nonzero_usize(',
+          }
+          for old, new in replacements.items():
+              if main.count(old) != 1:
+                  raise SystemExit(f'unexpected configuration expression: {old}')
+              main = main.replace(old, new, 1)
+
+          client_marker = '''        client: reqwest::Client::builder()
+                      .connect_timeout(Duration::from_secs(10))
+                      .timeout(Duration::from_secs(60))
+                      .user_agent("gha-clone-server/0.1")
+          '''.replace('          ', '')
+          client_replacement = '''        client: reqwest::Client::builder()
+                      .connect_timeout(Duration::from_secs(10))
+                      .timeout(Duration::from_secs(60))
+                      .redirect(reqwest::redirect::Policy::none())
+                      .user_agent("gha-clone-server/0.1")
+          '''.replace('          ', '')
+          if main.count(client_marker) != 1:
+              raise SystemExit('unexpected HTTP client builder')
+          main = main.replace(client_marker, client_replacement, 1)
+
+          run_record_marker = '''#[derive(Debug, Serialize)]
+          #[serde(rename_all = "camelCase")]
+          struct BuildServerRequest<'a> {
+              schema_version: &'static str,
+              job_kind: &'static str,
+              repo_url: String,
+              git_ref: &'a str,
+              profile: &'a str,
+              request_id: String,
+          }
+          '''.replace('          ', '')
+          run_record_replacement = run_record_marker + r'''
+
+          fn new_run_record(plan: &WorkflowPlan) -> RunRecord {
+              let now = now_ms();
+              RunRecord {
+                  id: Uuid::new_v4(),
+                  plan_id: plan.plan_id.clone(),
+                  repository: plan.repository.clone(),
+                  revision: plan.revision.clone(),
+                  workflow_path: plan.workflow_path.clone(),
+                  status: RunStatus::Queued,
+                  current_job: None,
+                  submissions: Vec::new(),
+                  error: None,
+                  created_at_ms: now,
+                  updated_at_ms: now,
+              }
+          }
+          '''.replace('          ', '')
+          if main.count(run_record_marker) != 1:
+              raise SystemExit('unexpected build-server request declaration')
+          main = main.replace(run_record_marker, run_record_replacement, 1)
+
+          api_record = '''    let now = now_ms();
+              let record = RunRecord {
+                  id: Uuid::new_v4(),
+                  plan_id: plan.plan_id.clone(),
+                  repository: plan.repository.clone(),
+                  revision: plan.revision.clone(),
+                  workflow_path: plan.workflow_path.clone(),
+                  status: RunStatus::Queued,
+                  current_job: None,
+                  submissions: Vec::new(),
+                  error: None,
+                  created_at_ms: now,
+                  updated_at_ms: now,
+              };
+              {
+                  let mut runs = state.runs.write().await;
+                  runs.insert(record.id, record.clone());
+                  prune_runs(&mut runs, state.config.max_runs);
+              }
+              let run_id = record.id;
+          '''.replace('          ', '')
+          api_replacement = '''    let record = new_run_record(&plan);
+              let run_id = record.id;
+              if !reserve_runs(&state, &[record.clone()]).await {
+                  return (
+                      StatusCode::TOO_MANY_REQUESTS,
+                      Json(json!({ "error": "active run capacity is exhausted" })),
+                  )
+                      .into_response();
+              }
+          '''.replace('          ', '')
+          if main.count(api_record) != 1:
+              raise SystemExit('unexpected API run insertion block')
+          main = main.replace(api_record, api_replacement, 1)
+
+          webhook_old = '''        if !remember_webhook_delivery(&state, &delivery).await {
+                      return (
+                          StatusCode::ACCEPTED,
+                          Json(json!({
+                              "accepted": false,
+                              "event": event,
+                              "delivery": delivery,
+                              "repository": repository,
+                              "revision": revision,
+                              "reason": "duplicate GitHub delivery was already dispatched"
+                          })),
+                      )
+                          .into_response();
+                  }
+                  let mut run_ids = Vec::new();
+                  for plan in plans.clone() {
+                      let now = now_ms();
+                      let record = RunRecord {
+                          id: Uuid::new_v4(),
+                          plan_id: plan.plan_id.clone(),
+                          repository: plan.repository.clone(),
+                          revision: plan.revision.clone(),
+                          workflow_path: plan.workflow_path.clone(),
+                          status: RunStatus::Queued,
+                          current_job: None,
+                          submissions: Vec::new(),
+                          error: None,
+                          created_at_ms: now,
+                          updated_at_ms: now,
+                      };
+                      let run_id = record.id;
+                      {
+                          let mut runs = state.runs.write().await;
+                          runs.insert(run_id, record);
+                          prune_runs(&mut runs, state.config.max_runs);
+                      }
+                      let task_state = state.clone();
+                      tokio::spawn(async move {
+                          if let Err(error) = execute_plan(&task_state, run_id, plan).await {
+                              update_run(&task_state, run_id, |run| {
+                                  run.status = RunStatus::Failed;
+                                  run.error = Some(error);
+                                  run.current_job = None;
+                              })
+                              .await;
+                          }
+                      });
+                      run_ids.push(run_id);
+                  }
+          '''.replace('          ', '')
+          webhook_new = '''        let records = plans.iter().map(new_run_record).collect::<Vec<_>>();
+                  let run_ids = records.iter().map(|record| record.id).collect::<Vec<_>>();
+                  if !reserve_runs(&state, &records).await {
+                      return (
+                          StatusCode::TOO_MANY_REQUESTS,
+                          Json(json!({
+                              "accepted": false,
+                              "event": event,
+                              "delivery": delivery,
+                              "reason": "active run capacity is exhausted"
+                          })),
+                      )
+                          .into_response();
+                  }
+                  if !remember_webhook_delivery(&state, &delivery).await {
+                      remove_runs(&state, &run_ids).await;
+                      return (
+                          StatusCode::ACCEPTED,
+                          Json(json!({
+                              "accepted": false,
+                              "event": event,
+                              "delivery": delivery,
+                              "repository": repository,
+                              "revision": revision,
+                              "reason": "duplicate GitHub delivery was already dispatched"
+                          })),
+                      )
+                          .into_response();
+                  }
+                  for (record, plan) in records.into_iter().zip(plans.clone()) {
+                      let run_id = record.id;
+                      let task_state = state.clone();
+                      tokio::spawn(async move {
+                          if let Err(error) = execute_plan(&task_state, run_id, plan).await {
+                              update_run(&task_state, run_id, |run| {
+                                  run.status = RunStatus::Failed;
+                                  run.error = Some(error);
+                                  run.current_job = None;
+                              })
+                              .await;
+                          }
+                      });
+                  }
+          '''.replace('          ', '')
+          if main.count(webhook_old) != 1:
+              raise SystemExit('unexpected webhook run insertion block')
+          main = main.replace(webhook_old, webhook_new, 1)
+
+          build_parse = '''        let build: BuildJobResponse = serde_json::from_str(&body)
+                      .map_err(|error| format!("build server returned invalid job JSON: {error}"))?;
+                  update_run(state, run_id, |run| {
+          '''.replace('          ', '')
+          build_parse_new = '''        let build: BuildJobResponse = serde_json::from_str(&body)
+                      .map_err(|error| format!("build server returned invalid job JSON: {error}"))?;
+                  if !valid_build_job_id(&build.id) {
+                      return Err("build server returned an invalid job ID".into());
+                  }
+                  update_run(state, run_id, |run| {
+          '''.replace('          ', '')
+          if main.count(build_parse) != 1:
+              raise SystemExit('unexpected build submission parse')
+          main = main.replace(build_parse, build_parse_new, 1)
+
+          status_parse = '''        let build: BuildJobResponse = serde_json::from_str(&body)
+                      .map_err(|error| format!("build status JSON is invalid: {error}"))?;
+                  match build.status.as_str() {
+          '''.replace('          ', '')
+          status_parse_new = '''        let build: BuildJobResponse = serde_json::from_str(&body)
+                      .map_err(|error| format!("build status JSON is invalid: {error}"))?;
+                  if build.id != build_job_id || !valid_build_job_id(&build.id) {
+                      return Err("build status returned a mismatched or invalid job ID".into());
+                  }
+                  match build.status.as_str() {
+          '''.replace('          ', '')
+          if main.count(status_parse) != 1:
+              raise SystemExit('unexpected build status parse')
+          main = main.replace(status_parse, status_parse_new, 1)
+
+          configured_path_old = '''fn valid_configured_workflow_path(value: &str) -> bool {
+              value.starts_with(".github/workflows/")
+                  && (value.ends_with(".yml") || value.ends_with(".yaml"))
+                  && !value.contains("..")
+                  && !value.contains('\\')
+                  && value.len() <= 256
+          }
+          '''.replace('          ', '')
+          configured_path_new = '''fn valid_configured_workflow_path(value: &str) -> bool {
+              let Some(name) = value.strip_prefix(".github/workflows/") else {
+                  return false;
+              };
+              !name.is_empty()
+                  && !name.contains('/')
+                  && (name.ends_with(".yml") || name.ends_with(".yaml"))
+                  && !name.contains("..")
+                  && !name.contains('\\')
+                  && value.len() <= 256
+          }
+          '''.replace('          ', '')
+          if main.count(configured_path_old) != 1:
+              raise SystemExit('unexpected configured workflow path validator')
+          main = main.replace(configured_path_old, configured_path_new, 1)
+
+          github_origin_marker = 'fn github_api_base_url_from_env() -> Result<String, String> {'
+          build_origin = r'''fn build_server_url_from_env() -> Result<Option<String>, String> {
+              env_optional("GHA_CLONE_BUILD_SERVER_URL")
+                  .map(|value| normalize_build_server_url(&value))
+                  .transpose()
+          }
+
+          fn normalize_build_server_url(value: &str) -> Result<String, String> {
+              let value = value.trim().trim_end_matches('/');
+              if value.is_empty() {
+                  return Err("GHA_CLONE_BUILD_SERVER_URL must not be empty".into());
+              }
+              let parsed = reqwest::Url::parse(value)
+                  .map_err(|error| format!("GHA_CLONE_BUILD_SERVER_URL is invalid: {error}"))?;
+              if !parsed.username().is_empty()
+                  || parsed.password().is_some()
+                  || parsed.query().is_some()
+                  || parsed.fragment().is_some()
+                  || !matches!(parsed.path(), "" | "/")
+              {
+                  return Err(
+                      "GHA_CLONE_BUILD_SERVER_URL must be an origin without credentials, path, query, or fragment"
+                          .into(),
+                  );
+              }
+              let host = parsed
+                  .host_str()
+                  .ok_or_else(|| "GHA_CLONE_BUILD_SERVER_URL is missing a host".to_string())?;
+              let loopback = matches!(host, "127.0.0.1" | "localhost" | "::1");
+              let cluster_service = host.ends_with(".svc") || host.ends_with(".svc.cluster.local");
+              if parsed.scheme() != "https"
+                  && !(parsed.scheme() == "http" && (loopback || cluster_service))
+              {
+                  return Err(
+                      "GHA_CLONE_BUILD_SERVER_URL must use HTTPS; HTTP is allowed only for loopback or Kubernetes service DNS"
+                          .into(),
+                  );
+              }
+              Ok(value.to_string())
+          }
+
+          fn valid_build_job_id(value: &str) -> bool {
+              let Some(rest) = value.strip_prefix("build-") else {
+                  return false;
+              };
+              let mut parts = rest.split('-');
+              let Some(timestamp) = parts.next() else {
+                  return false;
+              };
+              let Some(counter) = parts.next() else {
+                  return false;
+              };
+              parts.next().is_none()
+                  && !timestamp.is_empty()
+                  && !counter.is_empty()
+                  && timestamp.len() <= 32
+                  && counter.len() <= 20
+                  && timestamp.bytes().all(|byte| byte.is_ascii_digit())
+                  && counter.bytes().all(|byte| byte.is_ascii_digit())
+          }
+
+          '''.replace('          ', '')
+          if main.count(github_origin_marker) != 1:
+              raise SystemExit('unexpected GitHub origin helper marker')
+          main = main.replace(github_origin_marker, build_origin + github_origin_marker, 1)
+
+          prune_marker = 'fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {'
+          capacity_helpers = r'''fn reserve_run_records(
+              runs: &mut BTreeMap<Uuid, RunRecord>,
+              records: &[RunRecord],
+              max_runs: usize,
+          ) -> bool {
+              if records.is_empty() {
+                  return true;
+              }
+              if records.len() > max_runs {
+                  return false;
+              }
+              prune_runs(runs, max_runs.saturating_sub(records.len()));
+              if runs.len().saturating_add(records.len()) > max_runs {
+                  return false;
+              }
+              for record in records {
+                  runs.insert(record.id, record.clone());
+              }
+              true
+          }
+
+          async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {
+              reserve_run_records(
+                  &mut state.runs.write().await,
+                  records,
+                  state.config.max_runs,
+              )
+          }
+
+          async fn remove_runs(state: &AppState, ids: &[Uuid]) {
+              let mut runs = state.runs.write().await;
+              for id in ids {
+                  runs.remove(id);
+              }
+          }
+
+          '''.replace('          ', '')
+          if main.count(prune_marker) != 1:
+              raise SystemExit('unexpected run pruning marker')
+          main = main.replace(prune_marker, capacity_helpers + prune_marker, 1)
+
+          nested_test_marker = '''        assert!(validate_workflow_configuration(&allowed, &invalid_path)
+                      .unwrap_err()
+                      .contains("invalid path"));
+
+                  let duplicate = BTreeMap::from([(
+          '''.replace('          ', '')
+          nested_test_replacement = '''        assert!(validate_workflow_configuration(&allowed, &invalid_path)
+                      .unwrap_err()
+                      .contains("invalid path"));
+
+                  let nested_path = BTreeMap::from([(
+                      "owner/repo".to_string(),
+                      vec![".github/workflows/nested/ci.yml".to_string()],
+                  )]);
+                  assert!(validate_workflow_configuration(&allowed, &nested_path)
+                      .unwrap_err()
+                      .contains("invalid path"));
+
+                  let duplicate = BTreeMap::from([(
+          '''.replace('          ', '')
+          if main.count(nested_test_marker) != 1:
+              raise SystemExit('unexpected workflow configuration test')
+          main = main.replace(nested_test_marker, nested_test_replacement, 1)
+
+          origin_test_marker = '''        assert!(normalize_github_api_base_url("https://example.com?token=x").is_err());
+              }
+
+              #[test]
+              fn terminal_run_pruning_never_discards_active_runs() {
+          '''.replace('          ', '')
+          origin_tests = '''        assert!(normalize_github_api_base_url("https://example.com?token=x").is_err());
+              }
+
+              #[test]
+              fn build_server_origin_and_job_ids_are_bounded() {
+                  assert_eq!(
+                      normalize_build_server_url("https://build.example.com/").unwrap(),
+                      "https://build.example.com"
+                  );
+                  assert!(normalize_build_server_url("http://127.0.0.1:8082").is_ok());
+                  assert!(normalize_build_server_url(
+                      "http://dd-build-server.default.svc.cluster.local:8082"
+                  )
+                  .is_ok());
+                  assert!(normalize_build_server_url("http://build.example.com").is_err());
+                  assert!(normalize_build_server_url("https://user:pass@example.com").is_err());
+                  assert!(normalize_build_server_url("https://example.com/builds").is_err());
+                  assert!(valid_build_job_id("build-1720000000000-42"));
+                  assert!(!valid_build_job_id("../build-1-2"));
+                  assert!(!valid_build_job_id("build-1-2/../secret"));
+                  assert!(!valid_build_job_id("build-1-not-a-number"));
+              }
+
+              #[test]
+              fn terminal_run_pruning_never_discards_active_runs() {
+          '''.replace('          ', '')
+          if main.count(origin_test_marker) != 1:
+              raise SystemExit('unexpected origin/pruning test marker')
+          main = main.replace(origin_test_marker, origin_tests, 1)
+
+          final_marker = '''        assert!(runs
+                      .values()
+                      .any(|run| matches!(run.status, RunStatus::Running)));
+              }
+          }
+          '''.replace('          ', '')
+          capacity_test = '''        assert!(runs
+                      .values()
+                      .any(|run| matches!(run.status, RunStatus::Running)));
+              }
+
+              #[test]
+              fn active_run_capacity_is_reserved_before_dispatch() {
+                  let now = now_ms();
+                  let active_id = Uuid::new_v4();
+                  let pending_id = Uuid::new_v4();
+                  let record = |id, status| RunRecord {
+                      id,
+                      plan_id: id.to_string(),
+                      repository: "owner/repo".into(),
+                      revision: "a".repeat(40),
+                      workflow_path: ".github/workflows/ci.yml".into(),
+                      status,
+                      current_job: None,
+                      submissions: vec![],
+                      error: None,
+                      created_at_ms: now,
+                      updated_at_ms: now,
+                  };
+                  let mut runs = BTreeMap::from([(
+                      active_id,
+                      record(active_id, RunStatus::Running),
+                  )]);
+                  assert!(!reserve_run_records(
+                      &mut runs,
+                      &[record(pending_id, RunStatus::Queued)],
+                      1,
+                  ));
+                  assert_eq!(runs.len(), 1);
+                  assert!(runs.contains_key(&active_id));
+
+                  runs.get_mut(&active_id).unwrap().status = RunStatus::Succeeded;
+                  assert!(reserve_run_records(
+                      &mut runs,
+                      &[record(pending_id, RunStatus::Queued)],
+                      1,
+                  ));
+                  assert_eq!(runs.len(), 1);
+                  assert!(runs.contains_key(&pending_id));
+              }
+          }
+          '''.replace('          ', '')
+          if main.count(final_marker) != 1:
+              raise SystemExit('unexpected final run pruning test')
+          main = main.replace(final_marker, capacity_test, 1)
+          main_path.write_text(main)
+
+          docs_path.write_text('''# gha-indie-worker and clone-server reconciliation
+
+Linear: DEN-1606
+
+`rhysd/gha-indie-worker` is design provenance for a small independent worker/control-plane boundary. It is not vendored, imported, deployed, or treated as a second scheduler.
+
+## Canonical ownership
+
+- GitHub-hosted runners and official ARC own native GitHub Actions semantics.
+- `gha-capacity-broker-rs` owns billing and lane-selection policy.
+- `gha-clone-server-rs` accepts a bounded static workflow subset and maps it to fixed profiles.
+- `gha-executor-router` selects AWS or Hetzner only before submission and pins all later status reads.
+- `dd-build-server` owns fixed-profile execution, isolation, logs, and artifacts.
+
+The independent lane rejects unsupported semantics. It does not claim marketplace-action, dynamic-matrix, reusable-workflow, OIDC, environment, approval, deployment, macOS, Windows, or full GitHub control-plane parity.
+
+## Directly reconciled hardening
+
+The current-dev implementation now:
+
+- rejects nested workflow paths; only direct `.github/workflows/<file>.yml|yaml` files are eligible;
+- rejects tabs, multi-document markers, YAML tags, anchors, aliases, merge keys, duplicate block mapping keys, and non-ASCII mapping keys before planning;
+- ignores document-like text inside block-scalar run scripts;
+- rejects zero workflow, job, step, poll, timeout, and retained-run limits;
+- disables HTTP redirect following for GitHub and build-server calls;
+- constrains build-server endpoints to credential-free origins using HTTPS, loopback HTTP, or Kubernetes service-DNS HTTP;
+- validates every returned build ID and requires status responses to remain bound to that exact ID;
+- reserves bounded active-run capacity before API or webhook dispatch;
+- removes a duplicate webhook reservation if its delivery ID was already dispatched;
+- never evicts an active run to accept another request.
+
+## Durability boundary
+
+Run state, delivery replay state, and capacity reservations remain process-local. GitOps stays dormant. One replica is the maximum safe activation shape until shared durable state and Fiducia fencing are reviewed. A restart may lose process-local status, so restart-transparent retry and cross-replica takeover remain out of scope.
+
+## Evidence
+
+The product PR must end with source, tests, and this document only. The materializer deletes itself. Required evidence is the exact final commit passing Rust formatting, strict Clippy, all test targets, continuity static contracts, secret scan, rendering, and review-thread checks.
+''')
+
+          readme = readme_path.read_text()
+          note = '''
+## Design provenance
+
+`gha-indie-worker` is referenced only as design provenance. The canonical ownership and direct hardening decisions are documented in `docs/gha-indie-worker-clone-reconciliation.md`; this crate remains a bounded independent lane beside official ARC and `dd-build-server`, not a GitHub Actions parity implementation.
+'''
+          if '## Design provenance' not in readme:
+              readme_path.write_text(readme.rstrip() + '\n' + note)
+
+          Path('.github/workflows/materialize-den-1606-direct-hardening-once.yml').unlink()
+          PY
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate repository continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit only auditable product changes
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          if git diff --cached --quiet; then
+            echo 'direct hardening produced no product change' >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): harden the bounded clone-server lane directly'
+          git push origin HEAD:agent/den-1606-clone-server-direct-hardening

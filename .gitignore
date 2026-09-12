@@ -38,6 +38,10 @@ obj/
 # every Dart project's bin/ explicitly so the .NET rule above doesn't hide it.
 !remote/deployments/dart-server/bin/
 !remote/deployments/dart-server/bin/**
+# Rust multi-binary crates also use src/bin/ for source. Keep the reviewed
+# executor-router entrypoint visible to Git and repository contract tests.
+!remote/deployments/gha-clone-server-rs/src/bin/
+!remote/deployments/gha-clone-server-rs/src/bin/gha-executor-router.rs
 
 # ──────────────────────────────────────────────
 # Dart / Flutter
@@ -120,6 +124,8 @@ service-account*.json
 # temp folders
 tmp
 temp
+tmp/worktrees
+temp/worktrees
 .cache/
 
 # Local cluster-test runtime artifacts (Gleam presence server etc.)
@@ -139,3 +145,14 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-3124b1a8e305-merge-remote-agent-executable-openapi-da ---
+!k8s/*.example.secret.yaml
+**/*.rs.bk
+/target
+directory.local.toml
+directory.toml
+k8s/*.secret.yaml
+k8s/directory-configmap.yaml
+temp/worktrees
+tmp/worktrees

@@ -1,0 +1,275 @@
+name: Publish expected repository gaps through encrypted handoff once
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ops-publish-missing-organization-repositories
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      REPOSITORY: ${{ github.repository }}
+      DEFAULT_BRANCH: main
+      HANDSHAKE_NONCE: 2efdb7f7867e4b76afcd67dde90cb8e6
+      PUBLIC_KEY_PATH: .github/tmp/repository-gaps-2efdb7f7867e4b76afcd67dde90cb8e6.pub.pem
+      CIPHERTEXT_PATH: .github/tmp/repository-gaps-2efdb7f7867e4b76afcd67dde90cb8e6.enc.b64
+      EVIDENCE_DIR: ops/evidence/expected-repository-gaps
+      RUN_STAMP: 20260805-${{ github.run_id }}
+
+    steps:
+      - name: Check out exact trusted main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+          show-progress: false
+
+      - name: Validate trusted source and fail-closed contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$GITHUB_REPOSITORY" = ORESoftware/k8s-cluster
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 -m py_compile \
+            scripts/ops/verify_expected_repository_gaps.py \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/private_repository_creation.py \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py
+          python3 scripts/ops/test_verify_expected_repository_gaps.py -v
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
+          python3 scripts/ops/test_encrypted_expected_repository_gaps_workflow.py -v
+
+      - name: Publish exact reviewed gaps and prepare evidence
+        shell: bash
+        env:
+          GITHUB_TOKEN_VALUE: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          repo_api="https://api.github.com/repos/${REPOSITORY}"
+
+          repo_api_call() {
+            local method="$1"
+            local url="$2"
+            local data="${3:-}"
+            if [[ -n "$data" ]]; then
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --data-binary "$data"
+            else
+              curl --fail-with-body --silent --show-error \
+                --request "$method" \
+                --url "$url" \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${GITHUB_TOKEN_VALUE}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28'
+            fi
+          }
+
+          put_file() {
+            local path="$1"
+            local source_file="$2"
+            local message="$3"
+            local content payload
+            content="$(base64 --wrap=0 "$source_file")"
+            payload="$(jq -nc \
+              --arg message "$message" \
+              --arg content "$content" \
+              --arg branch "$DEFAULT_BRANCH" \
+              '{message:$message,content:$content,branch:$branch}')"
+            repo_api_call PUT "${repo_api}/contents/${path}" "$payload" >/dev/null
+          }
+
+          delete_file_if_present() {
+            local path="$1"
+            local message="$2"
+            local metadata sha payload
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${path}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              sha="$(jq -r '.sha // empty' <<<"$metadata")"
+              if [[ -n "$sha" ]]; then
+                payload="$(jq -nc \
+                  --arg message "$message" \
+                  --arg sha "$sha" \
+                  --arg branch "$DEFAULT_BRANCH" \
+                  '{message:$message,sha:$sha,branch:$branch}')"
+                repo_api_call DELETE "${repo_api}/contents/${path}" "$payload" >/dev/null || true
+              fi
+            fi
+          }
+
+          cleanup_credentials() {
+            delete_file_if_present "$PUBLIC_KEY_PATH" \
+              'ci: remove expired repository-gap public key'
+            delete_file_if_present "$CIPHERTEXT_PATH" \
+              'ci: remove encrypted repository-gap credential'
+            shred -u \
+              /tmp/repository-gaps-private.pem \
+              /tmp/repository-gaps-public.pem \
+              /tmp/repository-gaps-token.enc \
+              /tmp/repository-gaps-token.txt \
+              2>/dev/null || true
+            unset USER_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+          }
+          trap cleanup_credentials EXIT
+
+          delete_file_if_present "$PUBLIC_KEY_PATH" \
+            'ci: remove stale repository-gap public key'
+          delete_file_if_present "$CIPHERTEXT_PATH" \
+            'ci: remove stale encrypted repository-gap credential'
+
+          openssl genpkey \
+            -algorithm RSA \
+            -pkeyopt rsa_keygen_bits:4096 \
+            -out /tmp/repository-gaps-private.pem >/dev/null 2>&1
+          openssl pkey \
+            -in /tmp/repository-gaps-private.pem \
+            -pubout \
+            -out /tmp/repository-gaps-public.pem >/dev/null 2>&1
+          put_file \
+            "$PUBLIC_KEY_PATH" \
+            /tmp/repository-gaps-public.pem \
+            'ci: publish ephemeral repository-gap key'
+          echo "HANDSHAKE_READY nonce=${HANDSHAKE_NONCE} path=${PUBLIC_KEY_PATH}"
+
+          ciphertext=''
+          for _ in $(seq 1 720); do
+            if metadata="$(repo_api_call GET "${repo_api}/contents/${CIPHERTEXT_PATH}?ref=${DEFAULT_BRANCH}" 2>/dev/null)"; then
+              ciphertext="$(jq -r '.content // empty' <<<"$metadata" \
+                | tr -d '\n' \
+                | base64 --decode \
+                | tr -d '\r\n')"
+              [[ -z "$ciphertext" ]] || break
+            fi
+            sleep 5
+          done
+          if [[ -z "$ciphertext" ]]; then
+            echo "encrypted credential was not received for handshake ${HANDSHAKE_NONCE}" >&2
+            exit 1
+          fi
+
+          printf '%s' "$ciphertext" | base64 --decode > /tmp/repository-gaps-token.enc
+          openssl pkeyutl \
+            -decrypt \
+            -inkey /tmp/repository-gaps-private.pem \
+            -in /tmp/repository-gaps-token.enc \
+            -pkeyopt rsa_padding_mode:oaep \
+            -pkeyopt rsa_oaep_md:sha256 \
+            -pkeyopt rsa_mgf1_md:sha256 \
+            > /tmp/repository-gaps-token.txt
+
+          USER_TOKEN="$(tr -d '\r\n' < /tmp/repository-gaps-token.txt)"
+          test -n "$USER_TOKEN"
+          case "$USER_TOKEN" in
+            *[[:space:]]*)
+              echo 'decrypted credential contains whitespace' >&2
+              exit 1
+              ;;
+          esac
+          echo "::add-mask::${USER_TOKEN}"
+          export GH_TOKEN="$USER_TOKEN"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$USER_TOKEN"
+          test "$(gh api user --jq .login)" = ORESoftware
+          gh auth status >/dev/null
+          for organization in hypesiege StreemPilot; do
+            observed="$(gh api "user/memberships/orgs/${organization}" --jq '[.role,.state] | join(":")')"
+            test "$observed" = 'admin:active'
+          done
+
+          rm -rf "$EVIDENCE_DIR"
+          mkdir -p "$EVIDENCE_DIR"
+          python3 scripts/ops/verify_expected_repository_gaps.py preflight \
+            --output "$EVIDENCE_DIR/preflight.json" \
+            2>&1 | tee "$EVIDENCE_DIR/preflight.log"
+
+          operation_rc=0
+          set +e
+          python3 scripts/ops/publish_missing_org_repositories_current.py \
+            2>&1 | tee "$EVIDENCE_DIR/publisher.log"
+          publisher_rc=${PIPESTATUS[0]}
+          set -e
+          if [[ "$publisher_rc" -ne 0 ]]; then
+            operation_rc="$publisher_rc"
+          else
+            grep -F 'VERIFIED private canonical fleet remote state' \
+              "$EVIDENCE_DIR/publisher.log"
+            python3 scripts/ops/verify_expected_repository_gaps.py postflight \
+              --preflight "$EVIDENCE_DIR/preflight.json" \
+              --output "$EVIDENCE_DIR/postflight.json" \
+              2>&1 | tee "$EVIDENCE_DIR/postflight.log"
+          fi
+
+          rm -rf /tmp/expected-repository-gap-evidence
+          mkdir -p /tmp/expected-repository-gap-evidence
+          cp -a "$EVIDENCE_DIR"/. /tmp/expected-repository-gap-evidence/
+
+          cleanup_credentials
+          trap - EXIT
+          unset GH_TOKEN
+          export GH_TOKEN="$GITHUB_TOKEN_VALUE"
+          gh auth setup-git >/dev/null
+
+          git fetch origin "$DEFAULT_BRANCH"
+          evidence_branch="agent/den-2328-repository-gap-evidence-${RUN_STAMP}"
+          git checkout -B "$evidence_branch" "origin/${DEFAULT_BRANCH}"
+          rm -rf "$EVIDENCE_DIR"
+          mkdir -p "$EVIDENCE_DIR"
+          cp -a /tmp/expected-repository-gap-evidence/. "$EVIDENCE_DIR/"
+          git add "$EVIDENCE_DIR"
+
+          if git diff --cached --quiet; then
+            echo 'repository-gap evidence already matches main'
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            if [[ "$operation_rc" -eq 0 ]]; then
+              git commit -m 'ops(DEN-2328): record validated repository-gap publication evidence'
+              evidence_title='ops(DEN-2328): record validated repository-gap evidence'
+            else
+              git commit -m 'ops(DEN-2328): record failed repository-gap publication evidence'
+              evidence_title='ops(DEN-2328): record failed repository-gap evidence'
+            fi
+            git push --force-with-lease -u origin "$evidence_branch"
+            evidence_pr_url="$(gh pr create \
+              --repo "$REPOSITORY" \
+              --base "$DEFAULT_BRANCH" \
+              --head "$evidence_branch" \
+              --title "$evidence_title" \
+              --body "Records bounded preflight, publisher, and postflight evidence from workflow run ${GITHUB_RUN_ID}. No credential material is included.")"
+            printf 'Evidence PR: %s\n' "$evidence_pr_url" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          exit "$operation_rc"
+
+      - name: Upload repository-gap evidence artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: expected-repository-gaps-${{ github.run_id }}
+          path: ops/evidence/expected-repository-gaps
+          if-no-files-found: warn
+          retention-days: 30
+          include-hidden-files: true

@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "ores.lambda-repository-fleet.v1",
+  "minimumSuccessfulOrganizations": 10,
+  "repositories": [
+    {
+      "organization": "apostille-me",
+      "name": "apme-lambdas",
+      "crateName": "apme-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Apostille.me heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "apme-lib-core",
+      "ormCore": "apme-orm-core"
+    },
+    {
+      "organization": "evento-globolo",
+      "name": "evgl-lambdas",
+      "crateName": "evgl-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Evento Globolo heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "evgl-lib-core",
+      "ormCore": "evgl-orm-core"
+    },
+    {
+      "organization": "embedded-alerts",
+      "name": "eal-lambdas",
+      "crateName": "eal-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Embedded Alerts heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "eal-lib-core",
+      "ormCore": "eal-orm-core"
+    },
+    {
+      "organization": "hacker-house-medellin",
+      "name": "hhm-lambdas",
+      "crateName": "hhm-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Hacker House Medellin heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "hhm-lib-core",
+      "ormCore": "hhm-orm-core"
+    },
+    {
+      "organization": "hypesiege",
+      "name": "hypesiege-lambdas",
+      "crateName": "hypesiege-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Hypesiege heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "hypesiege-lib-core",
+      "ormCore": "hypesiege-orm-core"
+    },
+    {
+      "organization": "3FA-app",
+      "name": "3fa-lambdas",
+      "crateName": "threefa-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for 3FA application heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "3fa-lib-core",
+      "ormCore": "3fa-orm-core"
+    },
+    {
+      "organization": "shared-auth",
+      "name": "shared-auth-lambdas",
+      "crateName": "shared-auth-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Shared Auth heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "shared-auth-lib-core",
+      "ormCore": "shared-auth-orm-core"
+    },
+    {
+      "organization": "messaging-intel",
+      "name": "msgint-lambdas",
+      "crateName": "msgint-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Messaging Intel heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "msgint-lib-core",
+      "ormCore": "msgint-orm-core"
+    },
+    {
+      "organization": "elenkos-systems",
+      "name": "elenkos-lambdas",
+      "crateName": "elenkos-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Elenkos Systems heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "elenkos-lib-core",
+      "ormCore": "elenkos-orm-core"
+    },
+    {
+      "organization": "fiducia-cloud",
+      "name": "fiducia-lambdas",
+      "crateName": "fiducia-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Fiducia Cloud heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "fiducia-lib",
+      "ormCore": "fiducia-orm-core"
+    },
+    {
+      "organization": "opto-sync",
+      "name": "opto-sync-lambdas",
+      "crateName": "opto-sync-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Opto Sync heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "opto-sync-lib-core",
+      "ormCore": "opto-sync-orm-core"
+    },
+    {
+      "organization": "quaestor-ledger",
+      "name": "quaestor-lambdas",
+      "crateName": "quaestor-lambdas",
+      "description": "Organization-level Rust Lambda entrypoints for Quaestor Ledger heavy and independently scaled routes.",
+      "visibility": "private",
+      "libCore": "quaestor-lib-core",
+      "ormCore": "quaestor-orm-core"
+    }
+  ]
+}

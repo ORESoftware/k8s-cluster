@@ -1,0 +1,185 @@
+name: Port immutable build checkout onto current dev once
+
+on:
+  push:
+    branches:
+      - agent/build-server-immutable-sha-current-dev-20260804
+    paths:
+      - .github/workflows/den-1550-immutable-sha-current-dev-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-immutable-sha-current-dev-once
+  cancel-in-progress: false
+
+jobs:
+  port:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Fast-forward safely and apply the reviewed two-file product
+        run: |
+          set -euo pipefail
+          branch='agent/build-server-immutable-sha-current-dev-20260804'
+          workflow='.github/workflows/den-1550-immutable-sha-current-dev-once.yml'
+          trigger='${{ github.sha }}'
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+
+          git fetch origin "$branch"
+          tip="$(git rev-parse FETCH_HEAD)"
+          if ! git merge-base --is-ancestor "$trigger" "$tip"; then
+            echo 'branch no longer descends from the workflow trigger commit' >&2
+            exit 1
+          fi
+          intervening="$(git diff --name-only "$trigger"..."$tip" | sort)"
+          if [[ -n "$intervening" && "$intervening" != "$workflow" ]]; then
+            printf 'unexpected concurrent paths after trigger:\n%s\n' "$intervening" >&2
+            exit 1
+          fi
+          git checkout -B "$branch" "$tip"
+
+          unexpected="$(git diff --name-only "$base"...HEAD | grep -Ev '^\.github/workflows/den-1550-immutable-sha-current-dev-once\.yml$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected pre-port paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+          paths=(
+            remote/deployments/build-server-rs/src/jobs.rs
+            remote/deployments/build-server-rs/readme.md
+          )
+          git show --format= --binary \
+            9895d1d6303d9d64b6a8fd61741446a3bfa446dc -- "${paths[@]}" \
+            > /tmp/immutable-sha.patch
+          if ! git apply --3way /tmp/immutable-sha.patch; then
+            echo 'immutable-SHA checkout patch did not merge cleanly with current dev' >&2
+            git status --short >&2
+            git diff --cc >&2 || true
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/build-server-rs/src/jobs.rs')
+          source = path.read_text(encoding='utf-8')
+          old = '''        Some(git_ref) if is_immutable_commit_sha(&git_ref) => vec![
+          '''
+          new = '''        Some(git_ref) if is_immutable_commit_sha(&git_ref) => {
+                      let git_ref = git_ref.to_ascii_lowercase();
+                      vec![
+          '''
+          if source.count(old) != 1:
+              raise SystemExit('immutable commit match arm drifted')
+          source = source.replace(old, new, 1)
+          old_end = '''            locked_git_args(vec![
+                          "-C".to_string(),
+                          destination,
+                          "rev-parse".to_string(),
+                          "--verify".to_string(),
+                          format!("{git_ref}^{{commit}}"),
+                      ]),
+                  ],
+                  git_ref => {
+          '''
+          new_end = '''            locked_git_args(vec![
+                          "-C".to_string(),
+                          destination,
+                          "rev-parse".to_string(),
+                          "--verify".to_string(),
+                          format!("{git_ref}^{{commit}}"),
+                      ]),
+                  ]
+                  }
+                  git_ref => {
+          '''
+          if source.count(old_end) != 1:
+              raise SystemExit('immutable commit command-list boundary drifted')
+          source = source.replace(old_end, new_end, 1)
+
+          anchor = '''        assert!(!flattened.contains(&"--branch".to_string()));
+
+                  let mutable = clone_repository_commands(
+          '''
+          replacement = '''        assert!(!flattened.contains(&"--branch".to_string()));
+
+                  let uppercase = clone_repository_commands(
+                      &request(
+                          "https://github.com/messaging-intel/msgint-connectors.git".to_string(),
+                          Some("7D905806B2000479BDACB9B206F33B26A707BA5E"),
+                      ),
+                      Path::new("/tmp/msgint-uppercase-checkout"),
+                  )
+                  .concat();
+                  assert!(uppercase.contains(&revision.to_string()));
+                  assert!(!uppercase.contains(
+                      &"7D905806B2000479BDACB9B206F33B26A707BA5E".to_string()
+                  ));
+
+                  let mutable = clone_repository_commands(
+          '''
+          if source.count(anchor) != 1:
+              raise SystemExit('immutable plan test insertion boundary drifted')
+          path.write_text(source.replace(anchor, replacement, 1), encoding='utf-8')
+          PY
+
+          git diff --check
+          grep -Fq 'fetch_repository_commands' remote/deployments/build-server-rs/src/jobs.rs && {
+            echo 'unexpected helper naming drift' >&2
+            exit 1
+          } || true
+          grep -Fq 'clone_repository_commands' remote/deployments/build-server-rs/src/jobs.rs
+          grep -Fq 'protocol.file.allow=never' remote/deployments/build-server-rs/src/jobs.rs
+          grep -Fq 'checkout".to_string()' remote/deployments/build-server-rs/src/jobs.rs
+          grep -Fq '"--detach".to_string()' remote/deployments/build-server-rs/src/jobs.rs
+          grep -Fq 'git_ref.to_ascii_lowercase()' remote/deployments/build-server-rs/src/jobs.rs
+
+      - name: Check out the exact private remote/libs gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every build-server target
+        working-directory: remote/deployments/build-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Publish the self-cleaned two-file product
+        run: |
+          set -euo pipefail
+          base='b827d1fde69bdfc5acfeb9d8a785f184c3ce5505'
+          rm -f .github/workflows/den-1550-immutable-sha-current-dev-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix(DEN-1550): fetch immutable build revisions by exact SHA'
+          fi
+          expected=$'remote/deployments/build-server-rs/readme.md\nremote/deployments/build-server-rs/src/jobs.rs'
+          actual="$(git diff --name-only "$base"...HEAD | sort)"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected final product paths:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git push origin HEAD:agent/build-server-immutable-sha-current-dev-20260804

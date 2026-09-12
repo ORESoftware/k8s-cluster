@@ -1,6 +1,6 @@
 # Retriggered after separating missing canonical gaps from preserved live histories.
 name: Publish missing organization repositories from protected gh profile
-run-name: Publish missing organization repositories from protected gh profile @ ${{ github.sha }}
+run-name: Publish missing organization repositories from protected gh profile (post-latest-fleet) @ ${{ github.sha }}
 
 on:
   push:

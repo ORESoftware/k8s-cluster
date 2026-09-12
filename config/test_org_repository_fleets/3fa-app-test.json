@@ -1,0 +1,374 @@
+{
+  "fleet": {
+    "default_visibility": "private",
+    "production_org": "3FA-app",
+    "repositories": [
+      {
+        "kind": "device",
+        "languages": [
+          "dart",
+          "kotlin"
+        ],
+        "name": "threefa-android-emulator",
+        "package_managers": [
+          "pub",
+          "gradle",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Run Android enrollment, authentication, recovery, secure-storage, background/resume, offline, and reconnect flows through an emulator.",
+        "source_refs": [
+          "app",
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "android-emulator",
+          "enrollment",
+          "authentication",
+          "background-resume",
+          "offline-reconnect"
+        ]
+      },
+      {
+        "kind": "device",
+        "languages": [
+          "dart",
+          "swift"
+        ],
+        "name": "threefa-ios-simulator",
+        "package_managers": [
+          "pub",
+          "swiftpm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "macos-latest"
+        ],
+        "purpose": "Run iOS enrollment, authentication, recovery, keychain, lifecycle, background, and reconnect flows through a simulator.",
+        "source_refs": [
+          "app",
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "ios-simulator",
+          "enrollment",
+          "authentication",
+          "keychain",
+          "background-resume"
+        ]
+      },
+      {
+        "kind": "desktop",
+        "languages": [
+          "rust"
+        ],
+        "name": "threefa-desktop-linux",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Exercise Linux desktop startup, tray lifecycle, local secure storage, deep links, lock/unlock, API connectivity, and relaunch behavior.",
+        "source_refs": [
+          "desktop",
+          "clients",
+          "backend"
+        ],
+        "suites": [
+          "desktop-smoke",
+          "secure-storage",
+          "deep-links",
+          "tray-lifecycle"
+        ]
+      },
+      {
+        "kind": "desktop",
+        "languages": [
+          "rust"
+        ],
+        "name": "threefa-desktop-macos",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "macos-latest"
+        ],
+        "purpose": "Exercise macOS desktop permissions, Keychain integration, deep links, lock/unlock, quit/relaunch, and API connectivity.",
+        "source_refs": [
+          "desktop",
+          "clients",
+          "backend"
+        ],
+        "suites": [
+          "desktop-smoke",
+          "keychain",
+          "permissions",
+          "quit-relaunch"
+        ]
+      },
+      {
+        "kind": "desktop",
+        "languages": [
+          "rust"
+        ],
+        "name": "threefa-desktop-windows",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "windows-latest"
+        ],
+        "purpose": "Exercise Windows credential storage, protocol handlers, startup, lock/unlock, update-safe persistence, and API connectivity.",
+        "source_refs": [
+          "desktop",
+          "clients",
+          "backend"
+        ],
+        "suites": [
+          "desktop-smoke",
+          "credential-storage",
+          "protocol-handlers",
+          "startup"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "rust"
+        ],
+        "name": "threefa-clients-rust",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume the Rust client surface through Cargo, Zed, and a pinned git source while enforcing interface, serialization, authentication, and error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "serialization",
+          "auth-roundtrip",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "dart"
+        ],
+        "name": "threefa-clients-dart",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest"
+        ],
+        "purpose": "Consume the Dart/Flutter client surface through pub, Zed, and a pinned git source across mobile, desktop, and web targets.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "serialization",
+          "auth-roundtrip",
+          "web-mobile-parity"
+        ]
+      },
+      {
+        "kind": "api",
+        "languages": [
+          "python"
+        ],
+        "name": "threefa-api-contract",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate backend schemas, authentication failures, idempotency, recovery operations, pagination, stable errors, and websocket behavior against clients and interfaces.",
+        "source_refs": [
+          "backend",
+          "interfaces",
+          "clients"
+        ],
+        "suites": [
+          "openapi-contract",
+          "negative-auth",
+          "idempotency",
+          "websocket-contract"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "typescript"
+        ],
+        "name": "threefa-browser-extension-e2e",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Test extension login, autofill, lock, permissions, offline queueing, recovery, and browser interoperability in Chromium and Firefox.",
+        "source_refs": [
+          "extension",
+          "backend",
+          "clients"
+        ],
+        "suites": [
+          "playwright-chromium",
+          "playwright-firefox",
+          "autofill",
+          "offline-lock"
+        ]
+      },
+      {
+        "kind": "chaos",
+        "languages": [
+          "rust",
+          "python"
+        ],
+        "name": "threefa-sync-offline-chaos",
+        "package_managers": [
+          "cargo",
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Prove multi-device convergence under retries, reordered events, duplicate writes, process restarts, clock skew, and network partitions.",
+        "services": [
+          "postgres",
+          "toxiproxy"
+        ],
+        "source_refs": [
+          "sync",
+          "backend",
+          "clients"
+        ],
+        "suites": [
+          "offline-first",
+          "partition-heal",
+          "duplicate-delivery",
+          "clock-skew"
+        ]
+      },
+      {
+        "fixtures": [
+          "synthetic-identity-only"
+        ],
+        "kind": "security",
+        "languages": [
+          "python"
+        ],
+        "name": "threefa-account-recovery-e2e",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Exercise recovery policy, synthetic identity challenge orchestration, fallback paths, replay resistance, approvals, and immutable audit evidence.",
+        "source_refs": [
+          "backend",
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "recovery-policy",
+          "liveness-contract",
+          "replay-resistance",
+          "audit-log"
+        ]
+      }
+    ],
+    "sources": {
+      "app": {
+        "alias": "app",
+        "repository": "3FA-app/threefa-monorepo",
+        "required": true,
+        "role": "app",
+        "zed_dependency": false
+      },
+      "backend": {
+        "alias": "backend",
+        "repository": "3FA-app/3fa-backend.rs",
+        "required": true,
+        "role": "api",
+        "zed_dependency": false
+      },
+      "clients": {
+        "alias": "clients",
+        "repository": "3FA-app/3fa-clients",
+        "required": true,
+        "role": "clients",
+        "zed_dependency": true
+      },
+      "desktop": {
+        "alias": "desktop",
+        "repository": "3FA-app/3FA-desktop.rs",
+        "required": true,
+        "role": "desktop",
+        "zed_dependency": false
+      },
+      "extension": {
+        "alias": "extension",
+        "repository": "3FA-app/3fa-app-chrome-extension",
+        "required": true,
+        "role": "ui",
+        "zed_dependency": false
+      },
+      "interfaces": {
+        "alias": "interfaces",
+        "repository": "3FA-app/3fa-interfaces",
+        "required": true,
+        "role": "interfaces",
+        "zed_dependency": true
+      },
+      "sync": {
+        "alias": "sync",
+        "repository": "3FA-app/3fa-app-sync",
+        "required": true,
+        "role": "sync",
+        "zed_dependency": false
+      }
+    },
+    "summary": "Mobile, desktop, extension, SDK, API, synchronization, and recovery coverage for 3FA."
+  },
+  "test_org": "3fa-app-test"
+}

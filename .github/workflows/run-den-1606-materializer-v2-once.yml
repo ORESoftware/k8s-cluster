@@ -1,0 +1,368 @@
+# One-shot current-dev materializer. A successful run deletes every carrier,
+# validates the product, and leaves a cumulative PR diff containing product only.
+name: Run DEN-1606 direct hardening materializer v2 once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/run-den-1606-materializer-v2-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-den-1606-direct-hardening-materializer-v2
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-clone-server-direct-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-clone-server-direct-hardening
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Apply the reviewed transformation against current dev
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/materialize-den-1606-direct-hardening-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step_name = '      - name: Apply explicit bounded-lane hardening'
+          next_step = '      - name: Install the pinned Rust toolchain'
+          step_index = lines.index(step_name)
+          next_index = lines.index(next_step, step_index + 1)
+          run_index = next(
+              index for index in range(step_index + 1, next_index)
+              if lines[index] == '        run: |'
+          )
+          block = lines[run_index + 1 : next_index]
+          opener = next(
+              index for index, line in enumerate(block)
+              if line.strip() == "python3 - <<'PY'"
+          )
+          terminator = max(
+              index for index, line in enumerate(block)
+              if index > opener and line.strip() == 'PY'
+          )
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[opener + 1 : terminator]
+          ) + '\n'
+
+          for marker in (
+              "old_path = '''fn valid_workflow_path(value: &str) -> bool {",
+              "new_path = '''fn valid_workflow_path(value: &str) -> bool {",
+              "configured_path_old = '''fn valid_configured_workflow_path(value: &str) -> bool {",
+              "configured_path_new = '''fn valid_configured_workflow_path(value: &str) -> bool {",
+          ):
+              if script.count(marker) != 1:
+                  raise SystemExit(f'materializer drifted before raw-string conversion: {marker}')
+              script = script.replace(marker, marker.replace("= '''", "= r'''"), 1)
+
+          replacements = [
+              (
+                  """if lib.count(old_path) != 1:
+              raise SystemExit('unexpected planner workflow-path validator')
+          lib = lib.replace(old_path, new_path, 1)
+          """,
+                  """path_start = lib.find('fn valid_workflow_path(value: &str) -> bool {')
+          path_end = lib.find('\\n}\\n', path_start)
+          if path_start == -1 or path_end == -1:
+              raise SystemExit('could not locate planner workflow-path validator boundaries')
+          lib = lib[:path_start] + new_path + lib[path_end + 3:]
+          """,
+              ),
+              (
+                  """if lib.count(path_test_marker) != 1:
+              raise SystemExit('unexpected workflow path test')
+          lib = lib.replace(path_test_marker, path_test_replacement, 1)
+          """,
+                  """path_test_anchor = '        assert!(errors.contains(\"workflowPath\"));\\n\\n        let limits = PlannerLimits {'
+          path_test_insert = '''        assert!(errors.contains("workflowPath"));
+
+                  let mut nested_path_request = request("jobs: {}");
+                  nested_path_request.workflow_path = ".github/workflows/nested/ci.yml".into();
+                  assert!(build_plan(&nested_path_request, &PlannerLimits::default())
+                      .unwrap_err()
+                      .join("\\n")
+                      .contains("workflowPath"));
+
+                  let limits = PlannerLimits {'''.replace('          ', '')
+          if lib.count(path_test_anchor) != 1:
+              raise SystemExit('could not locate workflow path test anchor')
+          lib = lib.replace(path_test_anchor, path_test_insert, 1)
+          """,
+              ),
+              (
+                  """if lib.count(ambiguity_marker) != 1:
+              raise SystemExit('unexpected workflow semantics test marker')
+          lib = lib.replace(ambiguity_marker, ambiguity_test + ambiguity_marker, 1)
+          """,
+                  """ambiguity_anchor = '    #[test]\\n    fn workflow_and_working_directory_semantics_are_not_silently_ignored() {'
+          if lib.count(ambiguity_anchor) != 1:
+              raise SystemExit('could not locate workflow semantics test anchor')
+          lib = lib.replace(ambiguity_anchor, ambiguity_test + ambiguity_anchor, 1)
+          """,
+              ),
+              (
+                  """if main.count(client_marker) != 1:
+              raise SystemExit('unexpected HTTP client builder')
+          main = main.replace(client_marker, client_replacement, 1)
+          """,
+                  """client_anchor = '            .timeout(Duration::from_secs(60))\\n            .user_agent(\"gha-clone-server/0.1\")'
+          client_insert = '            .timeout(Duration::from_secs(60))\\n            .redirect(reqwest::redirect::Policy::none())\\n            .user_agent(\"gha-clone-server/0.1\")'
+          if main.count(client_anchor) != 1:
+              raise SystemExit('could not locate HTTP client builder anchor')
+          main = main.replace(client_anchor, client_insert, 1)
+          """,
+              ),
+              (
+                  """if main.count(webhook_old) != 1:
+              raise SystemExit('unexpected webhook run insertion block')
+          main = main.replace(webhook_old, webhook_new, 1)
+          """,
+                  """webhook_start = main.find('        if !remember_webhook_delivery(&state, &delivery).await {')
+          webhook_end = main.find('        return (\\n            StatusCode::ACCEPTED,\\n            Json(json!({\\n                \"accepted\": true,', webhook_start)
+          if webhook_start == -1 or webhook_end == -1:
+              raise SystemExit('could not locate webhook dispatch boundaries')
+          main = main[:webhook_start] + webhook_new + main[webhook_end:]
+          """,
+              ),
+              (
+                  """if main.count(configured_path_old) != 1:
+              raise SystemExit('unexpected configured workflow path validator')
+          main = main.replace(configured_path_old, configured_path_new, 1)
+          """,
+                  """configured_start = main.find('fn valid_configured_workflow_path(value: &str) -> bool {')
+          configured_end = main.find('\\n}\\n', configured_start)
+          if configured_start == -1 or configured_end == -1:
+              raise SystemExit('could not locate configured workflow-path validator boundaries')
+          main = main[:configured_start] + configured_path_new + main[configured_end + 3:]
+          """,
+              ),
+          ]
+          for old, new in replacements:
+              if script.count(old) != 1:
+                  raise SystemExit('materializer drifted before a current-dev replacement')
+              script = script.replace(old, new, 1)
+
+          context = {'__name__': '__main__'}
+          exec(compile(script, str(workflow), 'exec'), context)
+
+          # Block mapping keys repeat legitimately across different sequence
+          # items. Keep per-item scopes while still rejecting duplicates inside
+          # one step.
+          lib_path = Path('remote/deployments/gha-clone-server-rs/src/lib.rs')
+          lib = lib_path.read_text(encoding='utf-8')
+          validator_start = lib.find('fn validate_workflow_document(source: &str) -> Result<(), String> {')
+          validator_end = lib.find('fn compile_job(', validator_start)
+          if validator_start == -1 or validator_end == -1:
+              raise SystemExit('generated workflow validator boundaries are missing')
+          validator = r'''fn validate_workflow_document(source: &str) -> Result<(), String> {
+              if source.as_bytes().contains(&b'\t') {
+                  return Err("workflowYaml contains a tab; indentation must use spaces".into());
+              }
+              let mut parents = Vec::<(usize, String)>::new();
+              let mut seen = BTreeMap::<String, BTreeSet<String>>::new();
+              let mut sequence_ordinals = BTreeMap::<String, usize>::new();
+              let mut block_scalar_indent = None::<usize>;
+
+              for (index, raw_line) in source.lines().enumerate() {
+                  let line_number = index + 1;
+                  let indent = raw_line.bytes().take_while(|byte| *byte == b' ').count();
+                  let trimmed = raw_line.trim();
+                  if let Some(block_indent) = block_scalar_indent {
+                      if trimmed.is_empty() || indent > block_indent {
+                          continue;
+                      }
+                      block_scalar_indent = None;
+                  }
+                  if trimmed.is_empty() || trimmed.starts_with('#') {
+                      continue;
+                  }
+                  if matches!(trimmed, "---" | "...") {
+                      return Err(format!("workflowYaml line {line_number} uses a YAML document marker"));
+                  }
+                  while parents.last().is_some_and(|(parent_indent, _)| *parent_indent >= indent) {
+                      parents.pop();
+                  }
+
+                  let mut content = raw_line[indent..].trim_end();
+                  if content == "-" || content.starts_with("- ") {
+                      let parent_scope = parents.iter()
+                          .map(|(_, parent)| parent.as_str())
+                          .collect::<Vec<_>>()
+                          .join("/");
+                      let counter = sequence_ordinals
+                          .entry(format!("{parent_scope}@{indent}"))
+                          .or_default();
+                      parents.push((indent, format!("[{counter}]")));
+                      *counter += 1;
+                      content = content.strip_prefix('-').expect("sequence item").trim_start();
+                  }
+                  if content.is_empty() {
+                      continue;
+                  }
+                  if content.starts_with(['!', '&', '*']) {
+                      return Err(format!("workflowYaml line {line_number} uses a YAML tag, anchor, or alias"));
+                  }
+                  let Some((raw_key, raw_value)) = content.split_once(':') else {
+                      continue;
+                  };
+                  let key = raw_key.trim().trim_matches(['\'', '"']);
+                  let value = raw_value.trim_start();
+                  if key.is_empty() {
+                      continue;
+                  }
+                  if !key.is_ascii() {
+                      return Err(format!("workflowYaml line {line_number} has a non-ASCII mapping key"));
+                  }
+                  if key == "<<" {
+                      return Err(format!("workflowYaml line {line_number} uses a YAML merge key"));
+                  }
+                  if value.starts_with(['!', '&', '*']) {
+                      return Err(format!("workflowYaml line {line_number} uses a YAML tag, anchor, or alias"));
+                  }
+                  let scope = parents.iter()
+                      .map(|(_, parent)| parent.as_str())
+                      .collect::<Vec<_>>()
+                      .join("/");
+                  if !seen.entry(scope).or_default().insert(key.to_ascii_lowercase()) {
+                      return Err(format!("workflowYaml line {line_number} repeats mapping key {key:?}"));
+                  }
+                  let scalar = value.split_whitespace().next().unwrap_or_default();
+                  if matches!(scalar, "|" | "|-" | "|+" | ">" | ">-" | ">+") {
+                      block_scalar_indent = Some(indent);
+                  }
+                  if value.is_empty() {
+                      parents.push((indent, key.to_ascii_lowercase()));
+                  }
+              }
+              Ok(())
+          }
+
+          '''.replace('          ', '')
+          lib = lib[:validator_start] + validator + lib[validator_end:]
+          if 'mod sequence_scope_hardening_tests {' not in lib:
+              lib += r'''
+
+          #[cfg(test)]
+          mod sequence_scope_hardening_tests {
+              use super::*;
+
+              fn request(yaml: &str) -> PlanRequest {
+                  PlanRequest {
+                      repository: "sonus-auris/sonus-auris-interfaces".into(),
+                      revision: "0123456789abcdef0123456789abcdef01234567".into(),
+                      workflow_path: ".github/workflows/ci.yml".into(),
+                      workflow_yaml: yaml.into(),
+                  }
+              }
+
+              #[test]
+              fn repeated_keys_across_distinct_steps_are_valid() {
+                  let plan = build_plan(&request(r#"
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              steps:
+                - name: checkout
+                  uses: actions/checkout@abc
+                - name: format
+                  run: cargo fmt --check
+                - name: test
+                  run: cargo test
+          "#), &PlannerLimits::default()).expect("separate step scopes");
+                  assert!(plan.independent_executable);
+              }
+
+              #[test]
+              fn duplicate_key_inside_one_step_fails_closed() {
+                  let errors = build_plan(&request(r#"
+          jobs:
+            test:
+              runs-on: ubuntu-latest
+              steps:
+                - name: test
+                  run: cargo test
+                  run: cargo fmt --check
+          "#), &PlannerLimits::default()).unwrap_err().join("\n");
+                  assert!(errors.contains("repeats mapping key \"run\""), "{errors}");
+              }
+          }
+          '''.replace('          ', '')
+          lib_path.write_text(lib, encoding='utf-8')
+
+          for path in (
+              '.github/workflows/materialize-den-1606-direct-hardening-once.yml',
+              '.github/workflows/run-den-1606-materializer-once.yml',
+              '.github/workflows/run-den-1606-materializer-pr-once.yml',
+              '.github/workflows/run-den-1606-materializer-v2-once.yml',
+          ):
+              Path(path).unlink(missing_ok=True)
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit the self-cleaned product
+        run: |
+          set -euo pipefail
+          git diff --check
+          for carrier in \
+            .github/workflows/materialize-den-1606-direct-hardening-once.yml \
+            .github/workflows/run-den-1606-materializer-once.yml \
+            .github/workflows/run-den-1606-materializer-pr-once.yml \
+            .github/workflows/run-den-1606-materializer-v2-once.yml; do
+            test ! -e "$carrier"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs)|\.github/workflows/(materialize-den-1606-direct-hardening-once|run-den-1606-materializer-once|run-den-1606-materializer-pr-once|run-den-1606-materializer-v2-once)\.yml)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          if [[ -n "$workflow_non_deletions" ]]; then
+            printf 'workflow carriers must be deletions only:\n%s\n' "$workflow_non_deletions" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): harden the bounded clone-server lane directly'
+          git push origin HEAD:agent/den-1606-clone-server-direct-hardening

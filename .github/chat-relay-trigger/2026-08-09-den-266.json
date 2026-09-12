@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "ore.google-chat-relay-trigger.v1",
+  "issue": "DEN-266",
+  "space": "spaces/AAQAoHKdzvI",
+  "expectedDisplayName": "alex-alex-me",
+  "requestedAt": "2026-08-09T05:45:00Z",
+  "reason": "Reconcile all accessible messages after the prior 1,186-message export without committing message bodies, contacts, or credentials.",
+  "transport": "ephemeral RSA-OAEP payload plus POST application/json",
+  "secretsCommitted": false,
+  "applyMode": "dry-run-and-content-free-ledger-only"
+}
