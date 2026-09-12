@@ -6,6 +6,7 @@ use serde_yaml::{Mapping, Value};
 mod legacy;
 mod msgint_contract;
 
+pub use legacy::credentials;
 use msgint_contract::{classify_msgint_workflow, ContractMatch};
 
 pub use legacy::{
