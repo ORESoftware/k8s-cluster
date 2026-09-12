@@ -1,0 +1,170 @@
+name: durable-worker-dart-sdk
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-dart-sdk.yml'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/fixtures/**'
+      - 'remote/worker-sdks/dart/durable_worker/**'
+      - 'remote/tests/general/durable-worker-dart-sdk.test.mjs'
+      - 'docs/durable-worker-roadmap.md'
+      - 'docs/durable-worker-dart-sdk.md'
+      - 'docs/durable-worker-project-operating-model.md'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-dart-sdk.yml'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/fixtures/**'
+      - 'remote/worker-sdks/dart/durable_worker/**'
+      - 'remote/tests/general/durable-worker-dart-sdk.test.mjs'
+      - 'docs/durable-worker-roadmap.md'
+      - 'docs/durable-worker-dart-sdk.md'
+      - 'docs/durable-worker-project-operating-model.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-dart-sdk-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        dart-version:
+          - '3.4.0'
+          - '3.12.2'
+    defaults:
+      run:
+        working-directory: remote/worker-sdks/dart/durable_worker
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Install Dart ${{ matrix.dart-version }}
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: ${{ matrix.dart-version }}
+
+      - name: Resolve the committed dependency-free lock
+        run: |
+          dart pub get --enforce-lockfile
+          git diff --exit-code -- pubspec.lock
+
+      - name: Enforce formatting and print any drift
+        run: |
+          dart format .
+          git diff --exit-code
+
+      - name: Analyze with warnings and infos fatal
+        run: dart analyze --fatal-infos --fatal-warnings
+
+      - name: Run client, worker, and shared-fixture tests
+        run: timeout 10s dart run tool/test.dart
+
+      - name: Inspect dependency graph
+        run: dart pub deps --style=compact
+
+      - name: Stress lease-fencing cancellation
+        if: matrix.dart-version == '3.12.2'
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 50); do
+            timeout 5s dart run tool/test.dart --fencing-only >/dev/null
+          done
+
+      - name: Upload dependency lock for review
+        if: matrix.dart-version == '3.12.2'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: durable-worker-dart-lock-${{ github.sha }}
+          path: remote/worker-sdks/dart/durable_worker/pubspec.lock
+          if-no-files-found: error
+          retention-days: 7
+
+  repository-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Validate Dart SDK packaging and lifecycle contract
+        run: node --test remote/tests/general/durable-worker-dart-sdk.test.mjs
+
+      - name: Reject credential-shaped source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -E -n \
+            --exclude-dir=.git \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----' \
+            remote/worker-sdks/dart/durable_worker \
+            remote/tests/general/durable-worker-dart-sdk.test.mjs \
+            docs/durable-worker-roadmap.md \
+            docs/durable-worker-dart-sdk.md \
+            docs/durable-worker-project-operating-model.md; then
+            echo 'credential-shaped material found in durable-worker Dart SDK changes' >&2
+            exit 1
+          fi
+
+      - name: Assert validation did not mutate tracked files
+        run: git diff --exit-code
+
+  publish-source-artifact:
+    if: github.event_name == 'push'
+    needs:
+      - dart-runtime
+      - repository-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Build deterministic source archive and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="durable-worker-dart-sdk-${GITHUB_SHA}.tgz"
+          tar \
+            --sort=name \
+            --mtime='UTC 1970-01-01' \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -cf - \
+            -C remote/worker-sdks/dart durable_worker \
+            | gzip -n > "$archive"
+          sha256sum "$archive" > "$archive.sha256"
+
+      - name: Publish Dart SDK source artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: durable-worker-dart-sdk-${{ github.sha }}
+          path: |
+            durable-worker-dart-sdk-${{ github.sha }}.tgz
+            durable-worker-dart-sdk-${{ github.sha }}.tgz.sha256
+          if-no-files-found: error
+          retention-days: 30
