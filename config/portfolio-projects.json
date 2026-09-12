@@ -1,0 +1,1125 @@
+{
+  "schema_version": 1,
+  "name": "oresoftware-portfolio-project-identity-graph",
+  "schedule": {
+    "cron": "0 3 * * *",
+    "timezone": "America/Chicago"
+  },
+  "slack_workspace": {
+    "id": "T01B3C83PMK",
+    "name": "oresoftware"
+  },
+  "audit": {
+    "repository": "ORESoftware/k8s-cluster",
+    "issue_number": 831
+  },
+  "entries": [
+    {
+      "key": "3fa-app",
+      "chatgpt": {
+        "name": "3fa-app",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "3FA-app",
+        "project_number": 1,
+        "project_title": "3FA-app-project",
+        "project_url": "https://github.com/orgs/3FA-app/projects/1"
+      },
+      "linear": {
+        "project_id": "4aff8a2b-092b-40c8-8af6-820e1538c4a7",
+        "project_name": "github.com/3FA-app"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BL6BEDYFK",
+        "channel_name": "3fa-app"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "agent-pontifex",
+      "chatgpt": {
+        "name": "agent-pontifex",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "agent-pontifex",
+        "project_number": 1,
+        "project_title": "agent-pontifex-project",
+        "project_url": "https://github.com/orgs/agent-pontifex/projects/1"
+      },
+      "linear": {
+        "project_id": "71806431-748e-4332-b03a-820079d61ec0",
+        "project_name": "github.com/agent-pontifex"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMTHH0HMH",
+        "channel_name": "agent-pontifex"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "akrion-sim",
+      "chatgpt": {
+        "name": "akrion-sim",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "akrion-sim",
+        "project_number": 1,
+        "project_title": "akrion-sim-project",
+        "project_url": "https://github.com/orgs/akrion-sim/projects/1"
+      },
+      "linear": {
+        "project_id": "921fcb5b-5a3d-44ef-8663-a78121b476df",
+        "project_name": "github.com/akrion-sim"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BL15P8P3P",
+        "channel_name": "akrion-sim"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "anticaptrad",
+      "chatgpt": {
+        "name": "anticaptrad",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "anticaptrad",
+        "project_number": 1,
+        "project_title": "anticaptrad-project",
+        "project_url": "https://github.com/orgs/anticaptrad/projects/1"
+      },
+      "linear": {
+        "project_id": "17fc7fee-7a7b-41ba-8e6e-919d7866406e",
+        "project_name": "github.com/anticaptrad"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMWCYEX3P",
+        "channel_name": "anticaptrad"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "athlet-o",
+      "chatgpt": {
+        "name": "athlet-o",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "athlet-o",
+        "project_number": 1,
+        "project_title": "athlet-o-project",
+        "project_url": "https://github.com/orgs/athlet-o/projects/1"
+      },
+      "linear": {
+        "project_id": "0de9ab82-98b3-4c1d-950b-2020d80bbccc",
+        "project_name": "github.com/athlet-o"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BLYPTPSFJ",
+        "channel_name": "athlet-o"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "benefactor-cc",
+      "chatgpt": {
+        "name": "benefactor-cc",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "benefactor-cc",
+        "project_number": 1,
+        "project_title": "benefactor-cc-project",
+        "project_url": "https://github.com/orgs/benefactor-cc/projects/1"
+      },
+      "linear": {
+        "project_id": "e1db74d7-4fa3-4580-851d-ca8fc8145127",
+        "project_name": "github.com/benefactor-cc"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BKP367N95",
+        "channel_name": "benefactor-cc"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "canonical-cloud",
+      "chatgpt": {
+        "name": "canonical-cloud",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "canonical-cloud",
+        "project_number": 1,
+        "project_title": "canonical-cloud-project",
+        "project_url": "https://github.com/orgs/canonical-cloud/projects/1"
+      },
+      "linear": {
+        "project_id": "9b3cec23-bc6f-4f8d-a696-2bc8a918e86a",
+        "project_name": "github.com/canonical-cloud"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMH08UD44",
+        "channel_name": "canonical-cloud"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "channelsiege",
+      "chatgpt": {
+        "name": "channelsiege",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "channelsiege",
+        "project_number": 1,
+        "project_title": "channelsiege-project",
+        "project_url": "https://github.com/orgs/channelsiege/projects/1"
+      },
+      "linear": {
+        "project_id": "05af31ea-abce-4425-bf95-9fd24957d5fb",
+        "project_name": "github.com/channelsiege"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMWCTMQDT",
+        "channel_name": "channelsiege"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "claritas-viz",
+      "chatgpt": {
+        "name": "claritas-viz",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "claritas-viz",
+        "project_number": 1,
+        "project_title": "claritas-viz-project",
+        "project_url": "https://github.com/orgs/claritas-viz/projects/1"
+      },
+      "linear": {
+        "project_id": "ff47fc82-5612-4bf6-a8cc-cc23da267931",
+        "project_name": "github.com/claritas-viz"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMVSD3P5K",
+        "channel_name": "claritas-viz"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "cliptown",
+      "chatgpt": {
+        "name": "cliptown",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "cliptown",
+        "project_number": 1,
+        "project_title": "cliptown-project",
+        "project_url": "https://github.com/orgs/cliptown/projects/1"
+      },
+      "linear": {
+        "project_id": "83b03121-db08-4e34-a69f-99fd1c873ced",
+        "project_name": "github.com/cliptown"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BLYPGGFH6",
+        "channel_name": "cliptown"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "daedalus-fab",
+      "chatgpt": {
+        "name": "daedalus-fab",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "daedalus-fab",
+        "project_number": 1,
+        "project_title": "daedalus-fab-project",
+        "project_url": "https://github.com/orgs/daedalus-fab/projects/1"
+      },
+      "linear": {
+        "project_id": "b0356cba-8865-40d9-82f4-48f39ca2e396",
+        "project_name": "github.com/daedalus-fab"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BKP3DDDPZ",
+        "channel_name": "daedalus-fab"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "dancing-dragons",
+      "chatgpt": {
+        "name": "dancing-dragons",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "dancing-dragons",
+        "project_number": 4,
+        "project_title": "dancing-dragons-project",
+        "project_url": "https://github.com/orgs/dancing-dragons/projects/4"
+      },
+      "linear": {
+        "project_id": "099aeb3b-9d3b-47a4-9fe5-ed0fd2f27763",
+        "project_name": "github.com/dancing-dragons"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMWM4J6SH",
+        "channel_name": "dancing-dragons"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "declarative-migrations",
+      "chatgpt": {
+        "name": "declarative-migrations",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "declarative-migrations",
+        "project_number": 1,
+        "project_title": "declarative-migrations-project",
+        "project_url": "https://github.com/orgs/declarative-migrations/projects/1"
+      },
+      "linear": {
+        "project_id": "78d51c47-c6ac-472c-ba3e-525461971027",
+        "project_name": "github.com/declarative-migrations"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BN3FP4DV2",
+        "channel_name": "declarative-migrations"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "discrete-event-systems",
+      "chatgpt": {
+        "name": "discrete-event-systems",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "discrete-event-systems",
+        "project_number": 1,
+        "project_title": "discrete-event-systems-project",
+        "project_url": "https://github.com/orgs/discrete-event-systems/projects/1"
+      },
+      "linear": {
+        "project_id": "b352c0c6-02f5-4a5a-8460-017aedb5352f",
+        "project_name": "github.com/discrete-event-systems"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMZQGA410",
+        "channel_name": "discrete-event-systems"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "drone-mngr",
+      "chatgpt": {
+        "name": "drone-mngr",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "drone-mngr",
+        "project_number": 1,
+        "project_title": "drone-mngr-project",
+        "project_url": "https://github.com/orgs/drone-mngr/projects/1"
+      },
+      "linear": {
+        "project_id": "89e8fc0d-283c-485a-94ac-a3d31917a64b",
+        "project_name": "github.com/drone-mngr"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMWD264TF",
+        "channel_name": "drone-mngr"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "fanwaave",
+      "chatgpt": {
+        "name": "fanwaave",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "fanwaave",
+        "project_number": 1,
+        "project_title": "fanwaave-project",
+        "project_url": "https://github.com/orgs/fanwaave/projects/1"
+      },
+      "linear": {
+        "project_id": "d765e227-5726-42c8-8643-a8bd9e5a9a8c",
+        "project_name": "github.com/fanwaave"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BN3FMEJGL",
+        "channel_name": "fanwaave"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "fiducia-cloud",
+      "chatgpt": {
+        "name": "fiducia-cloud",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "fiducia-cloud",
+        "project_number": 1,
+        "project_title": "fiducia-cloud-project",
+        "project_url": "https://github.com/orgs/fiducia-cloud/projects/1"
+      },
+      "linear": {
+        "project_id": "d9e89bd3-19da-47f3-9bf7-6dc8cc910b70",
+        "project_name": "github.com/fiducia-cloud"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BLT1GCV32",
+        "channel_name": "fiducia-cloud"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "fifa-math",
+      "chatgpt": {
+        "name": "fifa-math",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "fifa-math",
+        "project_number": 1,
+        "project_title": "fifa-math-project",
+        "project_url": "https://github.com/orgs/fifa-math/projects/1"
+      },
+      "linear": {
+        "project_id": "1ffb64f1-af3f-4b5e-b6ac-55d00ee52b74",
+        "project_name": "github.com/fifa-math"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMB9HG83G",
+        "channel_name": "fifa-math"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "file-tunnel",
+      "chatgpt": {
+        "name": "file-tunnel",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "file-tunnel",
+        "project_number": 1,
+        "project_title": "file-tunnel-project",
+        "project_url": "https://github.com/orgs/file-tunnel/projects/1"
+      },
+      "linear": {
+        "project_id": "0cb3346d-19e0-4aff-8758-c5d5a4a1ed80",
+        "project_name": "github.com/file-tunnel"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMT1K9MBM",
+        "channel_name": "file-tunnel"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "gha-indie-worker",
+      "chatgpt": {
+        "name": "gha-indie-worker",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "gha-indie-worker",
+        "project_number": 1,
+        "project_title": "gha-indie-worker-project",
+        "project_url": "https://github.com/orgs/gha-indie-worker/projects/1"
+      },
+      "linear": {
+        "project_id": "69d23e78-b898-49bf-bc84-d319bdaa2059",
+        "project_name": "github.com/gha-indie-worker"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMVTP7PGD",
+        "channel_name": "gha-indie-worker"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "hypeblitz",
+      "chatgpt": {
+        "name": "hypeblitz",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "hypeblitz",
+        "project_number": 1,
+        "project_title": "hypeblitz-project",
+        "project_url": "https://github.com/orgs/hypeblitz/projects/1"
+      },
+      "linear": {
+        "project_id": "db9d1d76-69a4-44bf-a476-c4ee0c31a00e",
+        "project_name": "github.com/hypeblitz"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMXR1K4LE",
+        "channel_name": "hypeblitz"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "hypesiege",
+      "chatgpt": {
+        "name": "hypesiege",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "hypesiege",
+        "project_number": 1,
+        "project_title": "hypesiege-project",
+        "project_url": "https://github.com/orgs/hypesiege/projects/1"
+      },
+      "linear": {
+        "project_id": "cd247cb1-870b-471e-89f6-9484df19e798",
+        "project_name": "github.com/hypesiege"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMF6JDSHX",
+        "channel_name": "hypesiege"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "memebank",
+      "chatgpt": {
+        "name": "memebank",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "memebank",
+        "project_number": 1,
+        "project_title": "memebank-project",
+        "project_url": "https://github.com/orgs/memebank/projects/1"
+      },
+      "linear": {
+        "project_id": "aa7e93aa-0921-4e60-8ec3-a0e4da1e9572",
+        "project_name": "memebank"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BLYPLKETS",
+        "channel_name": "memebank"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "messaging-intel",
+      "chatgpt": {
+        "name": "messaging-intel",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "messaging-intel",
+        "project_number": 1,
+        "project_title": "messaging-intel-project",
+        "project_url": "https://github.com/orgs/messaging-intel/projects/1"
+      },
+      "linear": {
+        "project_id": "3f6f6aea-d1aa-41a6-949e-859ffc154882",
+        "project_name": "github.com/messaging-intel"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BKVCUUQKX",
+        "channel_name": "messaging-intel"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "meta-agents-demo",
+      "chatgpt": {
+        "name": "meta-agents-demo",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "meta-agents-demo",
+        "project_number": 1,
+        "project_title": "meta-agents-demo-project",
+        "project_url": "https://github.com/orgs/meta-agents-demo/projects/1"
+      },
+      "linear": {
+        "project_id": "9914b9c3-8157-4ae5-a0c3-50b0a654ba06",
+        "project_name": "meta-agents-demo"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMZAL168J",
+        "channel_name": "meta-agents-demo"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "networking-components",
+      "chatgpt": {
+        "name": "networking-components",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "networking-components",
+        "project_number": 1,
+        "project_title": "networking-components-project",
+        "project_url": "https://github.com/orgs/networking-components/projects/1"
+      },
+      "linear": {
+        "project_id": "387c602e-8b41-4b1e-80da-e07ba5c73c11",
+        "project_name": "github.com/networking-components"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMHU0CUMV",
+        "channel_name": "networking-components"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "omniblitz",
+      "chatgpt": {
+        "name": "omniblitz",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "OmniBlitz",
+        "project_number": 1,
+        "project_title": "OmniBlitz-project",
+        "project_url": "https://github.com/orgs/OmniBlitz/projects/1"
+      },
+      "linear": {
+        "project_id": "179cf0a3-8865-4d3d-9f33-11ebf2b8534e",
+        "project_name": "github.com/OmniBlitz"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMWCUGXJR",
+        "channel_name": "omniblitz"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "opto-sync",
+      "chatgpt": {
+        "name": "opto-sync",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "opto-sync",
+        "project_number": 1,
+        "project_title": "opto-sync-project",
+        "project_url": "https://github.com/orgs/opto-sync/projects/1"
+      },
+      "linear": {
+        "project_id": "88c60373-3e46-4a12-8f10-907d239d48f8",
+        "project_name": "github.com/opto-sync"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMBARQ7N2",
+        "channel_name": "opto-sync"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "quaestor-ledger",
+      "chatgpt": {
+        "name": "quaestor-ledger",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "quaestor-ledger",
+        "project_number": 1,
+        "project_title": "quaestor-ledger-project",
+        "project_url": "https://github.com/orgs/quaestor-ledger/projects/1"
+      },
+      "linear": {
+        "project_id": "aced9d50-40ea-4634-9574-3a6afa49c4ad",
+        "project_name": "github.com/quaestor-ledger"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BL4E85DGA",
+        "channel_name": "quaestor-ledger"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "rust-ssr-demos",
+      "chatgpt": {
+        "name": "rust-ssr-demos",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "rust-ssr-demos",
+        "project_number": 1,
+        "project_title": "rust-ssr-demos-project",
+        "project_url": "https://github.com/orgs/rust-ssr-demos/projects/1"
+      },
+      "linear": {
+        "project_id": "31e60fc2-db6b-4c14-841a-762745c4555c",
+        "project_name": "github.com/rust-ssr-demos"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BN1NJAE01",
+        "channel_name": "rust-ssr-demos"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "sagitta-stack",
+      "chatgpt": {
+        "name": "sagitta-stack",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "sagitta-stack",
+        "project_number": 1,
+        "project_title": "sagitta-stack-project",
+        "project_url": "https://github.com/orgs/sagitta-stack/projects/1"
+      },
+      "linear": {
+        "project_id": "bfa9081b-d718-47bc-922b-95d70b33240b",
+        "project_name": "github.com/sagitta-stack"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMZ754YCS",
+        "channel_name": "sagitta-stack"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "scintilla-run",
+      "chatgpt": {
+        "name": "scintilla-run",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "scintilla-run",
+        "project_number": 1,
+        "project_title": "scintilla-run-project",
+        "project_url": "https://github.com/orgs/scintilla-run/projects/1"
+      },
+      "linear": {
+        "project_id": "f5da817a-9c48-48ff-abcd-c6dd21045c20",
+        "project_name": "github.com/scintilla-run"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BL4GDJHQA",
+        "channel_name": "scintilla-run"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "shared-auth",
+      "chatgpt": {
+        "name": "shared-auth",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "shared-auth",
+        "project_number": 1,
+        "project_title": "shared-auth-project",
+        "project_url": "https://github.com/orgs/shared-auth/projects/1"
+      },
+      "linear": {
+        "project_id": "4bbe0ba4-d7f1-49ce-8f41-afd2cff6c2a2",
+        "project_name": "github.com/shared-auth"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMD90HED8",
+        "channel_name": "shared-auth"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "sonus-auris",
+      "chatgpt": {
+        "name": "sonus-auris",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "sonus-auris",
+        "project_number": 1,
+        "project_title": "sonus-auris-project",
+        "project_url": "https://github.com/orgs/sonus-auris/projects/1"
+      },
+      "linear": {
+        "project_id": "40905103-ae88-4186-9cff-858b7b9384d2",
+        "project_name": "github.com/sonus-auris"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BKSE66CD9",
+        "channel_name": "sonus-auris"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "streamkore",
+      "chatgpt": {
+        "name": "streamkore",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "streamkore",
+        "project_number": 1,
+        "project_title": "streamkore-project",
+        "project_url": "https://github.com/orgs/streamkore/projects/1"
+      },
+      "linear": {
+        "project_id": "067678fd-c2a3-4d60-b240-9ef5e4f71da4",
+        "project_name": "github.com/streamkore"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMTHECG03",
+        "channel_name": "streamkore"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "streempilot",
+      "chatgpt": {
+        "name": "streempilot",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "StreemPilot",
+        "project_number": 1,
+        "project_title": "StreemPilot-project",
+        "project_url": "https://github.com/orgs/StreemPilot/projects/1"
+      },
+      "linear": {
+        "project_id": "3f5bd157-4424-42cc-94d0-0bed993cdc1d",
+        "project_name": "github.com/streempilot"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMB94FL86",
+        "channel_name": "streempilot"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "unreal-unity-poc",
+      "chatgpt": {
+        "name": "unreal-unity-poc",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "unreal-unity-poc",
+        "project_number": 1,
+        "project_title": "unreal-unity-poc-project",
+        "project_url": "https://github.com/orgs/unreal-unity-poc/projects/1"
+      },
+      "linear": {
+        "project_id": "0f1defae-bf32-43b0-8288-ab21ee8e7f23",
+        "project_name": "github.com/unreal-unity-poc"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMZQB1DPU",
+        "channel_name": "unreal-unity-poc"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "usa-acc",
+      "chatgpt": {
+        "name": "usa-acc",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "usa-acc",
+        "project_number": 1,
+        "project_title": "usa-acc-project",
+        "project_url": "https://github.com/orgs/usa-acc/projects/1"
+      },
+      "linear": {
+        "project_id": "ed1f5d4e-4a8e-47e4-9149-0be068a07cbe",
+        "project_name": "github.com/usa-acc"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMX821LFQ",
+        "channel_name": "usa-acc"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "voxletra",
+      "chatgpt": {
+        "name": "voxletra",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "voxletra",
+        "project_number": 1,
+        "project_title": "voxletra-project",
+        "project_url": "https://github.com/orgs/voxletra/projects/1"
+      },
+      "linear": {
+        "project_id": "d45b6c31-6b98-467b-8440-e3c3480613fb",
+        "project_name": "github.com/voxletra"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMB9GPXC6",
+        "channel_name": "voxletra"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "zed-pkg",
+      "chatgpt": {
+        "name": "zed-pkg",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "zed-pkg",
+        "project_number": 1,
+        "project_title": "zed-pkg-project",
+        "project_url": "https://github.com/orgs/zed-pkg/projects/1"
+      },
+      "linear": {
+        "project_id": "9107ce62-1112-43ff-89bc-f442613c4156",
+        "project_name": "github.com/zed-pkg"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BL0K0HABB",
+        "channel_name": "zed-pkg"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    },
+    {
+      "key": "zed-pkg-test",
+      "chatgpt": {
+        "name": "zed-pkg-test",
+        "verification": "registry-or-snapshot"
+      },
+      "github": {
+        "owner": "zed-pkg-test",
+        "project_number": 1,
+        "project_title": "zed-pkg-test-project",
+        "project_url": "https://github.com/orgs/zed-pkg-test/projects/1"
+      },
+      "linear": {
+        "project_id": "2a3e49af-e2a2-4a1a-9385-f7e9a217a14f",
+        "project_name": "github.com/zed-pkg-test"
+      },
+      "slack": {
+        "workspace_id": "T01B3C83PMK",
+        "channel_id": "C0BMTHM8Q9H",
+        "channel_name": "zed-pkg-test"
+      },
+      "issue_sync": {
+        "enabled": true,
+        "source": "linear",
+        "target": "github-project-draft-items"
+      }
+    }
+  ]
+}

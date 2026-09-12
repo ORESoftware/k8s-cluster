@@ -1,0 +1,129 @@
+{
+  "schema_version": 1,
+  "generated_by": "replace-with-supported-chatgpt-projects-export-or-bridge",
+  "projects": [
+    {
+      "name": "3fa-app"
+    },
+    {
+      "name": "agent-pontifex"
+    },
+    {
+      "name": "akrion-sim"
+    },
+    {
+      "name": "anticaptrad"
+    },
+    {
+      "name": "athlet-o"
+    },
+    {
+      "name": "benefactor-cc"
+    },
+    {
+      "name": "canonical-cloud"
+    },
+    {
+      "name": "channelsiege"
+    },
+    {
+      "name": "claritas-viz"
+    },
+    {
+      "name": "cliptown"
+    },
+    {
+      "name": "daedalus-fab"
+    },
+    {
+      "name": "dancing-dragons"
+    },
+    {
+      "name": "declarative-migrations"
+    },
+    {
+      "name": "discrete-event-systems"
+    },
+    {
+      "name": "drone-mngr"
+    },
+    {
+      "name": "fanwaave"
+    },
+    {
+      "name": "fiducia-cloud"
+    },
+    {
+      "name": "fifa-math"
+    },
+    {
+      "name": "file-tunnel"
+    },
+    {
+      "name": "gha-indie-worker"
+    },
+    {
+      "name": "hypeblitz"
+    },
+    {
+      "name": "hypesiege"
+    },
+    {
+      "name": "memebank"
+    },
+    {
+      "name": "messaging-intel"
+    },
+    {
+      "name": "meta-agents-demo"
+    },
+    {
+      "name": "networking-components"
+    },
+    {
+      "name": "omniblitz"
+    },
+    {
+      "name": "opto-sync"
+    },
+    {
+      "name": "quaestor-ledger"
+    },
+    {
+      "name": "rust-ssr-demos"
+    },
+    {
+      "name": "sagitta-stack"
+    },
+    {
+      "name": "scintilla-run"
+    },
+    {
+      "name": "shared-auth"
+    },
+    {
+      "name": "sonus-auris"
+    },
+    {
+      "name": "streamkore"
+    },
+    {
+      "name": "streempilot"
+    },
+    {
+      "name": "unreal-unity-poc"
+    },
+    {
+      "name": "usa-acc"
+    },
+    {
+      "name": "voxletra"
+    },
+    {
+      "name": "zed-pkg"
+    },
+    {
+      "name": "zed-pkg-test"
+    }
+  ]
+}
