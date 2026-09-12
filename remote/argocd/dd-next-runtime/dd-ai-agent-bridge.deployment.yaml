@@ -8,9 +8,9 @@ metadata:
     denman.linear.app/issue: DEN-845
     github.com/issue: ORESoftware/k8s-cluster#1111
     dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
-    dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
-    dd.dev/release-workflow-run: '31264194679'
-    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
+    dd.dev/source-revision: 'd4ade93a01f79b0347e36c48e6d26b236f83f011'
+    dd.dev/release-workflow-run: '31278723389'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:ae33efed64f8cf41741c8cd1b75f2c1a2a3ad130594b5a2f4abebfc4589f22f0'
   labels:
     app: dd-ai-agent-bridge
     app.kubernetes.io/component: bridge
@@ -29,11 +29,11 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/ai-agent-bridge-revision: '2026-08-08-immutable-digest-ec66794'
+        dd.dev/ai-agent-bridge-revision: '2026-08-08-immutable-digest-d4ade93'
         dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
-        dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
-        dd.dev/release-workflow-run: '31264194679'
-        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305'
+        dd.dev/source-revision: 'd4ade93a01f79b0347e36c48e6d26b236f83f011'
+        dd.dev/release-workflow-run: '31278723389'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:ae33efed64f8cf41741c8cd1b75f2c1a2a3ad130594b5a2f4abebfc4589f22f0'
       labels:
         app: dd-ai-agent-bridge
         app.kubernetes.io/component: bridge
@@ -51,7 +51,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ai-agent-bridge
-          image: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305
+          image: ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:ae33efed64f8cf41741c8cd1b75f2c1a2a3ad130594b5a2f4abebfc4589f22f0
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

@@ -1,13 +1,13 @@
 # DEN-845: zero-replica provider runner by immutable digest. Pinned to the
 # current reviewed image published by trusted main CI of
 # ORESoftware/ai-agent-bridge.rs:
-#   source commit: ec667946b1f8725b6baea8e67ae6a701d602dc04 (main, PR #106)
+#   source commit: d4ade93a01f79b0347e36c48e6d26b236f83f011 (main, PR #129)
 #   image:         ghcr.io/oresoftware/fiducia-ai-agent-runner (public)
-#   digest:        sha256:90a919fb28fb2bc2795a0a3735ab08993d245c3eaa2afcd5f42be9b1a4982702
-#   CI:            container-images.yml run 31264194679, attempt 1; digest from
+#   digest:        sha256:940ce31bd425081efc925fafe9065ab77e301addb3b916eba620c156658c7161
+#   CI:            container-images.yml run 31278723389, attempt 1; digest from
 #                  the run's machine-readable image-digest evidence artifact.
 #                  Bridge and Slack-command pins for the same source are handled
-#                  in PR #1112.
+#                  in the same immutable release family.
 # replicas MUST stay 0 until DEN-391 provisions dd-ai-agent-runner-secrets
 # (provider keys) and the DEN-847 bounded activation canary authorizes exactly
 # one replica. The envFrom secret is intentionally required (not optional): a
@@ -23,9 +23,9 @@ metadata:
     denman.linear.app/issue: DEN-845
     denman.linear.app/activation-issue: DEN-847
     dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
-    dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
-    dd.dev/release-workflow-run: '31264194679'
-    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c'
+    dd.dev/source-revision: 'd4ade93a01f79b0347e36c48e6d26b236f83f011'
+    dd.dev/release-workflow-run: '31278723389'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:940ce31bd425081efc925fafe9065ab77e301addb3b916eba620c156658c7161'
   labels:
     app: dd-ai-agent-runner
 spec:
@@ -38,11 +38,11 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/ai-agent-runner-revision: '2026-08-08-immutable-digest-ec66794'
+        dd.dev/ai-agent-runner-revision: '2026-08-08-immutable-digest-d4ade93'
         dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
-        dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
-        dd.dev/release-workflow-run: '31264194679'
-        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c'
+        dd.dev/source-revision: 'd4ade93a01f79b0347e36c48e6d26b236f83f011'
+        dd.dev/release-workflow-run: '31278723389'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:940ce31bd425081efc925fafe9065ab77e301addb3b916eba620c156658c7161'
         dd.dev/activation-mode: held-zero
       labels:
         app: dd-ai-agent-runner
@@ -55,7 +55,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: ai-agent-runner
-          image: ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c
+          image: ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:940ce31bd425081efc925fafe9065ab77e301addb3b916eba620c156658c7161
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
