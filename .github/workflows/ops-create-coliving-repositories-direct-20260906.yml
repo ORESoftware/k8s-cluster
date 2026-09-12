@@ -1,0 +1,203 @@
+name: Create and bootstrap co-living repository fleet
+run-name: Create 33 co-living repositories and bootstrap PRs @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-coliving-repositories-direct-20260906.yml
+      - scripts/ops/coliving_bootstrap.py
+      - scripts/ops/coliving_bootstrap_common.py
+      - scripts/ops/coliving_github_api.py
+      - scripts/ops/coliving_repository_mutations.py
+      - scripts/ops/coliving_repository_publisher.py
+      - scripts/ops/coliving_repository_specs.py
+      - scripts/ops/coliving_rust_templates.py
+      - scripts/ops/coliving_test_templates.py
+      - scripts/ops/create_coliving_repositories_direct_20260906.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-create-coliving-repositories-direct-20260906.yml
+      - scripts/ops/coliving_bootstrap.py
+      - scripts/ops/coliving_bootstrap_common.py
+      - scripts/ops/coliving_github_api.py
+      - scripts/ops/coliving_repository_mutations.py
+      - scripts/ops/coliving_repository_publisher.py
+      - scripts/ops/coliving_repository_specs.py
+      - scripts/ops/coliving_rust_templates.py
+      - scripts/ops/coliving_test_templates.py
+      - scripts/ops/create_coliving_repositories_direct_20260906.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: create-coliving-repositories-direct-20260906
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-create-coliving-repositories-direct-20260906.yml
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: ""
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.98.1
+          components: rustfmt
+
+      - name: Compile and test the allowlist, generated repositories, and fail-closed policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/coliving_*.py scripts/ops/create_coliving_repositories_direct_20260906.py
+          python3 scripts/ops/create_coliving_repositories_direct_20260906.py --self-test
+
+      - name: Reject credential literals and unsafe repository policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          targets=(
+            .github/workflows/ops-create-coliving-repositories-direct-20260906.yml
+            scripts/ops/coliving_bootstrap.py
+            scripts/ops/coliving_bootstrap_common.py
+            scripts/ops/coliving_github_api.py
+            scripts/ops/coliving_repository_mutations.py
+            scripts/ops/coliving_repository_publisher.py
+            scripts/ops/coliving_repository_specs.py
+            scripts/ops/coliving_rust_templates.py
+            scripts/ops/coliving_test_templates.py
+            scripts/ops/create_coliving_repositories_direct_20260906.py
+          )
+          credential_pattern='gh''p_[A-Za-z0-9]{20,}|github_''pat_[A-Za-z0-9_]{20,}|lin_''api_[A-Za-z0-9]{20,}|-----BEGIN (RSA )?PRIVATE KEY-----'
+          unsafe_pattern='"private"[[:space:]]*:[[:space:]]*false|"visibility"[[:space:]]*:[[:space:]]*"public"'
+          if grep -nE "$credential_pattern" "${targets[@]}"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          if grep -nE "$unsafe_pattern" "${targets[@]}"; then
+            echo 'unsafe repository policy detected' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('scripts/ops/coliving_repository_specs.py').read_text()
+          assert source.count('RepoSpec(') == 33
+          assert 'EXPECTED_COUNTS' in source
+          assert '"hhaus-org": 13' in source
+          assert '"hacker-house-medellin": 2' in source
+          assert '"hhaus-org-test": 11' in source
+          assert '"hacker-house-medellin-test": 7' in source
+          PY
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      EVIDENCE_PATH: ops/evidence/coliving-repositories/publication.json
+    steps:
+      - name: Check out trusted main without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+          clean: true
+          show-progress: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+          cache: ""
+
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c
+        with:
+          toolchain: 1.98.1
+          components: rustfmt
+
+      - name: Verify and mask the protected repository-administration credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 1
+          }
+          printf '::add-mask::%s\n' "$GH_TOKEN"
+
+      - name: Create, normalize, bootstrap, and track the co-living repository fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/create_coliving_repositories_direct_20260906.py \
+            --evidence "$EVIDENCE_PATH"
+
+      - name: Verify bounded non-secret publication evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$EVIDENCE_PATH" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          value = json.loads(path.read_text())
+          assert value['schema'] == 'ores.coliving-repository-publication/v1'
+          assert value['tracking'] == 'DEN-1950'
+          assert value['actor'] == 'ORESoftware'
+          assert value['repository_count'] == 33
+          assert value['counts'] == {
+              'hhaus-org': 13,
+              'hacker-house-medellin': 2,
+              'hhaus-org-test': 11,
+              'hacker-house-medellin-test': 7,
+          }
+          assert value['credential_persisted'] is False
+          assert value['credential_revoked'] is False
+          assert len(value['repositories']) == 33
+          assert len({record['full_name'] for record in value['repositories']}) == 33
+          for record in value['repositories']:
+              assert record['visibility'] == 'private'
+              assert record['default_branch'] == 'main'
+              assert isinstance(record['repository_id'], int) and record['repository_id'] > 0
+              assert re.fullmatch(r'[0-9a-f]{40}', record['main_sha'])
+              assert re.fullmatch(r'[0-9a-f]{40}', record['bootstrap_head_sha'])
+              assert record['bootstrap_branch'] == 'agent/den-1950-bootstrap-coliving-v1'
+              assert isinstance(record['pull_request_number'], int) and record['pull_request_number'] > 0
+              assert isinstance(record['issue_number'], int) and record['issue_number'] > 0
+              assert record['pull_request_url'].startswith('https://github.com/')
+              assert record['issue_url'].startswith('https://github.com/')
+          print('VERIFIED_COLIVING_REPOSITORY_FLEET 33/33')
+          PY
+
+      - name: Upload bounded publication evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coliving-repositories-${{ github.run_id }}
+          path: ops/evidence/coliving-repositories/publication.json
+          if-no-files-found: error
+          retention-days: 30
