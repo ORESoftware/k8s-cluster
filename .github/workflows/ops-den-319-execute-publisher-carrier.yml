@@ -1,0 +1,40 @@
+name: DEN-319 protected publisher execution carrier
+run-name: DEN-319 recover protected publisher child for PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-319-execute-publisher-carrier.yml
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: den-319-protected-publisher-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/den-319-execute-reusable-publisher-20260731-1054'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Recover exact already-dispatched trusted-main publisher run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          workflow='ops-publish-missing-org-repositories-v2.yml'
+          request_id='den-319-pr-424-4bf424c6a5b59eff571f6b186f49812d13de09fd'
+          runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=main&event=workflow_dispatch&per_page=100"
+          current="$(gh api "$runs_endpoint")"
+          run_id="$(jq -r --arg request_id "$request_id" '[.workflow_runs[] | select(.display_title | contains($request_id))][0].id // empty' <<<"$current")"
+          test -n "$run_id"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+          printf 'publisher_run_id=%s\npublisher_run_url=%s\nrequest_id=%s\n' "$run_id" "$run_url" "$request_id"
