@@ -1,3 +1,5 @@
+import { isIP } from 'node:net';
+
 import {
   type ApifyFallbackConfig,
   type ApifyRunResult,
@@ -69,6 +71,7 @@ export type ApifyFallbackRunner = (
 
 const MAX_DOMAIN_ROUTES = 64;
 const MAX_ACTORS_PER_ROUTE = 3;
+const MIN_ACTOR_RUN_CHARGE_USD = 0.01;
 
 export function readApifyFallbackChainConfig(
   env: NodeJS.ProcessEnv,
@@ -79,10 +82,20 @@ export function readApifyFallbackChainConfig(
   const maxChainTotalChargeUsd = readNumber(
     env.APIFY_FALLBACK_CHAIN_MAX_TOTAL_CHARGE_USD,
     Math.min(100, baseConfig.maxTotalChargeUsd * maxAttempts),
-    0.01,
+    MIN_ACTOR_RUN_CHARGE_USD,
     100,
   );
   const domainRoutes = parseDomainRoutes(env.APIFY_DOMAIN_FALLBACKS_JSON, maxAttempts);
+  const longestConfiguredChain = Math.max(
+    defaultActors.length,
+    1,
+    ...domainRoutes.map((route) => route.actors.length),
+  );
+  if (maxChainTotalChargeUsd / longestConfiguredChain < MIN_ACTOR_RUN_CHARGE_USD) {
+    throw new TypeError(
+      `APIFY_FALLBACK_CHAIN_MAX_TOTAL_CHARGE_USD must fund at least USD ${MIN_ACTOR_RUN_CHARGE_USD.toFixed(2)} per configured Actor attempt`,
+    );
+  }
 
   return {
     defaultActors,
@@ -144,7 +157,7 @@ export async function runApifyFallbackChain(
     baseConfig.maxTotalChargeUsd,
     chainConfig.maxChainTotalChargeUsd / actors.length,
   );
-  if (!Number.isFinite(perAttemptChargeCap) || perAttemptChargeCap < 0.01) {
+  if (!Number.isFinite(perAttemptChargeCap) || perAttemptChargeCap < MIN_ACTOR_RUN_CHARGE_USD) {
     throw new ApifyFallbackChainError(
       'Apify fallback chain charge budget is too small for configured attempts',
       selection,
@@ -305,15 +318,22 @@ function normalizeDomainPattern(rawPattern: string): string {
   const value = rawPattern.trim().toLowerCase().replace(/\.$/, '');
   const wildcard = value.startsWith('*.');
   const hostname = wildcard ? value.slice(2) : value;
+  const labels = hostname.split('.');
+  const labelsValid = labels.every(
+    (label) =>
+      label.length >= 1 &&
+      label.length <= 63 &&
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label),
+  );
   if (
     !hostname ||
     hostname.length > 253 ||
+    isIP(hostname) !== 0 ||
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
     hostname.endsWith('.local') ||
     hostname.endsWith('.internal') ||
-    !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/.test(hostname) ||
-    hostname.includes('..')
+    !labelsValid
   ) {
     throw new TypeError(`invalid fallback domain pattern: ${rawPattern}`);
   }
