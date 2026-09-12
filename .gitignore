@@ -139,3 +139,28 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-05486a3df0e0-merge-remote-agent-opto-sync-real-web-te ---
+.astro/
+.direnv/
+.env.production
+.next/
+*-debug.log*
+*.age-key
+*.agekey
+*.env
+*.log
+**/*.env
+coverage/
+env/dec/
+keys.txt
+npm-debug.log*
+pkg-node/
+pkg/
+pnpm-debug.log*
+sops-private*.txt
+temp/worktrees
+tmp/
+tmp/worktrees
+yarn-debug.log*
+yarn-error.log*
