@@ -38,6 +38,55 @@ It retains:
 
 PR #1115 is the companion runner-only change. It adds the exact provider-runner digest at `replicas: 0` with an independent service account, NetworkPolicy, probes, resources, and secret boundary. It must remain at zero until DEN-391 and DEN-847 prove provider credentials, interface compatibility, and a bounded one-provider canary. Neither PR changes the existing HTTP `dd-provider-runner` boundary by assumption.
 
+## Credential-safe ORES client evidence
+
+The reviewed client source merged in `ORESoftware/ai-agent-bridge.rs` at:
+
+```text
+ef5358d54faac1c035e0754f5e7421e10664a75f
+```
+
+Trusted container workflow run `31269442497`, attempt `1`, published and then pulled, runtime-inspected, help-contract verified, and exact-digest scanned:
+
+```text
+ghcr.io/oresoftware/ores-ai-agent-bridge-client@sha256:f6576d1fc2fbadad454c77cc078078695421b138731374347f44f98c67f8269e
+```
+
+Machine-readable evidence artifact:
+
+```text
+image-digest-ores-client-31269442497-1
+```
+
+The `dd-next-runtime` overlay includes two suspended CronJobs that use this exact digest:
+
+- `dd-ai-agent-bridge-client-probe` runs the read-only HTTP/TCP/auth/wire-identity probe;
+- `dd-ai-agent-bridge-client-smoke` additionally registers the stable smoke identity, resolves and joins the canonical channel, posts a unique marker, and reads the same sequence back.
+
+Both CronJobs remain `suspend: true`. They use a dedicated tokenless service account, a read-only non-root pod, and a deny-by-default NetworkPolicy that permits only cluster DNS and bridge ports `8142`/`8143`. The bearer arrives only through `secretKeyRef` from `dd-ai-agent-bridge-secrets/inbox_token`; it is never present in an image, command, URL, GitOps value, or generated Job name.
+
+After Argo reports the suspended objects Synced and the ExternalSecret is Ready, instantiate a one-off probe without changing the CronJob schedule:
+
+```sh
+probe_job="dd-ai-agent-bridge-client-probe-$(date -u +%Y%m%d%H%M%S)"
+kubectl -n default create job --from=cronjob/dd-ai-agent-bridge-client-probe "$probe_job"
+kubectl -n default wait --for=condition=complete --timeout=180s "job/$probe_job"
+kubectl -n default logs "job/$probe_job"
+kubectl -n default delete job "$probe_job" --wait=true
+```
+
+Review the bounded JSON probe output before running the mutating smoke:
+
+```sh
+smoke_job="dd-ai-agent-bridge-client-smoke-$(date -u +%Y%m%d%H%M%S)"
+kubectl -n default create job --from=cronjob/dd-ai-agent-bridge-client-smoke "$smoke_job"
+kubectl -n default wait --for=condition=complete --timeout=240s "job/$smoke_job"
+kubectl -n default logs "job/$smoke_job"
+kubectl -n default delete job "$smoke_job" --wait=true
+```
+
+Do not unsuspend either CronJob. Do not run the smoke before the probe succeeds, do not print the Secret, and do not treat a completed Job as provider authorization: this smoke exercises the bridge conversation bus only and does not invoke Claude, ChatGPT, or another model provider.
+
 ## Pre-merge evidence required
 
 - Static bridge, Slack, and runner GitOps contract tests pass.
@@ -63,6 +112,8 @@ PR #1115 is the companion runner-only change. It adds the exact provider-runner 
 ## Rollback
 
 Rollback is a manifest-only change to the previously recorded exact image digests. Do not restore in-pod source builds, mutable tags, a compiler, a clone PAT, or node source mounts. Before live activation, capture the currently running image IDs from Kubernetes and attach them to DEN-845 and GitHub issue #1111 as the rollback baseline. Keep the runner at zero during a bridge or Slack rollback unless DEN-847 explicitly authorizes otherwise.
+
+The probe/smoke rollback is simply removal of the one-off Job. Because both source CronJobs remain suspended, they do not create replacement Jobs. If the client image or contract must be withdrawn, remove the client resources or repin them to a separately reviewed exact digest; never replace the digest with a mutable tag.
 
 ## Known external gates
 

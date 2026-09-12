@@ -1,3 +1,6 @@
+# Bridge access policy plus disabled-by-default probe/smoke clients. Keeping the
+# resources in one already-registered multi-document bundle avoids broad
+# kustomization churn while preserving one reviewable trust boundary.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -28,6 +31,11 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-ai-agent-runner
+        # DEN-847: suspended, digest-pinned clients can be instantiated
+        # manually for reviewed probe/smoke evidence.
+        - podSelector:
+            matchLabels:
+              app: dd-ai-agent-bridge-client-smoke
       ports:
         - protocol: TCP
           port: 8142
@@ -88,3 +96,247 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dd-ai-agent-bridge-client-smoke
+  namespace: default
+  labels:
+    app: dd-ai-agent-bridge-client-smoke
+    app.kubernetes.io/name: dd-ai-agent-bridge-client
+    app.kubernetes.io/part-of: dd-next-runtime
+  annotations:
+    denman.linear.app/issue: DEN-847
+automountServiceAccountToken: false
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-ai-agent-bridge-client-smoke
+  namespace: default
+  labels:
+    app: dd-ai-agent-bridge-client-smoke
+    app.kubernetes.io/name: dd-ai-agent-bridge-client
+    app.kubernetes.io/part-of: dd-next-runtime
+  annotations:
+    denman.linear.app/issue: DEN-847
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-ai-agent-bridge-client-smoke
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-ai-agent-bridge
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: DoesNotExist
+      ports:
+        - protocol: TCP
+          port: 8142
+        - protocol: TCP
+          port: 8143
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-ai-agent-bridge-client-probe
+  namespace: default
+  labels:
+    app: dd-ai-agent-bridge-client-smoke
+    app.kubernetes.io/name: dd-ai-agent-bridge-client
+    app.kubernetes.io/component: probe
+    app.kubernetes.io/part-of: dd-next-runtime
+  annotations:
+    denman.linear.app/issue: DEN-847
+    dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
+    dd.dev/source-revision: ef5358d54faac1c035e0754f5e7421e10664a75f
+    dd.dev/image-workflow-run: "31269442497"
+    dd.dev/image-evidence-artifact: image-digest-ores-client-31269442497-1
+    dd.dev/activation-mode: suspended-manual
+spec:
+  schedule: "0 0 * * *"
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: dd-ai-agent-bridge-client-smoke
+            app.kubernetes.io/name: dd-ai-agent-bridge-client
+            app.kubernetes.io/component: probe
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          serviceAccountName: dd-ai-agent-bridge-client-smoke
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: probe
+              image: ghcr.io/oresoftware/ores-ai-agent-bridge-client@sha256:f6576d1fc2fbadad454c77cc078078695421b138731374347f44f98c67f8269e
+              imagePullPolicy: IfNotPresent
+              args:
+                - probe
+              env:
+                - name: ORES_AI_AGENT_BRIDGE_BASE_URL
+                  value: http://dd-ai-agent-bridge.default.svc.cluster.local:8142
+                - name: ORES_AI_AGENT_BRIDGE_TCP_PORT
+                  value: "8143"
+                - name: ORES_AI_AGENT_BRIDGE_TIMEOUT_SECONDS
+                  value: "10"
+                - name: ORES_AI_AGENT_BRIDGE_BEARER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-ai-agent-bridge-secrets
+                      key: inbox_token
+                - name: HOME
+                  value: /tmp
+                - name: TMPDIR
+                  value: /tmp
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-ai-agent-bridge-client-smoke
+  namespace: default
+  labels:
+    app: dd-ai-agent-bridge-client-smoke
+    app.kubernetes.io/name: dd-ai-agent-bridge-client
+    app.kubernetes.io/component: smoke
+    app.kubernetes.io/part-of: dd-next-runtime
+  annotations:
+    denman.linear.app/issue: DEN-847
+    dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
+    dd.dev/source-revision: ef5358d54faac1c035e0754f5e7421e10664a75f
+    dd.dev/image-workflow-run: "31269442497"
+    dd.dev/image-evidence-artifact: image-digest-ores-client-31269442497-1
+    dd.dev/activation-mode: suspended-manual
+spec:
+  schedule: "0 0 * * *"
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 180
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: dd-ai-agent-bridge-client-smoke
+            app.kubernetes.io/name: dd-ai-agent-bridge-client
+            app.kubernetes.io/component: smoke
+            app.kubernetes.io/part-of: dd-next-runtime
+        spec:
+          serviceAccountName: dd-ai-agent-bridge-client-smoke
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: smoke
+              image: ghcr.io/oresoftware/ores-ai-agent-bridge-client@sha256:f6576d1fc2fbadad454c77cc078078695421b138731374347f44f98c67f8269e
+              imagePullPolicy: IfNotPresent
+              args:
+                - smoke
+              env:
+                - name: ORES_AI_AGENT_BRIDGE_BASE_URL
+                  value: http://dd-ai-agent-bridge.default.svc.cluster.local:8142
+                - name: ORES_AI_AGENT_BRIDGE_TCP_PORT
+                  value: "8143"
+                - name: ORES_AI_AGENT_BRIDGE_TIMEOUT_SECONDS
+                  value: "10"
+                - name: ORES_AI_AGENT_BRIDGE_BEARER
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-ai-agent-bridge-secrets
+                      key: inbox_token
+                - name: HOME
+                  value: /tmp
+                - name: TMPDIR
+                  value: /tmp
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 16Mi
