@@ -6,8 +6,12 @@ on:
       - dev
     paths:
       - '.github/den-675-trigger'
+      - '.github/workflows/den-675-fix-yaml-indentation.yml'
       - '.github/workflows/den-675-pr-materialize.yml'
       - '.github/workflows/den-675-shared-auth-observability-dev.yml'
+      - 'docs/observability/prometheus-application-rollout.yaml'
+      - 'remote/argocd/observability/prometheus.configmap.yaml'
+      - 'remote/tests/general/prometheus-application-scrape.test.ts'
 
 permissions:
   contents: write
@@ -45,16 +49,12 @@ jobs:
           echo "SHARED_AUTH_SERVER_REVISION=$server_revision" >> "$GITHUB_ENV"
           echo "SHARED_AUTH_BRIDGE_REVISION=$bridge_revision" >> "$GITHUB_ENV"
 
-      - name: Materialize the reviewed product files once
+      - name: Materialize or normalize the reviewed product files
         shell: bash
         run: |
           set -euo pipefail
-          if grep -q 'job_name: dd-shared-auth' remote/argocd/observability/prometheus.configmap.yaml; then
-            echo 'Shared Auth observability product files are already materialized.'
-            exit 0
-          fi
-
-          python3 - <<'EXTRACT'
+          if ! grep -q 'job_name: dd-shared-auth' remote/argocd/observability/prometheus.configmap.yaml; then
+            python3 - <<'EXTRACT'
           from pathlib import Path
 
           source = Path('.github/workflows/den-675-shared-auth-observability-dev.yml')
@@ -66,7 +66,113 @@ jobs:
               body.append(line[10:] if line.startswith('          ') else line)
           Path('/tmp/den675-materialize.py').write_text('\n'.join(body) + '\n', encoding='utf-8')
           EXTRACT
-          python3 /tmp/den675-materialize.py
+            python3 /tmp/den675-materialize.py
+          fi
+
+          python3 - <<'NORMALIZE'
+          import os
+          from pathlib import Path
+
+          config_path = Path('remote/argocd/observability/prometheus.configmap.yaml')
+          text = config_path.read_text(encoding='utf-8')
+
+          jobs_start = text.index('      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.')
+          jobs_end = text.index('      # fiducia data-plane raft metrics.', jobs_start)
+          jobs = '''      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.
+      - job_name: dd-shared-auth
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth.shared-auth.svc.cluster.local:8120
+      - job_name: dd-shared-auth-nats-bridge
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
+'''
+          text = text[:jobs_start] + jobs + text[jobs_end:]
+
+          alerts_start = text.index('          - alert: SharedAuthServerTargetMissing')
+          alerts_end = text.index('          - alert: BenefactorBackendTargetMissing', alerts_start)
+          alerts = '''          - alert: SharedAuthServerTargetMissing
+            expr: absent(up{job="dd-shared-auth"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth API."
+          - alert: SharedAuthBridgeTargetMissing
+            expr: absent(up{job="dd-shared-auth-nats-bridge"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth NATS bridge scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth NATS bridge."
+          - alert: SharedAuthMetricsTargetDown
+            expr: up{job=~"dd-shared-auth|dd-shared-auth-nats-bridge"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: shared-auth
+            annotations:
+              summary: "Shared Auth metrics target {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape the cluster-internal /metrics endpoint for {{ $labels.job }}."
+          - alert: SharedAuthVerificationFailuresHigh
+            expr: increase(shared_auth_verify_failures_total[10m]) > 100
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth verification failures are unusually high
+              description: "More than 100 token-verification failures occurred in ten minutes and the condition persisted for five minutes."
+          - alert: SharedAuthBridgePublishFailuresHigh
+            expr: sum(increase(shared_auth_bridge_publishes_total{outcome="failed"}[10m])) > 10
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge publish failures are high
+              description: "More than ten internal HTTP-to-NATS failures occurred in ten minutes. Client rejections are intentionally excluded."
+          - alert: SharedAuthBridgeDeliveryFailuresHigh
+            expr: sum(increase(shared_auth_bridge_deliveries_total{outcome="failed"}[10m])) > 5
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge delivery failures are high
+              description: "More than five NATS-to-webhook delivery failures occurred in ten minutes."
+'''
+          text = text[:alerts_start] + alerts + text[alerts_end:]
+          config_path.write_text(text, encoding='utf-8')
+
+          rollout_path = Path('docs/observability/prometheus-application-rollout.yaml')
+          rollout = rollout_path.read_text(encoding='utf-8')
+          replacements = {
+              'shared-auth/shared-auth-server.rs': os.environ['SHARED_AUTH_SERVER_REVISION'],
+              'shared-auth/shared-auth-nats-bridge.rs': os.environ['SHARED_AUTH_BRIDGE_REVISION'],
+          }
+          for repository, revision in replacements.items():
+              marker = f'    source_repository: {repository}\n'
+              start = rollout.index(marker)
+              workload = rollout.index('    workload:', start)
+              revision_start = rollout.index('    source_revision: ', start)
+              if revision_start > workload:
+                  raise SystemExit(f'source_revision escaped the {repository} inventory entry')
+              revision_end = rollout.index('\n', revision_start)
+              rollout = (
+                  rollout[:revision_start]
+                  + f'    source_revision: {revision}'
+                  + rollout[revision_end:]
+              )
+          rollout_path.write_text(rollout, encoding='utf-8')
+          NORMALIZE
           git diff --check
 
       - name: Install focused test dependencies
@@ -121,5 +227,5 @@ remote/tests/general/prometheus-application-scrape.test.ts"
             docs/observability/prometheus-application-rollout.yaml \
             remote/argocd/observability/prometheus.configmap.yaml \
             remote/tests/general/prometheus-application-scrape.test.ts
-          git commit -m 'feat(DEN-675): scrape and alert on Shared Auth services'
+          git commit -m 'fix(DEN-675): preserve Prometheus YAML and source revisions'
           git push origin HEAD:${{ github.head_ref }}
