@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "checked_at": "2026-09-12T05:54:14Z",
+  "checked_at": "2026-09-12T10:55:47Z",
   "workflow_commit": "0610aa53ed471280a29200b66249477d338fe2f5",
   "source_revision": "main",
   "status": "workflow_precondition_failed",
@@ -13,8 +13,8 @@
   ],
   "stdout": "",
   "stderr": "",
-  "workflow_run_id": "34676755915",
+  "workflow_run_id": "34689714173",
   "workflow_run_attempt": "1",
   "source_commit": "0610aa53ed471280a29200b66249477d338fe2f5",
-  "published_at": "2026-09-12T05:56:06Z"
+  "published_at": "2026-09-12T10:57:28Z"
 }
