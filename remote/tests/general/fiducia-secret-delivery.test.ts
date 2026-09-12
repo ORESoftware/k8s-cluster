@@ -56,8 +56,10 @@ test('common secrets bundle renders a namespace-gated Fiducia store and admissio
   );
   assert.match(
     rendered,
-    /url:\s*http:\/\/fiducia-load-balance\.fiducia\.svc\.cluster\.local:8088\/v1\/kv\?key=\{\{[\s\n]*\.remoteRef\.key \}\}/,
+    /url:\s*['"]?https:\/\/fiducia-load-balance\.fiducia\.svc\.cluster\.local:8443\/v1\/kv\?key=\{\{[\s\n]*\.remoteRef\.key \}\}['"]?/,
   );
+  assert.match(rendered, /caProvider:[\s\S]{0,180}name:\s*fiducia-load-balance-tls/);
+  assert.match(rendered, /caProvider:[\s\S]{0,180}key:\s*ca\.crt/);
   assert.match(rendered, /jsonPath:\s*\$\.entry\.value/);
   assert.match(rendered, /Authorization:\s*Bearer \{\{ \.auth\.token \}\}/);
   assert.match(rendered, /name:\s*fiducia-eso-reader[\s\S]*namespace:\s*external-secrets/);
@@ -181,7 +183,7 @@ test('runbook records the audited callers, guarded key grammar, and staged durab
   assert.match(runbook, /transport-encrypted/i);
 });
 
-test('FID-SEC-1 phase 1: the KV-path TLS PKI renders and is inert (no workload consumes it yet)', () => {
+test('FID-SEC-1 staged rollout: the KV-path TLS PKI and dual listener render', () => {
   const rendered = renderKustomization('remote/argocd/fiducia');
 
   // A namespace CA is bootstrapped from the cluster `selfsigned` ClusterIssuer.
@@ -216,13 +218,13 @@ test('FID-SEC-1 phase 1: the KV-path TLS PKI renders and is inert (no workload c
     'the serving cert must be signed by the fiducia-ca Issuer',
   );
 
-  // Inertness ratchet: phase 1 must NOT wire the LB's TLS listener. When the
-  // phase-2 cutover (DEN-1240) lands FIDUCIA_TLS_CERT_PATH + the volume mount,
-  // this assertion is flipped deliberately in the same change — so an accidental
-  // early enablement (which 426s every plaintext client) fails the suite here.
-  assert.doesNotMatch(
-    rendered,
-    /FIDUCIA_TLS_CERT_PATH/,
-    'phase 1 is inert: no workload may consume the TLS cert until the coordinated cutover',
-  );
+  // ESO has migrated to verified HTTPS, while application clients retain the
+  // plaintext listener during the staged DEN-438 migration. The old listener
+  // must remain until every direct caller has moved and the downgrade gate is
+  // deliberately closed.
+  assert.match(rendered, /name:\s*FIDUCIA_TLS_CERT_PATH[\s\S]{0,100}value:\s*\/etc\/fiducia\/tls\/tls\.crt/);
+  assert.match(rendered, /name:\s*FIDUCIA_TLS_KEY_PATH[\s\S]{0,100}value:\s*\/etc\/fiducia\/tls\/tls\.key/);
+  assert.match(rendered, /name:\s*TLS_PORT[\s\S]{0,80}value:\s*['"]?8443['"]?/);
+  assert.match(rendered, /containerPort:\s*8443[\s\S]{0,40}name:\s*https/);
+  assert.match(rendered, /containerPort:\s*8088[\s\S]{0,40}name:\s*http/);
 });
