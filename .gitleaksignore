@@ -1,0 +1,4 @@
+# DEN-266: exact historical fingerprint of the intentionally synthetic github-pat
+# redaction fixture in coverage-index.test.mjs. This is not a real credential.
+# Do not broaden to a rule/path allowlist; all other findings remain blocking.
+a1af6fd59534fa869727ac3f09b5e82ece4bf11a:tools/google-chat-space-export/test/coverage-index.test.mjs:github-pat:25
