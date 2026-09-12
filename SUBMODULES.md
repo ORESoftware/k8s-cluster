@@ -18,7 +18,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/gcs/chat-vibe` | [ORESoftware/chat.vibe](https://github.com/ORESoftware/chat.vibe) | `master` | — _(submodule checkout only)_ |
 | `remote/modules/github/oresoftware/json-logging` | [oresoftware/json-logging](https://github.com/oresoftware/json-logging) | `master` | `~/codes/ores/json-logging` |
 | `remote/modules/github/oresoftware/cmd-line-parser` | [oresoftware/cmd-line-parser](https://github.com/oresoftware/cmd-line-parser) | `main` | — _(submodule checkout only)_ |
-| `remote/modules/github/oresoftware/go-iterators` | [oresoftware/go-iterators](https://github.com/oresoftware/go-iterators) | `main` | — _(submodule checkout only)_ |
+| `remote/modules/github/oresoftware/go-iterators` | [ORESoftware/iterators.go](https://github.com/ORESoftware/iterators.go) | `main` | — _(submodule checkout only; legacy mount path retained)_ |
 | `remote/submodules/live-mutex` | [ORESoftware/live-mutex](https://github.com/ORESoftware/live-mutex) | `dev` | `~/codes/ores/live-mutex` |
 | `remote/submodules/rust-network-mutex-rs` | [ORESoftware/live-mutex-rs](https://github.com/ORESoftware/live-mutex-rs) | `dev` | `~/codes/ores/live-mutex-rs` |
 | `remote/submodules/discrete-event-system` | [ORESoftware/discrete-event-system](https://github.com/ORESoftware/discrete-event-system) | `main` | `~/codes/ores/des-engine` |
@@ -31,7 +31,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/3fa-backend` | [3FA-app/3fa-backend.rs](https://github.com/3FA-app/3fa-backend.rs) | `main` | `~/codes/3FA-app/3fa-backend.rs` |
 | `remote/libs` | [ORESoftware/k8s-libs-and-shared-defs](https://github.com/ORESoftware/k8s-libs-and-shared-defs) | `main` | `~/codes/ores/k8s-libs-and-shared-defs` |
 | `remote/deployments/benefactor-backend-rs` | [benefactor-cc/backend.rs](https://github.com/benefactor-cc/backend.rs) | `main` | — _(submodule checkout only)_ |
-| `remote/submodules/sonus-auris-site.web` | [sonus-auris/sonus-auris-site.web](https://github.com/sonus-auris/sonus-auris-site.web) | `main` | `~/codes/sonus-auris/sonus-auris-site.web` |
+| `remote/submodules/sonus-auris-site.web` | [sonus-auris/sonus-auris.github.io](https://github.com/sonus-auris/sonus-auris.github.io) | `main` | `~/codes/sonus-auris/sonus-auris-site.web` _(legacy clone and mount names)_ |
 | `remote/submodules/sonus-auris.infra` | [sonus-auris/sonus-auris.infra](https://github.com/sonus-auris/sonus-auris.infra) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/soccer-rs` | [akrion-sim/akrion-backend.rs](https://github.com/akrion-sim/akrion-backend.rs) | `main` | `~/codes/akrion-sim/akrion-backend.rs` |
 | `remote/deployments/akrion-web-server-rs` | [akrion-sim/akrion-web-server.rs](https://github.com/akrion-sim/akrion-web-server.rs) | `main` | `~/codes/akrion-sim/akrion-web-server.rs` |
@@ -45,7 +45,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/push-notification-server.rs` | [ORESoftware/push-notification-server.rs](https://github.com/ORESoftware/push-notification-server.rs) | `main` | `~/codes/ores/push-notification-server.rs` |
 | `remote/deployments/fabrication-server-rs` | [daedalus-fab/fabrication-server.rs](https://github.com/daedalus-fab/fabrication-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/gleam-lambda-runner` | [scintilla-run/gleam-lambda-runner](https://github.com/scintilla-run/gleam-lambda-runner) | `main` | — _(submodule checkout only)_ |
-| `remote/deployments/billing-server-rs` | [quaestor-ledger/billing-server.rs](https://github.com/quaestor-ledger/billing-server.rs) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/billing-server-rs` | [quaestor-ledger/quaestor-ledger-server.rs](https://github.com/quaestor-ledger/quaestor-ledger-server.rs) | `main` | — _(submodule checkout only; legacy mount path retained)_ |
 | `remote/deployments/dart-server` | [sagitta-stack/dart-server](https://github.com/sagitta-stack/dart-server) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/dd-data-viz-rs` | [claritas-viz/data-viz-server.rs](https://github.com/claritas-viz/data-viz-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/athleto-backend-rs` | [athlet-o/athleto-backend.rs](https://github.com/athlet-o/athleto-backend.rs) | `main` | `~/codes/athlet-o/athleto-backend.rs` |

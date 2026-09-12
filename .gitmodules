@@ -15,7 +15,7 @@
 	branch = main
 [submodule "remote/modules/github/oresoftware/go-iterators"]
 	path = remote/modules/github/oresoftware/go-iterators
-	url = https://github.com/oresoftware/go-iterators.git
+	url = https://github.com/ORESoftware/iterators.go.git
 	branch = main
 [submodule "remote/submodules/live-mutex"]
 	path = remote/submodules/live-mutex
@@ -67,7 +67,7 @@
 	branch = main
 [submodule "remote/submodules/sonus-auris-site.web"]
 	path = remote/submodules/sonus-auris-site.web
-	url = https://github.com/sonus-auris/sonus-auris-site.web
+	url = https://github.com/sonus-auris/sonus-auris.github.io.git
 	branch = main
 [submodule "remote/submodules/sonus-auris.infra"]
 	path = remote/submodules/sonus-auris.infra
@@ -115,7 +115,7 @@
 	branch = main
 [submodule "remote/deployments/billing-server-rs"]
 	path = remote/deployments/billing-server-rs
-	url = git@github.com:quaestor-ledger/billing-server.rs.git
+	url = git@github.com:quaestor-ledger/quaestor-ledger-server.rs.git
 	branch = main
 [submodule "remote/deployments/dart-server"]
 	path = remote/deployments/dart-server

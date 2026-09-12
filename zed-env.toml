@@ -1,0 +1,21 @@
+# Local checks only. None of these tasks applies manifests or contacts a cloud.
+schema = 2
+
+[tasks.deps]
+description = "Install the exact local-test dependency lock without lifecycle hooks"
+run = ["pnpm --dir remote/tests install --frozen-lockfile --ignore-scripts"]
+
+[tasks.config-contracts]
+description = "Check patch hygiene and browser MCP credential/config boundaries"
+run = [
+  "git diff --check",
+  "pnpm --dir remote/tests exec tsx --test general/browser-mcp-exposure.test.ts",
+]
+
+[tasks.audit]
+description = "Run the installed ORES CLI's read-only repository audit; findings remain failures"
+run = ["oresc audit repo --path . --profile baseline --required-paths zed-env.toml"]
+
+[tasks.check]
+description = "Run local config regressions (separate from the full cloud/runtime acceptance gates)"
+depends = ["config-contracts"]
