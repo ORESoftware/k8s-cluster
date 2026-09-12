@@ -61,7 +61,9 @@
       "scintilla-run-monorepo"
     ],
     "shared-auth": [
-      "shared-auth-monorepo"
+      "shared-auth-infra",
+      "shared-auth-monorepo",
+      "shared-auth-server.rs"
     ],
     "sonus-auris": [
       "sonus-auris-api-server.rs",
