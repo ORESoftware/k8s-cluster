@@ -5,6 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import { assertCoverageEvidenceContract } from './reaper-contracts.mjs';
 import { materializePlan } from './reaper-core.mjs';
 import { createGitHubClient } from './reaper-github.mjs';
 import { createLinearClient } from './reaper-linear.mjs';
@@ -19,6 +20,7 @@ const DEFAULT_TEAM_ID = 'eb8ab169-5afe-4b6f-9cab-3f2aa3e887dc';
 const DEFAULT_PARENT_ISSUE = 'DEN-3473';
 const DEFAULT_ALLOWED_GITHUB_OWNERS = ['ORESoftware'];
 const DEFAULT_MAX_CREATES = 25;
+const LINEAR_ISSUE_LIMIT_CODE = 'linear_issue_limit';
 
 function usage() {
   return `Usage:
@@ -106,6 +108,28 @@ function clientsFromEnvironment(env = process.env) {
   };
 }
 
+export function buildLinearCapacityEvidence(plan) {
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    throw new Error('plan must be an object');
+  }
+  if (typeof plan.planId !== 'string' || !/^google-chat-import-plan:[0-9a-f]{24}$/.test(plan.planId)) {
+    throw new Error('plan.planId is invalid');
+  }
+  if (!Array.isArray(plan.candidates)) throw new Error('plan.candidates must be an array');
+  const evidence = {
+    schemaVersion: 1,
+    planId: plan.planId,
+    entries: plan.candidates
+      .filter((candidate) => candidate?.action === 'skip-non-actionable')
+      .map((candidate) => ({
+        candidateKey: candidate.candidateKey,
+        disposition: 'excluded',
+        reasonCode: 'non_actionable',
+      })),
+  };
+  return assertCoverageEvidenceContract(evidence);
+}
+
 export async function main(argv = process.argv.slice(2), env = process.env) {
   const options = parseArgs([...argv]);
   if (options.help || !options.command) {
@@ -125,7 +149,21 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
       throw new Error('--plan, --evidence, and --summary are required for materialize');
     }
     const plan = await readJson(options.plan);
-    const result = await materializePlan(plan, clients, { maxCreates: clients.maxCreates });
+    let result;
+    try {
+      result = await materializePlan(plan, clients, { maxCreates: clients.maxCreates });
+    } catch (error) {
+      if (error?.code !== LINEAR_ISSUE_LIMIT_CODE) throw error;
+      const evidence = buildLinearCapacityEvidence(plan);
+      await writeJson(options.evidence, evidence);
+      process.stderr.write(`${JSON.stringify({
+        linearIssueLimit: true,
+        candidates: plan.candidates.length,
+        explicitNonActionable: evidence.entries.length,
+        unresolvedCandidates: plan.candidates.length - evidence.entries.length,
+      })}\n`);
+      return;
+    }
     await writeJson(options.evidence, result.evidence);
     await writeJson(options.summary, result.summary, 0o644);
     process.stderr.write(`${JSON.stringify(result.summary.counts)}\n`);
