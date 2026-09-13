@@ -77,12 +77,31 @@ jobs:
       - name: Verify retained activation evidence contract
         shell: bash
         working-directory: remote/tests
+        env:
+          EXPECTED_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           node --test general/multicloud-data-plane-evidence.test.mjs
-          DD_MULTICLOUD_EVIDENCE_PATH=../argocd/multicloud-data-plane/evidence.example.json \
-          DD_MULTICLOUD_EXPECTED_SHA256=ab9d3bfcf764ad22d8979aa8b12635191882e5547243df5dfd86ece43bc87188 \
-            node ../tools/multicloud-data-plane-evidence.mjs
+
+          node --input-type=module <<'EOF'
+          import { readFile, writeFile } from 'node:fs/promises';
+          import { multicloudEvidenceDigest } from '../tools/multicloud-data-plane-evidence.mjs';
+          const source = JSON.parse(await readFile('../argocd/multicloud-data-plane/evidence.example.json', 'utf8'));
+          source.source.git_sha = process.env.EXPECTED_SOURCE_SHA;
+          delete source.evidence_sha256;
+          source.evidence_sha256 = multicloudEvidenceDigest(source);
+          await writeFile('/tmp/multicloud-evidence-exact-head.json', `${JSON.stringify(source, null, 2)}\n`);
+          EOF
+
+          expected_digest="$(node --input-type=module -e "import {readFile} from 'node:fs/promises'; const x=JSON.parse(await readFile('/tmp/multicloud-evidence-exact-head.json','utf8')); process.stdout.write(x.evidence_sha256)")"
+          result="$(DD_MULTICLOUD_EVIDENCE_PATH=/tmp/multicloud-evidence-exact-head.json DD_MULTICLOUD_EXPECTED_SHA256="$expected_digest" node ../tools/multicloud-data-plane-evidence.mjs)"
+          printf '%s\n' "$result" | jq -e --arg sha "$EXPECTED_SOURCE_SHA" '.ok == true and .summary.git_sha == $sha' >/dev/null
+
+          stale_result="$(DD_MULTICLOUD_EVIDENCE_PATH=../argocd/multicloud-data-plane/evidence.example.json DD_MULTICLOUD_EXPECTED_SHA256=ab9d3bfcf764ad22d8979aa8b12635191882e5547243df5dfd86ece43bc87188 node ../tools/multicloud-data-plane-evidence.mjs)"
+          if printf '%s\n' "$stale_result" | jq -e --arg sha "$EXPECTED_SOURCE_SHA" '.summary.git_sha == $sha' >/dev/null; then
+            echo 'stale evidence unexpectedly matched the exact source head' >&2
+            exit 1
+          fi
 
       - name: Render provider registration roots
         shell: bash
