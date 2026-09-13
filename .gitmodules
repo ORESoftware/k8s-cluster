@@ -183,5 +183,5 @@
 	branch = main
 [submodule "remote/deployments/push-notification-server.rs"]
 	path = remote/deployments/push-notification-server.rs
-	url = git@github.com:ORESoftware/push-notification-server.rs.git
+	url = git@github.com:fanwaave/push-notification-server.rs.git
 	branch = main

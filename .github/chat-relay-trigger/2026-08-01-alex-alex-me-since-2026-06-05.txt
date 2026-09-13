@@ -1,0 +1,5 @@
+Purpose: trigger the encrypted Google Chat relay for alex-alex-me.
+Requested range: messages created on or after 2026-06-05.
+Triggered: 2026-08-01T15:30:00Z.
+Tracking: Linear DEN-266 / DEN-533.
+No credentials are stored in this file.

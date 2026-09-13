@@ -1,0 +1,66 @@
+{
+  "excluded_organizations": [
+    "r2g",
+    "r2g-test"
+  ],
+  "existing_baselines": {
+    "zed-pkg-test": [
+      "node-lib",
+      "node-app",
+      "rust-lib",
+      "rust-app",
+      "polyglot-lib",
+      "polyglot-go-app",
+      "polyglot-node-app",
+      "go-lib",
+      "go-app",
+      "python-lib",
+      "python-app",
+      "zed-pkg-e2e",
+      "dart-lib",
+      "dart-app",
+      "gleam-lib",
+      "gleam-app",
+      "awkward-lib",
+      "multiversion-lib",
+      "workspace-monorepo",
+      "shared-schema",
+      "submodule-consumer",
+      "subtree-consumer"
+    ]
+  },
+  "expected_repository_count": 209,
+  "fleet_files": {
+    "3fa-app-test": "3fa-app-test.json",
+    "claritas-viz-test": "claritas-viz-test.json",
+    "cliptown-test": "cliptown-test.json",
+    "declarative-migrations-test": "declarative-migrations-test.json",
+    "embedded-alerts-test": "embedded-alerts-test.json",
+    "evento-globolo-test": "evento-globolo-test.json",
+    "fiducia-cloud-test": "fiducia-cloud-test.json",
+    "file-tunnel-test": "file-tunnel-test.json",
+    "hypesiege-test": "hypesiege-test.json",
+    "memebank-test": "memebank-test.json",
+    "messaging-intel-test": "messaging-intel-test.json",
+    "opto-sync-test": "opto-sync-test.json",
+    "quaestor-ledger-test": "quaestor-ledger-test.json",
+    "scintilla-run-test": "scintilla-run-test.json",
+    "shared-auth-test": "shared-auth-test.json",
+    "sonus-auris-test": "sonus-auris-test.json",
+    "streempilot-test": "streempilot-test.json",
+    "zed-pkg-test": "zed-pkg-test.json"
+  },
+  "policy": {
+    "bootstrap_via_pull_request": true,
+    "dependency_modes": [
+      "git-submodule",
+      "zed",
+      "native-package-manager"
+    ],
+    "existing_zed_pkg_test_baseline_is_preserved": true,
+    "merge_when_allowed": true,
+    "preserve_existing_nonmanaged_files": true,
+    "synthetic_fixtures_only": true
+  },
+  "schema_version": 1
+}

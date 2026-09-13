@@ -1,0 +1,42 @@
+name: discover repository-admin environments
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/repository-admin-environment-discovery.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: List environment names only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          response="${RUNNER_TEMP}/environments.json"
+          curl --fail --silent --show-error \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            --output "$response" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/environments?per_page=100"
+          python3 - "$response" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          environments = payload.get('environments') or []
+          print(f'environment_count={len(environments)}')
+          for environment in environments:
+              print(f"environment={environment.get('name')!r} protection_rule_count={len(environment.get('protection_rules') or [])}")
+          PY

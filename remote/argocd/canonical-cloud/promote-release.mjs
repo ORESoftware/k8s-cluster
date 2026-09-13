@@ -116,6 +116,7 @@ async function main() {
   const checkOnly = arguments_.includes('--check');
   const releaseSha = optionValue(arguments_, '--release-sha');
   const webDigest = optionValue(arguments_, '--web-digest');
+  const apiDigest = optionValue(arguments_, '--api-digest');
   const revokerDigest = optionValue(arguments_, '--revoker-digest');
   const base = dirname(fileURLToPath(import.meta.url));
 
@@ -130,6 +131,19 @@ async function main() {
         digest: webDigest,
         releaseSha,
         label: 'web',
+      },
+    },
+    {
+      path: resolve(base, 'api.deployment.yaml'),
+      promotion: {
+        repository: 'ghcr.io/canonical-cloud/canonical-api-server',
+        sourceRepositories: [
+          'ghcr.io/canonical-cloud/canonical-api-server',
+          'ghcr.io/canonical-cloud/canonical-web-server-rs',
+        ],
+        digest: apiDigest,
+        releaseSha,
+        label: 'api',
       },
     },
     {

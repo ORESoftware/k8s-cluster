@@ -1,0 +1,276 @@
+{
+  "fleet": {
+    "default_visibility": "private",
+    "production_org": "claritas-viz",
+    "repositories": [
+      {
+        "kind": "client",
+        "languages": [
+          "rust"
+        ],
+        "name": "claritas-clients-rust",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the planned Rust visualization SDK through Cargo, Zed, and a pinned git source while checking schemas, query building, rendering requests, and errors.",
+        "source_refs": [
+          "clients",
+          "api"
+        ],
+        "suites": [
+          "sdk-surface",
+          "schema-parity",
+          "query-builder",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "typescript"
+        ],
+        "name": "claritas-clients-typescript",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Consume the planned TypeScript visualization SDK through npm, Zed, and a pinned git source in browser and Node environments.",
+        "source_refs": [
+          "clients",
+          "api"
+        ],
+        "suites": [
+          "sdk-surface",
+          "schema-parity",
+          "browser-node-parity",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "api",
+        "languages": [
+          "python"
+        ],
+        "name": "claritas-api-contract",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate request/response schemas, filters, pagination, aggregations, exports, authorization, and stable error semantics.",
+        "source_refs": [
+          "api",
+          "monorepo"
+        ],
+        "suites": [
+          "openapi-contract",
+          "pagination",
+          "filters",
+          "export-contract"
+        ]
+      },
+      {
+        "kind": "load",
+        "languages": [
+          "javascript"
+        ],
+        "name": "claritas-api-load",
+        "package_managers": [
+          "npm",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Measure query, aggregation, export, and concurrent dashboard latency across deterministic small, medium, and large datasets.",
+        "services": [
+          "postgres"
+        ],
+        "source_refs": [
+          "api"
+        ],
+        "suites": [
+          "k6-smoke",
+          "aggregation-load",
+          "export-load",
+          "latency-budget"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "dart"
+        ],
+        "name": "claritas-flutter-golden",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Run deterministic Flutter golden tests for charts, empty states, failures, dense datasets, localization, responsive layouts, and themes.",
+        "source_refs": [
+          "flutter",
+          "monorepo"
+        ],
+        "suites": [
+          "flutter-golden",
+          "themes",
+          "localization",
+          "large-dataset"
+        ]
+      },
+      {
+        "kind": "device",
+        "languages": [
+          "dart"
+        ],
+        "name": "claritas-flutter-integration",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest"
+        ],
+        "purpose": "Run Claritas Flutter navigation, filtering, drill-down, export, cache, and offline integration tests on Android and iOS.",
+        "source_refs": [
+          "flutter",
+          "api"
+        ],
+        "suites": [
+          "android-emulator",
+          "ios-simulator",
+          "navigation",
+          "offline-cache"
+        ]
+      },
+      {
+        "kind": "ui",
+        "languages": [
+          "typescript"
+        ],
+        "name": "claritas-web-playwright",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Test dashboard authoring, filters, drill-down, sharing, export, permissions, and failure states in Chromium, Firefox, and WebKit.",
+        "source_refs": [
+          "monorepo",
+          "api"
+        ],
+        "suites": [
+          "playwright-chromium",
+          "playwright-firefox",
+          "playwright-webkit",
+          "dashboard-flows"
+        ]
+      },
+      {
+        "kind": "visual",
+        "languages": [
+          "typescript"
+        ],
+        "name": "claritas-rendering-cross-browser",
+        "package_managers": [
+          "npm",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Compare chart geometry, labels, fonts, SVG/canvas output, screenshots, and export fidelity across browser engines.",
+        "source_refs": [
+          "monorepo",
+          "api"
+        ],
+        "suites": [
+          "visual-regression",
+          "svg-canvas-parity",
+          "font-fallback",
+          "export-fidelity"
+        ]
+      },
+      {
+        "kind": "accessibility",
+        "languages": [
+          "typescript",
+          "dart"
+        ],
+        "name": "claritas-accessibility-visual-regression",
+        "package_managers": [
+          "npm",
+          "pub",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Enforce keyboard, screen-reader, reduced-motion, contrast, focus, semantic chart alternatives, and visual-regression requirements.",
+        "source_refs": [
+          "monorepo",
+          "flutter"
+        ],
+        "suites": [
+          "axe",
+          "keyboard",
+          "screen-reader-contract",
+          "reduced-motion"
+        ]
+      }
+    ],
+    "sources": {
+      "api": {
+        "alias": "api",
+        "repository": "claritas-viz/data-viz-server.rs",
+        "required": true,
+        "role": "api",
+        "zed_dependency": false
+      },
+      "clients": {
+        "alias": "clients",
+        "repository": "claritas-viz/claritas-clients",
+        "required": false,
+        "role": "clients",
+        "zed_dependency": true
+      },
+      "flutter": {
+        "alias": "flutter",
+        "repository": "claritas-viz/claritas-flutter",
+        "required": false,
+        "role": "ui",
+        "zed_dependency": false
+      },
+      "monorepo": {
+        "alias": "monorepo",
+        "repository": "claritas-viz/claritas-monorepo",
+        "required": true,
+        "role": "app",
+        "zed_dependency": false
+      }
+    },
+    "summary": "SDK, API, load, Flutter, browser, rendering, and accessibility coverage for Claritas Viz."
+  },
+  "test_org": "claritas-viz-test"
+}

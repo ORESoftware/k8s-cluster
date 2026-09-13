@@ -1,0 +1,98 @@
+name: DEN-675 repair shared-auth observability rollout
+
+on:
+  push:
+    branches:
+      - agent/den-675-shared-auth-observability
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-675-shared-auth-observability-repair
+  cancel-in-progress: false
+
+jobs:
+  apply-validate-and-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: agent/den-675-shared-auth-observability
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Apply the reviewed product patch from the original bootstrap
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          source = Path('.github/workflows/den-675-shared-auth-observability.yml').read_text(encoding='utf-8')
+          match = re.search(r"python3 - <<'PY'\n(?P<body>.*?)\n\s+PY\n", source, re.S)
+          if not match:
+              raise SystemExit('unable to recover the reviewed DEN-675 patch body')
+          body = textwrap.dedent(match.group('body'))
+          exec(compile(body, '<den-675-reviewed-patch>', 'exec'), {})
+          PY
+          git diff --check
+
+      - name: Install focused test dependencies
+        working-directory: remote/tests
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Run immutable Shared Auth observability contract
+        working-directory: remote/tests
+        run: pnpm run test:cli:prometheus-applications
+
+      - name: Render affected GitOps overlays
+        run: |
+          set -euo pipefail
+          kubectl kustomize remote/argocd/observability >/tmp/observability.yaml
+          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
+          grep -q 'name: dd-prometheus-config' /tmp/observability.yaml
+          grep -q 'job_name: dd-shared-auth' /tmp/observability.yaml
+          grep -q 'job_name: dd-shared-auth-nats-bridge' /tmp/observability.yaml
+          grep -q 'location = /shared-auth/metrics' /tmp/dd-next-runtime.yaml
+
+      - name: Remove bootstrap machinery and verify final semantic diff
+        run: |
+          set -euo pipefail
+          rm -f .github/den-675-trigger
+          rm -f .github/workflows/den-675-shared-auth-observability.yml
+          rm -f .github/workflows/den-675-shared-auth-observability-repair.yml
+          git diff --check
+          mapfile -t changed < <(git diff --name-only | sort)
+          expected=(
+            .github/den-675-trigger
+            .github/workflows/den-675-shared-auth-observability-repair.yml
+            .github/workflows/den-675-shared-auth-observability.yml
+            remote/argocd/observability/prometheus.configmap.yaml
+            remote/tests/general/prometheus-application-scrape.test.ts
+          )
+          mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
+          diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
+            remote/argocd/observability/prometheus.configmap.yaml \
+            remote/tests/general/prometheus-application-scrape.test.ts
+
+      - name: Commit validated product files
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'feat(DEN-675): scrape and alert on Shared Auth services'
+          git push origin HEAD:agent/den-675-shared-auth-observability

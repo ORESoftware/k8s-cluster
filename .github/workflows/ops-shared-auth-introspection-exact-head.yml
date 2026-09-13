@@ -1,0 +1,363 @@
+name: Validate Shared Auth introspection exact head
+run-name: Validate Shared Auth PR 30 from an encrypted owner response
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: [main]
+    paths:
+      - .github/shared-auth-introspection-validation-trigger
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: shared-auth-introspection-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/shared-auth-introspection-validation-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: validate Shared Auth introspection exact head'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_validation
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_validation
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_validation"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8.2-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      REPOSITORY: ${{ github.repository }}
+      MARKER_PATH: .github/shared-auth-introspection-validation-trigger
+      TARGET_REPOSITORY: shared-auth/shared-auth-server.rs
+      TARGET_PR: '30'
+      TARGET_SHA: c34015d337548b272d4e7fdb433ce402b6b3ed55
+      TARGET_BRANCH: agent/shared-auth-auth-time-claim
+      AUTH_TEST_DATABASE_URL: postgres://shared_auth:shared_auth_validation@127.0.0.1:5432/shared_auth_validation
+      AUTH_TEST_REDIS_URL: redis://127.0.0.1:6379/
+
+    steps:
+      - name: Validate the metadata-only carrier against current main
+        id: carrier
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          head_sha="$(jq -er '.head.sha' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          jq -e '
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            (.head.ref | startswith("agent/shared-auth-introspection-validation-")) and
+            .title == "DO NOT MERGE: validate Shared Auth introspection exact head" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 6 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          jq -e --arg path "$MARKER_PATH" '
+            length == 1 and
+            .[0].filename == $path and
+            .[0].status == "added" and
+            .[0].changes == 6
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${REPOSITORY}/contents/${MARKER_PATH}?ref=${head_sha}" --jq '.content')"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(wc -l <<<"$marker" | tr -d ' ')" -eq 6
+          test "$(sed -n 's/^target-repository=//p' <<<"$marker")" = "$TARGET_REPOSITORY"
+          test "$(sed -n 's/^target-pr=//p' <<<"$marker")" = "$TARGET_PR"
+          test "$(sed -n 's/^target-sha=//p' <<<"$marker")" = "$TARGET_SHA"
+          test "$(sed -n 's/^trusted-main=//p' <<<"$marker")" = "$parent_sha"
+          test "$(sed -n 's/^protocol=//p' <<<"$marker")" = rsa-oaep-sha256-v1
+          test "$(sed -n 's/^purpose=//p' <<<"$marker")" = shared-auth-introspection-validation
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${parent_sha}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+
+          printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
+          printf 'trusted_sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install Rust verification toolchain
+        shell: bash
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - name: Issue one-time challenge, clone the exact private head, and validate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+          TRUSTED_SHA: ${{ steps.carrier.outputs.trusted_sha }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=challenge-bootstrap
+          workflow_token="$GH_TOKEN"
+          work="$(mktemp -d "$RUNNER_TEMP/shared-auth-introspection-validation.XXXXXX")"
+          source_root="$work/source"
+          validation_log="$work/validation.log"
+          owner_token=''
+          server_pid=''
+
+          cleanup() {
+            if [ -n "$server_pid" ]; then
+              kill "$server_pid" 2>/dev/null || true
+              wait "$server_pid" 2>/dev/null || true
+            fi
+            unset owner_token VALIDATION_OWNER_TOKEN GH_TOKEN GITHUB_TOKEN
+            unset GIT_ASKPASS GIT_TERMINAL_PROMPT
+            rm -rf "$work"
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            tail_text='No executable validation output was produced.'
+            if [ -s "$validation_log" ]; then
+              tail_text="$(tail -n 120 "$validation_log")"
+            fi
+            body="$work/failure.md"
+            {
+              printf 'Exact-head Shared Auth validation failed at bounded stage `%s`.\n\n' "$stage"
+              printf 'Target: `%s@%s` (PR #%s).\n\n' "$TARGET_REPOSITORY" "$TARGET_SHA" "$TARGET_PR"
+              printf 'The private credential was not written to Git, Actions outputs, artifacts, or the environment file and was removed before repository code executed.\n\n'
+              printf '%s\n' '```text'
+              printf '%s\n' "$tail_text"
+              printf '%s\n' '```'
+            } > "$body"
+            GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$body" >/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          trap report_failure ERR
+
+          private_key="$work/private.pem"
+          public_key="$work/public.pem"
+          ciphertext_file="$work/ciphertext.bin"
+          openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out "$private_key"
+          chmod 600 "$private_key"
+          openssl pkey -in "$private_key" -pubout -out "$public_key"
+          nonce="$(openssl rand -hex 24)"
+          [[ "$nonce" =~ ^[0-9a-f]{48}$ ]]
+
+          challenge_body="$work/challenge.md"
+          {
+            printf '<!-- shared-auth-introspection-credential-challenge-v1:%s -->\n' "$nonce"
+            printf 'One-time RSA-OAEP-SHA256 challenge for exact-head validation of `%s@%s`. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY" "$TARGET_SHA"
+            printf '%s\n' '```pem'
+            cat "$public_key"
+            printf '%s\n' '```'
+          } > "$challenge_body"
+          challenge_json="$(jq -n --rawfile body "$challenge_body" '{body:$body}' | gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --input -)"
+          challenge_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$challenge_json")"
+          response_marker="<!-- shared-auth-introspection-credential-response-v1:${nonce} -->"
+
+          stage=await-encrypted-response
+          response_body=''
+          for _ in $(seq 1 180); do
+            comments="$(gh api --paginate "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" --slurp)"
+            response_body="$(
+              jq -r --arg marker "$response_marker" --argjson challenge_id "$challenge_id" '
+                [.[][]
+                 | select(.id > $challenge_id)
+                 | select(.user.login == "ORESoftware")
+                 | select(.body | startswith($marker + "\n"))]
+                | sort_by(.id)
+                | last
+                | .body // empty
+              ' <<<"$comments"
+            )"
+            test -n "$response_body" && break
+            sleep 5
+          done
+          test -n "$response_body"
+          test "$(grep -c '^ciphertext-base64=' <<<"$response_body")" -eq 1
+          ciphertext="$(sed -n 's/^ciphertext-base64=//p' <<<"$response_body")"
+          [[ "$ciphertext" =~ ^[A-Za-z0-9+/=]+$ ]]
+          test "${#ciphertext}" -le 8192
+          printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
+          test -s "$ciphertext_file"
+
+          stage=decrypt-ciphertext
+          owner_token="$(
+            openssl pkeyutl -decrypt \
+              -inkey "$private_key" \
+              -in "$ciphertext_file" \
+              -pkeyopt rsa_padding_mode:oaep \
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"
+
+          stage=validate-owner-token
+          test -n "$owner_token"
+          [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
+          [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
+          echo "::add-mask::$owner_token"
+          test "$(GH_TOKEN="$owner_token" gh api user --jq '.login' 2>/dev/null)" = ORESoftware
+          target_pull="$(GH_TOKEN="$owner_token" gh api "repos/${TARGET_REPOSITORY}/pulls/${TARGET_PR}" 2>/dev/null)"
+          jq -e --arg sha "$TARGET_SHA" --arg branch "$TARGET_BRANCH" '
+            .state == "open" and .head.sha == $sha and .head.ref == $branch and .base.ref == "main"
+          ' <<<"$target_pull" >/dev/null
+          GH_TOKEN="$owner_token" gh api "repos/${TARGET_REPOSITORY}" --jq '.permissions.pull == true' | grep -qx true
+
+          stage=clone-exact-head
+          export VALIDATION_OWNER_TOKEN="$owner_token"
+          export GIT_TERMINAL_PROMPT=0
+          askpass="$work/git-askpass.sh"
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$VALIDATION_OWNER_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          git init -q "$source_root"
+          git -C "$source_root" remote add origin "https://github.com/${TARGET_REPOSITORY}.git"
+          git -C "$source_root" -c protocol.ext.allow=never -c protocol.file.allow=never fetch --depth 1 --no-tags origin "$TARGET_SHA"
+          git -C "$source_root" checkout -q --detach FETCH_HEAD
+          test "$(git -C "$source_root" rev-parse HEAD)" = "$TARGET_SHA"
+          git -C "$source_root" remote remove origin
+
+          # Destroy the broad credential boundary before any repository code,
+          # build script, dependency, or test process can execute.
+          owner_token=''
+          unset VALIDATION_OWNER_TOKEN GH_TOKEN GITHUB_TOKEN GIT_ASKPASS
+          rm -f "$askpass" "$private_key" "$public_key" "$ciphertext_file"
+
+          exec > >(tee -a "$validation_log") 2>&1
+          cd "$source_root"
+          printf 'validating %s@%s\n' "$TARGET_REPOSITORY" "$TARGET_SHA"
+
+          stage=verify-formatting
+          cargo fmt --all --check
+
+          stage=apply-schema
+          psql "$AUTH_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+
+          stage=clippy
+          cargo clippy --all-targets --locked -- -D warnings
+
+          stage=complete-test-graph
+          cargo test --all-targets --locked
+
+          stage=focused-introspection-contract
+          cargo test --locked http::introspect::tests::
+          cargo test --locked --test integration exchange_then_introspect_roundtrip -- --exact
+          cargo test --locked --test integration exchange_preserves_supabase_aal2 -- --exact
+          cargo test --locked --test integration introspect_non_ore_token_is_inactive -- --exact
+          cargo test --locked --test integration introspect_authorized_caller_succeeds -- --exact
+          cargo test --locked --test integration introspect_rejects_unauthorized_caller -- --exact
+          cargo test --locked --test integration introspect_authorized_caller_invalid_token_is_inactive -- --exact
+          cargo test --locked --test integration introspect_fails_closed_when_secret_unset -- --exact
+
+          stage=release-build
+          cargo build --release --locked
+
+          stage=browser-webauthn
+          export AUTH_DATABASE_URL="$AUTH_TEST_DATABASE_URL"
+          export AUTH_REDIS_URL="$AUTH_TEST_REDIS_URL"
+          export AUTH_BIND_ADDR=127.0.0.1:8120
+          export AUTH_ALLOW_REGISTRATION=true
+          export AUTH_FACTOR_ENCRYPTION_KEY_HEX=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+          export AUTH_OTP_PEPPER=browser-ci-test-pepper-with-at-least-32-bytes
+          export AUTH_WEBAUTHN_RP_ID=localhost
+          export AUTH_WEBAUTHN_RP_ORIGIN=http://localhost:8120
+          export AUTH_WEBAUTHN_RP_NAME='Shared Auth Browser CI'
+          export AUTH_ISSUER=http://localhost:8120
+          export AUTH_AUDIENCE=shared-auth-browser-ci
+          export AUTH_SIGNING_KEY_FILE="$work/shared-auth-browser-key.pem"
+          export AUTH_BASE_URL=http://localhost:8120
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$AUTH_SIGNING_KEY_FILE"
+          (cd e2e && npm ci --ignore-scripts --no-audit --no-fund)
+          (cd e2e && npx playwright install --with-deps chromium)
+          cargo build --locked --bin shared-auth-server
+          target/debug/shared-auth-server >"$work/shared-auth-browser.log" 2>&1 &
+          server_pid=$!
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8120/healthz >/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat "$work/shared-auth-browser.log"
+              false
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat "$work/shared-auth-browser.log"
+            false
+          fi
+          (cd e2e && npm test)
+          kill "$server_pid" 2>/dev/null || true
+          wait "$server_pid" 2>/dev/null || true
+          server_pid=''
+
+          stage=container-build
+          docker build -t shared-auth-server:exact-head-validation .
+
+          stage=report-success
+          body="$work/success.md"
+          {
+            echo '## Shared Auth introspection exact-head validation passed'
+            echo
+            echo "Validated private target: \`${TARGET_REPOSITORY}@${TARGET_SHA}\` (PR #${TARGET_PR})."
+            echo
+            echo '- `cargo fmt --all --check`'
+            echo '- declarative PostgreSQL schema application'
+            echo '- `cargo clippy --all-targets --locked -- -D warnings`'
+            echo '- `cargo test --all-targets --locked`'
+            echo '- focused authenticated/fail-closed introspection and `auth_time` contract tests'
+            echo '- release binary build'
+            echo '- real Chromium WebAuthn ceremonies'
+            echo '- Docker image build without publication'
+            echo
+            echo 'The owner credential was destroyed before repository code executed and was not written to Git, outputs, artifacts, or environment files.'
+          } > "$body"
+          GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$body" >/dev/null
+          GH_TOKEN="$workflow_token" gh pr close "$PR_NUMBER" --repo "$REPOSITORY" --comment 'Exact-head validation completed; this metadata-only carrier must not be merged.' >/dev/null

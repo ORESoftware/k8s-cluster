@@ -1,0 +1,20 @@
+# Strict AppProject for meta-agents-demo. The two app repositories own their
+# namespace-scoped deploy/k8s resources; k8s-cluster owns this tenant boundary.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: meta-agents
+  namespace: argocd
+spec:
+  description: "Tenant project for meta-agents-demo — namespace `meta-agents`, no cluster resources."
+  sourceRepos:
+    - "git@github.com:meta-agents-demo/meta-agent-control-plane.rs.git"
+    - "git@github.com:meta-agents-demo/metagents.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: meta-agents
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }
+    - { group: "", kind: ServiceAccount }

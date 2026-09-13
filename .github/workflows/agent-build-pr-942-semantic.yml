@@ -1,0 +1,95 @@
+name: Build semantic PR 942 branch
+
+on:
+  push:
+    branches:
+      - agent/chatgpt-rate-limit-resumer-3am-semantic
+    paths:
+      - '.github/workflows/agent-build-pr-942-semantic.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-build-pr-942-semantic
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out current-dev semantic branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/chatgpt-rate-limit-resumer-3am-semantic
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Copy the exact reviewed product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          reviewed='6efef5c8cff069b47cac3aa8fffea1fea7660cb0'
+          git fetch --no-tags origin "$reviewed"
+          files=(
+            'docs/chatgpt-rate-limit-resumer.md'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/chatgpt-ui.mjs'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/cronjob.yaml'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/kustomization.yaml'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/networkpolicy.yaml'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/policy.mjs'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/pvc.yaml'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/resumer.mjs'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/runtime.mjs'
+            'remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/state.mjs'
+            'remote/tests/general/chatgpt-rate-limit-resumer-config.test.ts'
+          )
+          git checkout "$reviewed" -- "${files[@]}"
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/argocd/clusters/aws/kustomization.yaml')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          entry = '  - chatgpt-rate-limit-resumer'
+          if entry not in lines:
+              try:
+                  start = lines.index('resources:') + 1
+              except ValueError as exc:
+                  raise SystemExit('AWS Kustomization has no resources block') from exc
+              end = start
+              while end < len(lines):
+                  line = lines[end]
+                  if line.startswith('  ') or not line.strip():
+                      end += 1
+                      continue
+                  break
+              lines.insert(end, entry)
+              path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+          PY
+
+      - name: Validate the complete semantic union
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/*.mjs; do
+            node --check "$file"
+          done
+          ruby -e "require 'yaml'; Dir['remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/*.{yaml,yml}'].each { |f| YAML.load_stream(File.read(f)) }; YAML.load_file('remote/argocd/clusters/aws/kustomization.yaml')"
+          node --experimental-strip-types --test remote/tests/general/chatgpt-rate-limit-resumer-config.test.ts
+          grep -Fq 'timeZone: America/Chicago' remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/cronjob.yaml
+          grep -Fq "schedule: '0 3 * * *'" remote/argocd/clusters/aws/chatgpt-rate-limit-resumer/cronjob.yaml
+          grep -Fq -- '- chatgpt-rate-limit-resumer' remote/argocd/clusters/aws/kustomization.yaml
+          git diff --check
+
+      - name: Commit and push product-only semantic union
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'feat: resume rate-limited ChatGPT threads at 3am CT on current dev'
+          git push origin HEAD:agent/chatgpt-rate-limit-resumer-3am-semantic

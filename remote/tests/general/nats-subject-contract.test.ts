@@ -46,6 +46,7 @@ const SUBJECT_LITERAL = new RegExp(
   'g',
 );
 const SUBJECT_PREFIX_CONTEXT = /(?:SUBJECT_PREFIX|subject[_-]?prefix|subjectPrefix)/i;
+const DIAGNOSTIC_SUBJECT_CONTEXT = /(?:\bErr\s*\(|\binvalid\s*\(|\bbail!\s*\(|\bensure!\s*\(|\berror!\s*\().*\bsubject\b/i;
 
 // Keep exceptions exact and temporary. The current pinned schema covers every
 // observed cluster subject, so any future uncovered usage must fail immediately.
@@ -128,6 +129,7 @@ function scanLiteralUsages(repoRoot: string): SubjectUsage[] {
         const matchIndex = match.index ?? 0;
         if (source[matchIndex + match[0].length] === '.') continue;
         if (/\bassert(?:_eq|_ne)?!/.test(source)) continue;
+        if (!CONFIG_FILE.test(file) && DIAGNOSTIC_SUBJECT_CONTEXT.test(source)) continue;
         const context = lines.slice(Math.max(0, index - 2), index + 1).join('\n');
         if (!CONFIG_FILE.test(file) && !/subject/i.test(context)) continue;
         if (SUBJECT_PREFIX_CONTEXT.test(context)) continue;
@@ -241,6 +243,21 @@ test('subject containment respects parameters, wildcards, and stream bounds', as
   assert.equal(modelCoversExpression(model, 'cdc.public.app_config.>'), true);
   assert.equal(modelCoversExpression(model, 'dd.remote.not_declared.requests'), false);
   assert.equal(modelCoversExpression(model, 'dd.remote.>'), false);
+});
+
+test('scanner distinguishes diagnostic prose from runtime subject configuration', () => {
+  assert.equal(
+    DIAGNOSTIC_SUBJECT_CONTEXT.test(
+      'return Err(invalid("subject must remain under dd.remote.fabrication.>"));',
+    ),
+    true,
+  );
+  assert.equal(
+    DIAGNOSTIC_SUBJECT_CONTEXT.test(
+      'let subject = env_value("NATS_SUBJECT", "dd.remote.fabrication.jobs");',
+    ),
+    false,
+  );
 });
 
 test('pinned generated NATS outputs are current with the shared schema', () => {

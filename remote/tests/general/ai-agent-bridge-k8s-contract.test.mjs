@@ -14,10 +14,10 @@ const externalSecretPath =
 const fixturePath = 'remote/tests/fixtures/ai-agent-bridge-kind.yaml.tmpl';
 const kindScriptPath = 'scripts/ci/test-ai-agent-bridge-kind.sh';
 
-const SOURCE_SHA = 'c3e54e6cd0c6d56e3d2ed32902228d974e550a3f';
-const WORKFLOW_RUN = '31235992249';
+const SOURCE_SHA = 'ec667946b1f8725b6baea8e67ae6a701d602dc04';
+const WORKFLOW_RUN = '31264194679';
 const IMAGE =
-  'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:6b7e447a9989fa127ad4b0b3edc51fcd37a6b94a96bcf61b42c22d2641bf0ea8';
+  'ghcr.io/oresoftware/fiducia-ai-agent-bridge@sha256:bbf105c29cdbcec23d87ed0b21cfd548c43982cf6573aaf34a2fb1f4dc69a305';
 const SECRET_NAME = 'dd-ai-agent-bridge-secrets';
 const SECRET_KEY = 'inbox_token';
 

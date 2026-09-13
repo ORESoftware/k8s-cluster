@@ -1,0 +1,82 @@
+name: Observe trusted full critical-org fleet publisher
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-direct-probe-protected-github-token-aliases.yml
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: observe-full-critical-org-fleet-publisher-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/den-319-direct-token-alias-probe-20260731'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 130
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PUBLISH_WORKFLOW: ops-dispatch-full-critical-org-fleet-publication.yml
+      CARRIER_PR: '471'
+    steps:
+      - name: Dispatch and observe the exact trusted-main full-fleet publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'observer_attempt=5'
+          repository="$GITHUB_REPOSITORY"
+          trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          before_json="$(
+            gh run list \
+              --repo "$repository" \
+              --workflow "$PUBLISH_WORKFLOW" \
+              --event workflow_dispatch \
+              --limit 100 \
+              --json databaseId \
+              | jq '[.[].databaseId]'
+          )"
+
+          gh workflow run "$PUBLISH_WORKFLOW" \
+            --repo "$repository" \
+            --ref main \
+            -f "pr_number=${CARRIER_PR}"
+
+          run_json=''
+          for _ in $(seq 1 90); do
+            candidates="$(
+              gh run list \
+                --repo "$repository" \
+                --workflow "$PUBLISH_WORKFLOW" \
+                --event workflow_dispatch \
+                --limit 40 \
+                --json databaseId,headSha,createdAt,status,conclusion,url
+            )"
+            run_json="$(
+              jq -c \
+                --argjson before "$before_json" \
+                --arg sha "$trusted_sha" \
+                '[.[] | select(.headSha == $sha and ((.databaseId as $id | $before | index($id)) == null))] | sort_by(.createdAt) | last // empty' \
+                <<<"$candidates"
+            )"
+            test -z "$run_json" || break
+            sleep 2
+          done
+          test -n "$run_json"
+
+          run_id="$(jq -r .databaseId <<<"$run_json")"
+          run_url="$(jq -r .url <<<"$run_json")"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          echo "trusted_fleet_publisher_run_id=$run_id"
+          echo "trusted_fleet_publisher_run_url=$run_url"
+          echo "trusted_fleet_publisher_main_sha=$trusted_sha"
+
+          gh run watch "$run_id" --repo "$repository" --exit-status

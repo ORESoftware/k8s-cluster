@@ -1,0 +1,4 @@
+target=ORESoftware/sustainable-bike
+linear=DEN-3843
+protocol=rsa-oaep-sha256-v1
+action=create-public-repository

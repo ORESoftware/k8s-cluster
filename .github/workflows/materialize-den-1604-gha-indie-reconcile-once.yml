@@ -1,0 +1,118 @@
+name: Materialize DEN-1604 GHA indie-worker reconciliation once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/workflows/materialize-den-1604-gha-indie-reconcile-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-den-1604-gha-indie-reconcile
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1604-gha-indie-reconcile-current-dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out current-dev replacement branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1604-gha-indie-reconcile-current-dev
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Import the reviewed transformer from the superseded branch
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin agent/gha-indie-clone-reconcile-20260803
+          git show FETCH_HEAD:scripts/finalize-gha-indie-clone-reconcile.py.gz.b64 \
+            >"${RUNNER_TEMP}/finalize-gha-indie-clone-reconcile.py.gz.b64"
+          base64 --decode "${RUNNER_TEMP}/finalize-gha-indie-clone-reconcile.py.gz.b64" \
+            | gzip -dc >"${RUNNER_TEMP}/finalize-gha-indie-clone-reconcile.py"
+          python3 -m py_compile "${RUNNER_TEMP}/finalize-gha-indie-clone-reconcile.py"
+
+      - name: Apply the reconciliation to current dev
+        run: |
+          set -euo pipefail
+          python3 "${RUNNER_TEMP}/finalize-gha-indie-clone-reconcile.py"
+          rm -f .github/workflows/materialize-den-1604-gha-indie-reconcile-once.yml
+
+      - name: Install pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Format and verify every continuity-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Install pinned Node contract toolchain
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22.23.1'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Verify permanent continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit only reconciled product changes
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A -- \
+            .github/workflows/materialize-den-1604-gha-indie-reconcile-once.yml \
+            docs/gha-indie-worker-clone-reconciliation.md \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            remote/deployments/gha-clone-server-rs/README.md \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/deployments/gha-clone-server-rs/tests/http_api.rs \
+            remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs \
+            remote/deployments/gha-clone-server-rs/tests/startup_hardening.rs \
+            remote/deployments/gha-clone-server-rs/tests/yaml_ambiguity.rs
+
+          allowed='^(\.github/workflows/materialize-den-1604-gha-indie-reconcile-once\.yml|docs/gha-indie-worker-clone-reconciliation\.md|remote/argocd/dd-next-runtime/dd-gha-clone-server\.deployment\.yaml|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs|tests/(http_api|webhook_e2e|startup_hardening|yaml_ambiguity)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          if git diff --cached --quiet; then
+            echo 'current dev already contains the complete reconciliation' >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1604): reconcile indie worker concepts on current dev'
+          git push origin HEAD:agent/den-1604-gha-indie-reconcile-current-dev

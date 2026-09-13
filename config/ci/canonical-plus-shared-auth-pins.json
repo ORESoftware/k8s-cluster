@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "purpose": "Canonical Plus exact-head certification using an owner-scoped read-only GitHub App installation token",
+  "sources": {
+    "shared-auth/shared-auth-server.rs": "22aab1de937620251f4e0b9a617c485733c97ff5",
+    "shared-auth/shared-auth-infra": "b1a73635d93064a59e2dc6aab610d2f654306d04"
+  },
+  "canonical_contract": {
+    "issuer": "https://app.canonical.plus/shared-auth",
+    "audience": "canonical-plus-web",
+    "access_cookie": "__Host-canonical-customer-auth",
+    "refresh_cookie": "__Host-canonical-customer-auth-refresh",
+    "routes": [
+      "app.canonical.plus/u/*",
+      "app.canonical.plus/api/v1/quotes*",
+      "app.canonical.plus/ws/quotes*",
+      "api.canonical.plus/v1/quotes*",
+      "api.canonical.plus/v1/ws*"
+    ]
+  },
+  "live_writes": {
+    "cloudflare": false,
+    "dns": false,
+    "r2": false,
+    "kubernetes": false,
+    "database": false,
+    "supabase": false,
+    "secret_store": false
+  }
+}

@@ -1,0 +1,399 @@
+# One-shot current-dev product builder. It removes itself before publishing the
+# transport/identity hardening commit.
+name: Apply DEN-1606 build transport on current dev once
+
+on:
+  push:
+    branches:
+      - agent/den-1606-build-transport-current-dev-v2
+    paths:
+      - .github/workflows/apply-den-1606-build-transport-current-dev-v2-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-build-transport-current-dev-v2
+  cancel-in-progress: false
+
+jobs:
+  build-product:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-build-transport-current-dev-v2
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Apply transport, identity, and positive-bound contracts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          source = path.read_text(encoding='utf-8')
+
+          changes = [
+              (
+                  '''            build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")
+                              .map(|value| value.trim_end_matches('/').to_string()),
+                  '''.replace('              ', ''),
+                  '            build_server_url: build_server_url_from_env()?,\n',
+                  'build-server URL loader',
+              ),
+              (
+                  '''                max_workflow_bytes: env_usize(
+                                      "GHA_CLONE_MAX_WORKFLOW_BYTES",
+                                      gha_clone_server::MAX_WORKFLOW_BYTES_DEFAULT,
+                                  )?,
+                                  max_jobs: env_usize("GHA_CLONE_MAX_JOBS", gha_clone_server::MAX_JOBS_DEFAULT)?,
+                                  max_steps_per_job: env_usize(
+                                      "GHA_CLONE_MAX_STEPS_PER_JOB",
+                                      gha_clone_server::MAX_STEPS_PER_JOB_DEFAULT,
+                                  )?,
+                  '''.replace('                  ', ''),
+                  '''                max_workflow_bytes: env_nonzero_usize(
+                                      "GHA_CLONE_MAX_WORKFLOW_BYTES",
+                                      gha_clone_server::MAX_WORKFLOW_BYTES_DEFAULT,
+                                  )?,
+                                  max_jobs: env_nonzero_usize(
+                                      "GHA_CLONE_MAX_JOBS",
+                                      gha_clone_server::MAX_JOBS_DEFAULT,
+                                  )?,
+                                  max_steps_per_job: env_nonzero_usize(
+                                      "GHA_CLONE_MAX_STEPS_PER_JOB",
+                                      gha_clone_server::MAX_STEPS_PER_JOB_DEFAULT,
+                                  )?,
+                  '''.replace('                  ', ''),
+                  'positive planner bounds',
+              ),
+              (
+                  '''            build_poll_seconds: env_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
+                              build_timeout_seconds: env_u64("GHA_CLONE_BUILD_TIMEOUT_SECONDS", 3600)?,
+                  '''.replace('              ', ''),
+                  '''            build_poll_seconds: env_nonzero_u64("GHA_CLONE_BUILD_POLL_SECONDS", 2)?,
+                              build_timeout_seconds: env_nonzero_u64(
+                                  "GHA_CLONE_BUILD_TIMEOUT_SECONDS",
+                                  3600,
+                              )?,
+                  '''.replace('              ', ''),
+                  'positive runtime bounds',
+              ),
+          ]
+          for old, new, label in changes:
+              if source.count(old) != 1:
+                  raise SystemExit(f'expected one {label} anchor, found {source.count(old)}')
+              source = source.replace(old, new, 1)
+
+          build_response_anchor = '''#[derive(Debug, Serialize)]
+          #[serde(rename_all = "camelCase")]
+          struct BuildServerRequest<'a> {
+          '''.replace('          ', '')
+          build_validation = '''fn valid_build_job_id(value: &str) -> bool {
+              !matches!(value, "" | "." | "..")
+                  && value.len() <= 128
+                  && value
+                      .bytes()
+                      .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+          }
+
+          fn validate_build_job_response_id(
+              build: &BuildJobResponse,
+              expected: Option<&str>,
+          ) -> Result<(), String> {
+              if !valid_build_job_id(&build.id) {
+                  return Err("build server returned an invalid job ID".into());
+              }
+              if expected.is_some_and(|expected| build.id != expected) {
+                  return Err("build status returned a mismatched job ID".into());
+              }
+              Ok(())
+          }
+
+          '''.replace('          ', '')
+          if source.count(build_response_anchor) != 1:
+              raise SystemExit('BuildServerRequest anchor is not unique')
+          source = source.replace(build_response_anchor, build_validation + build_response_anchor, 1)
+
+          old_client = '''        client: reqwest::Client::builder()
+                      .connect_timeout(Duration::from_secs(10))
+                      .timeout(Duration::from_secs(60))
+                      .user_agent("gha-clone-server/0.1")
+                      .build()
+                      .expect("reqwest client"),
+          '''.replace('          ', '')
+          new_client = '        client: build_http_client().expect("reqwest client"),\n'
+          if source.count(old_client) != 1:
+              raise SystemExit('HTTP client construction anchor changed')
+          source = source.replace(old_client, new_client, 1)
+
+          router_anchor = 'fn router(state: AppState) -> Router {\n'
+          client_fn = '''fn build_http_client() -> Result<reqwest::Client, String> {
+              reqwest::Client::builder()
+                  .connect_timeout(Duration::from_secs(10))
+                  .timeout(Duration::from_secs(60))
+                  .redirect(reqwest::redirect::Policy::none())
+                  .user_agent("gha-clone-server/0.1")
+                  .build()
+                  .map_err(|error| format!("failed to build HTTP client: {error}"))
+          }
+
+          '''.replace('          ', '')
+          if source.count(router_anchor) != 1:
+              raise SystemExit('router anchor is not unique')
+          source = source.replace(router_anchor, client_fn + router_anchor, 1)
+
+          submit_parse = '''        let build: BuildJobResponse = serde_json::from_str(&body)
+                      .map_err(|error| format!("build server returned invalid job JSON: {error}"))?;
+          '''.replace('          ', '')
+          submit_validated = submit_parse + '        validate_build_job_response_id(&build, None)?;\n'
+          if source.count(submit_parse) != 1:
+              raise SystemExit('build submission parse anchor changed')
+          source = source.replace(submit_parse, submit_validated, 1)
+
+          poll_parse = '''        let build: BuildJobResponse = serde_json::from_str(&body)
+                      .map_err(|error| format!("build status JSON is invalid: {error}"))?;
+          '''.replace('          ', '')
+          poll_validated = poll_parse + '        validate_build_job_response_id(&build, Some(build_job_id))?;\n'
+          if source.count(poll_parse) != 1:
+              raise SystemExit('build status parse anchor changed')
+          source = source.replace(poll_parse, poll_validated, 1)
+
+          github_origin_anchor = 'fn github_api_base_url_from_env() -> Result<String, String> {\n'
+          build_origin = '''fn build_server_url_from_env() -> Result<Option<String>, String> {
+              env_optional("GHA_CLONE_BUILD_SERVER_URL")
+                  .map(|value| normalize_build_server_url(&value))
+                  .transpose()
+          }
+
+          fn valid_dns_label(value: &str) -> bool {
+              let bytes = value.as_bytes();
+              let (Some(first), Some(last)) = (bytes.first(), bytes.last()) else {
+                  return false;
+              };
+              bytes.len() <= 63
+                  && first.is_ascii_alphanumeric()
+                  && last.is_ascii_alphanumeric()
+                  && bytes.iter().all(|byte| {
+                      byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-'
+                  })
+          }
+
+          fn is_kubernetes_service_dns(host: &str) -> bool {
+              let labels = host.split('.').collect::<Vec<_>>();
+              match labels.as_slice() {
+                  [service, namespace, "svc"]
+                  | [service, namespace, "svc", "cluster", "local"] => {
+                      valid_dns_label(service) && valid_dns_label(namespace)
+                  }
+                  _ => false,
+              }
+          }
+
+          fn normalize_build_server_url(value: &str) -> Result<String, String> {
+              let value = value.trim().trim_end_matches('/');
+              if value.is_empty() {
+                  return Err("GHA_CLONE_BUILD_SERVER_URL must not be empty".into());
+              }
+              let parsed = reqwest::Url::parse(value)
+                  .map_err(|error| format!("GHA_CLONE_BUILD_SERVER_URL is invalid: {error}"))?;
+              if !parsed.username().is_empty()
+                  || parsed.password().is_some()
+                  || parsed.query().is_some()
+                  || parsed.fragment().is_some()
+              {
+                  return Err(
+                      "GHA_CLONE_BUILD_SERVER_URL must not contain credentials, query, or fragment"
+                          .into(),
+                  );
+              }
+              if parsed.path() != "/" {
+                  return Err("GHA_CLONE_BUILD_SERVER_URL must be an origin without a path".into());
+              }
+              let host = parsed
+                  .host_str()
+                  .ok_or_else(|| "GHA_CLONE_BUILD_SERVER_URL must contain a host".to_string())?;
+              let loopback_http = parsed.scheme() == "http"
+                  && matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]");
+              let kubernetes_http = parsed.scheme() == "http" && is_kubernetes_service_dns(host);
+              if parsed.scheme() != "https" && !loopback_http && !kubernetes_http {
+                  return Err(
+                      "GHA_CLONE_BUILD_SERVER_URL must use HTTPS; HTTP is allowed only for loopback tests or Kubernetes service DNS"
+                          .into(),
+                  );
+              }
+              Ok(value.to_string())
+          }
+
+          '''.replace('          ', '')
+          if source.count(github_origin_anchor) != 1:
+              raise SystemExit('GitHub origin helper anchor is not unique')
+          source = source.replace(github_origin_anchor, build_origin + github_origin_anchor, 1)
+
+          tests = '''
+              #[test]
+              fn build_server_origin_is_credential_free_and_transport_safe() {
+                  assert_eq!(
+                      normalize_build_server_url("https://build.example.com/").unwrap(),
+                      "https://build.example.com"
+                  );
+                  assert!(normalize_build_server_url("http://127.0.0.1:8123").is_ok());
+                  assert!(normalize_build_server_url("http://localhost:8123").is_ok());
+                  assert!(normalize_build_server_url("http://[::1]:8123").is_ok());
+                  assert!(
+                      normalize_build_server_url("http://dd-build-server.remote.svc.cluster.local:8123")
+                          .is_ok()
+                  );
+                  assert!(normalize_build_server_url("http://dd-build-server.remote.svc:8123").is_ok());
+                  assert!(
+                      normalize_build_server_url("http://extra.dd-build-server.remote.svc:8123")
+                          .is_err()
+                  );
+                  assert!(normalize_build_server_url("http://dd_build.remote.svc:8123").is_err());
+                  assert!(normalize_build_server_url("http://-build.remote.svc:8123").is_err());
+                  assert!(normalize_build_server_url("http://10.0.0.10:8123").is_err());
+                  assert!(normalize_build_server_url("http://build.example.com").is_err());
+                  assert!(normalize_build_server_url("http://service.svc.evil.example").is_err());
+                  assert!(normalize_build_server_url("https://user:pass@build.example.com").is_err());
+                  assert!(normalize_build_server_url("https://build.example.com/api").is_err());
+                  assert!(normalize_build_server_url("https://build.example.com?token=x").is_err());
+              }
+
+              #[test]
+              fn build_job_response_identity_is_validated_and_bound() {
+                  let valid = BuildJobResponse {
+                      id: "build:0123-abc_def.test".into(),
+                      status: "queued".into(),
+                      error: None,
+                  };
+                  assert!(validate_build_job_response_id(&valid, None).is_ok());
+                  assert!(validate_build_job_response_id(&valid, Some(&valid.id)).is_ok());
+                  assert!(validate_build_job_response_id(&valid, Some("different")).is_err());
+
+                  for id in ["", ".", "..", "../build?token=x", "build/child"] {
+                      let invalid = BuildJobResponse {
+                          id: id.into(),
+                          status: "queued".into(),
+                          error: None,
+                      };
+                      assert!(validate_build_job_response_id(&invalid, None).is_err());
+                  }
+                  let too_long = BuildJobResponse {
+                      id: "a".repeat(129),
+                      status: "queued".into(),
+                      error: None,
+                  };
+                  assert!(validate_build_job_response_id(&too_long, None).is_err());
+              }
+
+              #[tokio::test]
+              async fn configured_http_client_does_not_follow_redirects() {
+                  let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                  let address = listener.local_addr().unwrap();
+                  let app = Router::new()
+                      .route(
+                          "/start",
+                          get(|| async { axum::response::Redirect::temporary("/final") }),
+                      )
+                      .route("/final", get(|| async { StatusCode::OK }));
+                  let server = tokio::spawn(async move {
+                      axum::serve(listener, app).await.unwrap();
+                  });
+
+                  let response = build_http_client()
+                      .unwrap()
+                      .get(format!("http://{address}/start"))
+                      .send()
+                      .await
+                      .unwrap();
+                  assert_eq!(response.status(), StatusCode::TEMPORARY_REDIRECT);
+                  server.abort();
+              }
+          '''.replace('          ', '')
+          final = source.rfind('\n}')
+          if final < 0:
+              raise SystemExit('could not locate final test module brace')
+          source = source[:final] + tests + source[final:]
+          path.write_text(source, encoding='utf-8')
+
+          fixture_replacements = {
+              'remote/deployments/gha-clone-server-rs/tests/http_api.rs': [
+                  ('GHA_CLONE_BUILD_POLL_SECONDS", "0"', 'GHA_CLONE_BUILD_POLL_SECONDS", "1"'),
+                  ('(MockMode::KeepRunning, 0, "exceeded 0 seconds")', '(MockMode::KeepRunning, 1, "exceeded 1 seconds")'),
+              ],
+              'remote/deployments/gha-clone-server-rs/tests/streempilot_http.rs': [
+                  ('GHA_CLONE_BUILD_POLL_SECONDS", "0"', 'GHA_CLONE_BUILD_POLL_SECONDS", "1"'),
+              ],
+              'remote/deployments/gha-clone-server-rs/tests/webhook_e2e.rs': [
+                  ('GHA_CLONE_BUILD_POLL_SECONDS", "0"', 'GHA_CLONE_BUILD_POLL_SECONDS", "1"'),
+              ],
+              'remote/deployments/gha-clone-server-rs/tests/webhook_retention.rs': [
+                  ('GHA_CLONE_BUILD_POLL_SECONDS", "0"', 'GHA_CLONE_BUILD_POLL_SECONDS", "1"'),
+              ],
+          }
+          for file_name, file_changes in fixture_replacements.items():
+              fixture = Path(file_name)
+              text = fixture.read_text(encoding='utf-8')
+              for old, new in file_changes:
+                  if old in text:
+                      text = text.replace(old, new, 1)
+                  elif new not in text:
+                      raise SystemExit(f'{file_name}: expected fixture anchor {old!r}')
+              fixture.write_text(text, encoding='utf-8')
+
+          Path('docs/gha-clone-build-server-boundary.md').write_text('''# GHA clone build-server trust boundary
+
+          The independent clone-server submits only fixed, operator-reviewed profiles to `dd-build-server`. It is not a general GitHub Actions runner.
+
+          ## Transport origin
+
+          `GHA_CLONE_BUILD_SERVER_URL` is an origin, not an arbitrary URL. It must contain no credentials, query, fragment, or non-root path. HTTPS is required except for loopback test servers and Kubernetes service DNS such as `service.namespace.svc` or `service.namespace.svc.cluster.local`. The HTTP exception accepts exactly those three- or five-label service forms, with DNS-safe service and namespace labels; extra-prefix lookalikes are rejected. HTTP redirects are disabled so authentication headers and immutable job identity cannot be moved to another origin.
+
+          ## Build identity
+
+          Every accepted build response must contain a bounded path-safe identifier. Empty IDs and URL dot-segments (`.` and `..`) are rejected explicitly before a polling URL is formed. Poll responses must return the same identifier that was accepted at submission. Unknown, malformed, or mismatched identifiers fail the workflow run before URL construction or state mutation.
+
+          ## Runtime bounds
+
+          Planner limits, polling interval, execution timeout, and retained-run capacity are strictly positive configuration values. Zero is configuration failure rather than an instruction to disable a safety bound.
+
+          This boundary complements the AWS/Hetzner executor router: provider selection happens before submission, and status remains pinned to the accepted provider and build identity.
+          '''.replace('          ', ''), encoding='utf-8')
+
+          Path('.github/workflows/apply-den-1606-build-transport-current-dev-v2-once.yml').unlink()
+          PY
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit the product-only diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/apply-den-1606-build-transport-current-dev-v2-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(\.github/workflows/apply-den-1606-build-transport-current-dev-v2-once\.yml|docs/gha-clone-build-server-boundary\.md|remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http|webhook_e2e|webhook_retention)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): bind clone build-server transport and identity'
+          git push origin HEAD:agent/den-1606-build-transport-current-dev-v2

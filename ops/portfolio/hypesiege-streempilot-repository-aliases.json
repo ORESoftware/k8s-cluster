@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "source_repository": "ORESoftware/ai-agent-coordinator.rs",
+  "source_sha": "5d9a0c2cb44dff607bc3953954ce4b9af08e5789",
+  "aliases": [
+    {
+      "sealed_full_name": "streempilot/streempilot-flutter-app",
+      "remote_full_name": "StreemPilot/sp-web-leptos",
+      "repository_id": 1318677943
+    },
+    {
+      "sealed_full_name": "streempilot/streempilot-infra",
+      "remote_full_name": "StreemPilot/sp-infra",
+      "repository_id": 1318678140
+    },
+    {
+      "sealed_full_name": "streempilot/streempilot-interfaces",
+      "remote_full_name": "StreemPilot/sp-interfaces",
+      "repository_id": 1318677845
+    },
+    {
+      "sealed_full_name": "streempilot/streempilot-mcp-server.rs",
+      "remote_full_name": "StreemPilot/sp-web-dioxus",
+      "repository_id": 1318678104
+    },
+    {
+      "sealed_full_name": "streempilot/streempilot-sync",
+      "remote_full_name": "StreemPilot/sp-sync",
+      "repository_id": 1318678045
+    },
+    {
+      "sealed_full_name": "streempilot/streempilot-web-server.rs",
+      "remote_full_name": "StreemPilot/sp-web-mash",
+      "repository_id": 1318677908
+    }
+  ]
+}

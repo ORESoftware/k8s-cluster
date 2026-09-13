@@ -30,7 +30,8 @@
     shard_of/2,
     self_node_binary/0,
     parse_wal2json/1,
-    kill_named/1
+    kill_named/1,
+    pg_start_or_whereis/1
 ]).
 
 %% ─── env helpers ────────────────────────────────────────────────────────
@@ -360,6 +361,16 @@ to_binary(B) when is_binary(B) -> B;
 to_binary(L) when is_list(L) -> list_to_binary(L);
 to_binary(I) when is_integer(I) -> integer_to_binary(I);
 to_binary(N) when is_atom(N) -> atom_to_binary(N, utf8).
+
+%% Start Erlang `pg` under `Scope`, or return the already-running scope
+%% pid. Never returns the caller pid on `{already_started, Pid}`.
+pg_start_or_whereis(Scope) when is_atom(Scope) ->
+    case pg:start_link(Scope) of
+        {ok, Pid} -> {ok, Pid};
+        {error, {already_started, Pid}} when is_pid(Pid) -> {ok, Pid};
+        {error, Reason} ->
+            {error, list_to_binary(io_lib:format("~p", [Reason]))}
+    end.
 
 %% Test-only helper: kill a registered process synchronously so a fresh
 %% `register/2` (or `actor.named`) under the same atom can succeed.

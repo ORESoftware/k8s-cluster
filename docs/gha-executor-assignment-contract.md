@@ -20,7 +20,7 @@ The router binds the request ID to that complete immutable tuple. Reusing an ID 
 1. Probe reviewed executors in configured order.
 2. Select the first ready executor before submission.
 3. Insert one bounded in-process assignment containing the canonical request and selected executor.
-4. Start exactly one background `POST /builds` so client disconnect cannot cancel the retained assignment outcome.
+4. Start exactly one supervised background `POST /builds` so client disconnect cannot cancel the retained assignment outcome and a submission-task panic becomes a retained ambiguous result.
 5. Pin status requests to the executor namespace returned by that submission.
 
 No assignment is inserted when no executor is ready, so a later retry may safely perform a new readiness selection before any submission attempt.
@@ -28,11 +28,15 @@ No assignment is inserted when no executor is ready, so a later retry may safely
 ## Duplicate and ambiguous outcomes
 
 - Concurrent and sequential identical requests wait for or return the retained outcome; they do not send another upstream POST.
-- A fixed 4xx rejection is retained and returned without selecting another provider.
-- Transport failures, timeout, HTTP 429, HTTP 5xx, malformed/oversized HTTP 202 responses, and invalid accepted IDs are ambiguous. The assignment remains pinned to the selected executor and every identical retry returns the same bounded reconciliation error.
+- Explicit validation, authentication, method, conflict, payload-size, media-type, and schema 4xx rejections are retained and returned without selecting another provider.
+- Transport failures, submission-task failure, HTTP 408, HTTP 425, HTTP 429, unclassified 4xx, HTTP 5xx, malformed/oversized HTTP 202 responses, and invalid accepted IDs are ambiguous. The assignment remains pinned to the selected executor and every identical retry returns the same bounded reconciliation error.
 - Upstream response bodies, credentials, repository payloads, and immutable revisions are not included in conflict or ambiguity responses.
 
+Each HTTP caller waits only for `GHA_EXECUTOR_ROUTER_ASSIGNMENT_WAIT_TIMEOUT_SECONDS`. If the retained assignment is still pending, the router returns HTTP 504 with `submissionAttempted=true`, `retryable=true`, and `automaticFailover=false`; the background submission continues. Retrying the same immutable request ID waits on the same assignment and never sends a second POST.
+
 The in-process assignment map is deliberately bounded and not evicted. When full, the router rejects new requests before submission rather than forgetting an assignment and risking duplicate work.
+
+The inert deployment declares the retention bound (`4096`) and pending wait (`65s`) explicitly. The wait exceeds the reviewed upstream timeout (`60s`) by default while remaining independently configurable for controlled smoke tests.
 
 ## Security-baseline dependency
 
@@ -51,6 +55,9 @@ The required checks include:
 - immutable-input conflict rejection;
 - no-ready retry before submission;
 - fixed-rejection and ambiguous-outcome provider pinning;
+- bounded pending waits followed by same-assignment retry;
+- explicit rejection classification for HTTP 408 and HTTP 425;
+- submission-task panic conversion to a sanitized ambiguous outcome;
 - duplicate inbound-auth rejection; and
 - the static continuity contract that binds those behaviors to the split source paths.
 

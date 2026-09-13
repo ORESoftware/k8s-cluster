@@ -1,0 +1,39 @@
+{
+  "schema": "oresoftware.provision-repository/v1",
+  "execute": false,
+  "target": {
+    "owner": "shared-auth",
+    "repository": "shared-auth-web-server.js",
+    "private": true,
+    "description": "Rust administrative web server for organization-scoped Shared Auth users, sessions, roles, and capability visibility."
+  },
+  "canary": {
+    "repository": "shared-auth-test/contract-conformance-tests",
+    "pull_request": 6,
+    "commit": "252cbda966081d902637fded7adf51d949b919cd",
+    "workflow_run_id": 31442332258,
+    "artifact_id": 5866515977,
+    "artifact_name": "shared-auth-web-server-candidate-v1"
+  },
+  "candidate": {
+    "schema": "shared-auth-web-server-candidate/v1",
+    "repository": "shared-auth/shared-auth-web-server.js",
+    "source_seed_commit": "67a3b5138a4050a23a409094ef094b050bb162fd",
+    "source_seed_archive_sha256": "095c5e0c464aae73b85f399614c0ad11be1acfb67fd2a40a4da4ee1da83cc848",
+    "repair": "remove duplicate plain axum dependency"
+  },
+  "repository_settings": {
+    "default_branch": "main",
+    "topics": [
+      "axum",
+      "htmx",
+      "maud",
+      "rust",
+      "seaorm",
+      "shared-auth",
+      "supabase",
+      "zed-pkg"
+    ],
+    "required_approvals": 1
+  }
+}

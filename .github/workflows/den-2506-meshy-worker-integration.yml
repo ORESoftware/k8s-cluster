@@ -1,0 +1,42 @@
+name: den-2506-meshy-worker-integration
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/den-2506-meshy-worker-integration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out the deployment superproject and shared dependencies
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Overlay the DEN-2506 fabrication-server branch
+        run: |
+          rm -rf remote/deployments/fabrication-server-rs
+          git clone \
+            --depth 1 \
+            --branch feature/den-2506-durable-meshy-worker \
+            https://github.com/daedalus-fab/fabrication-server.rs.git \
+            remote/deployments/fabrication-server-rs
+
+      - name: Compile the durable Meshy worker with real shared path dependencies
+        run: |
+          cargo check \
+            --manifest-path remote/deployments/fabrication-server-rs/Cargo.toml \
+            --bin meshy-job-worker
+
+      - name: Compile the existing fabrication server regression target
+        run: |
+          cargo check \
+            --manifest-path remote/deployments/fabrication-server-rs/Cargo.toml \
+            --bin dd-fabrication-server

@@ -1,0 +1,95 @@
+# Executes the reviewed current-dev transport finalizer, then removes all
+# temporary workflows before publishing the product commit.
+name: Run DEN-1606 current-dev transport finalizer once
+
+on:
+  push:
+    branches:
+      - agent/den-1606-build-transport-current-dev-v2
+    paths:
+      - .github/workflows/run-den-1606-current-dev-finalizer-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1606-build-transport-current-dev-v2
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-build-transport-current-dev-v2
+          fetch-depth: 1
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Execute the reviewed semantic transform
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/den-1606-build-transport-current-dev-finalize-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          start = lines.index('      - name: Apply reviewed semantic integration')
+          end = lines.index('      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable', start + 1)
+          run_index = lines.index('        run: |', start, end)
+          block = lines[run_index + 1:end]
+          heredoc_start = next(i for i, line in enumerate(block) if line.strip() == "python3 - <<'PY'")
+          heredoc_end = max(i for i, line in enumerate(block) if i > heredoc_start and line.strip() == 'PY')
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[heredoc_start + 1:heredoc_end]
+          ) + '\n'
+          exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
+          for path in (
+              Path('.github/workflows/apply-den-1606-build-transport-current-dev-v2-once.yml'),
+              Path('.github/workflows/den-1606-build-transport-current-dev-finalize-once.yml'),
+              Path('.github/workflows/run-den-1606-current-dev-finalizer-once.yml'),
+          ):
+              path.unlink(missing_ok=True)
+          PY
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Commit the product-only diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/apply-den-1606-build-transport-current-dev-v2-once.yml
+          test ! -e .github/workflows/den-1606-build-transport-current-dev-finalize-once.yml
+          test ! -e .github/workflows/run-den-1606-current-dev-finalizer-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          if [[ -n "$workflow_non_deletions" ]]; then
+            printf 'temporary workflows must be deletion-only:\n%s\n' "$workflow_non_deletions" >&2
+            exit 1
+          fi
+          allowed='^(\.github/workflows/(apply-den-1606-build-transport-current-dev-v2-once|den-1606-build-transport-current-dev-finalize-once|run-den-1606-current-dev-finalizer-once)\.yml|docs/gha-clone-build-server-boundary\.md|remote/deployments/gha-clone-server-rs/(src/main\.rs|tests/(http_api|streempilot_http|webhook_e2e|webhook_retention)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): bind clone build-server transport and identity'
+          git push origin HEAD:agent/den-1606-build-transport-current-dev-v2

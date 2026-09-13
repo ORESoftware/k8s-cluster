@@ -1,0 +1,206 @@
+name: Publish apostille-me repository fleet with device OAuth (2026-08-04)
+run-name: Publish 8 apostille-me repositories from ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-apostille-me-device-oauth-20260804.yml
+      - scripts/ops/apostille-me/**
+      - tests/ops/test_apostille_me_publisher.py
+      - docs/operations/apostille-me-repository-publication.md
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: publish-apostille-me-device-oauth-20260804
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Materialize and validate the sealed combined bundle
+        id: payload
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          bundle="$RUNNER_TEMP/apostille-me-combined.bundle"
+          cat scripts/ops/apostille-me/payload/apostille-me-combined.bundle.b64.part* \
+            | base64 --decode > "$bundle"
+          chmod 600 "$bundle"
+          printf '%s  %s\n' \
+            d9df6bba633c27b56c6f9e7eb2fd007b70c652b2dde8d3c332637c3ea7ffbedd \
+            "$bundle" | sha256sum --check --strict
+          bash -n scripts/ops/apostille-me/publish.sh
+          APME_BUNDLE_PATH="$bundle" \
+            python3 -m unittest -v tests/ops/test_apostille_me_publisher.py
+          bash scripts/ops/apostille-me/publish.sh \
+            --bundle "$bundle" \
+            --output "$RUNNER_TEMP/apostille-me-validation.json"
+          test "$(jq -r .status "$RUNNER_TEMP/apostille-me-validation.json")" = validated
+          test "$(jq -r .repository_count "$RUNNER_TEMP/apostille-me-validation.json")" = 8
+          printf 'bundle=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
+
+      - name: Authorize, publish, and verify all eight repositories
+        shell: bash
+        env:
+          RUN_TOKEN: ${{ github.token }}
+          TRACKING_ISSUE: '845'
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          profile="$RUNNER_TEMP/apostille-me-gh-profile"
+          auth_log="$RUNNER_TEMP/apostille-me-device-auth.log"
+          askpass="$RUNNER_TEMP/apostille-me-git-askpass.sh"
+          result="$RUNNER_TEMP/apostille-me-publication.json"
+          auth_pid=''
+
+          cleanup() {
+            if test -n "$auth_pid" && kill -0 "$auth_pid" 2>/dev/null; then
+              kill "$auth_pid" 2>/dev/null || true
+              wait "$auth_pid" 2>/dev/null || true
+            fi
+            unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+            rm -rf "$profile"
+            rm -f "$auth_log" "$askpass"
+          }
+          trap cleanup EXIT
+
+          rm -rf "$profile"
+          install -d -m 700 "$profile"
+          : > "$auth_log"
+          chmod 600 "$auth_log"
+
+          env \
+            -u GH_TOKEN \
+            -u GITHUB_TOKEN \
+            -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+            GH_CONFIG_DIR="$profile" \
+            GH_PROMPT_DISABLED=1 \
+            gh auth login \
+              --hostname github.com \
+              --git-protocol https \
+              --web \
+              --scopes repo,read:org,workflow \
+              --skip-ssh-key \
+              --insecure-storage \
+              >"$auth_log" 2>&1 &
+          auth_pid=$!
+
+          device_code=''
+          for _ in $(seq 1 90); do
+            device_code="$(grep -Eo '[A-Z0-9]{4}-[A-Z0-9]{4}' "$auth_log" | head -n 1 || true)"
+            test -z "$device_code" || break
+            if ! kill -0 "$auth_pid" 2>/dev/null; then
+              cat "$auth_log" >&2
+              wait "$auth_pid"
+            fi
+            sleep 2
+          done
+          [[ "$device_code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
+
+          authorization_body="$RUNNER_TEMP/apostille-me-device-authorization.md"
+          cat > "$authorization_body" <<EOF
+          GitHub device authorization is ready for the validated **apostille-me** eight-repository publication.
+
+          1. Open https://github.com/login/device
+          2. Enter code **\`$device_code\`**
+          3. Approve the GitHub CLI request while signed in as **ORESoftware**
+
+          The runner accepts only a temporary \`gho_\` OAuth credential. PAT formats are rejected and unused.
+          EOF
+          GH_TOKEN="$RUN_TOKEN" gh issue comment "$TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" --body-file "$authorization_body" >/dev/null
+
+          wait "$auth_pid"
+          auth_pid=''
+
+          owner_token="$(
+            env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+              GH_CONFIG_DIR="$profile" \
+              gh auth token --hostname github.com
+          )"
+          test -n "$owner_token"
+          test "${#owner_token}" -le 1024
+          case "$owner_token" in
+            gho_*) ;;
+            ghp_*|github_pat_*)
+              echo 'personal access tokens are intentionally rejected' >&2
+              exit 65
+              ;;
+            *)
+              echo 'device authorization returned an unsupported credential type' >&2
+              exit 65
+              ;;
+          esac
+          case "$owner_token" in
+            *$'\n'*|*$'\r'*|*$'\t'*|*' '*)
+              echo 'device OAuth credential contains invalid whitespace' >&2
+              exit 65
+              ;;
+          esac
+          printf '::add-mask::%s\n' "$owner_token"
+          export GH_TOKEN="$owner_token"
+
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "${GH_TOKEN:?}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=credential.helper
+          export GIT_CONFIG_VALUE_0=
+
+          bash scripts/ops/apostille-me/publish.sh \
+            --bundle "${{ steps.payload.outputs.bundle }}" \
+            --execute \
+            --output "$result"
+          test "$(jq -r .status "$result")" = success
+          test "$(jq -r .repository_count "$result")" = 8
+
+          report="$RUNNER_TEMP/apostille-me-publication-success.md"
+          {
+            echo '# apostille-me repository fleet published'
+            echo
+            echo '- Organization: `apostille-me`'
+            echo '- Repositories: **8/8 created or verified**'
+            echo '- Branches: exact `main` review bases and `agent/bootstrap-apostille-me` feature commits pushed'
+            echo '- Pull requests: **8/8 opened or verified**'
+            echo '- Credential path: temporary GitHub device OAuth; PAT formats rejected'
+            echo "- Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            jq -r '.repositories[] | "- [\(.repository)](\(.repository_url)) — [PR #\(.pull_request_number)](\(.pull_request_url)) — `\(.feature_sha)`"' "$result"
+          } > "$report"
+          GH_TOKEN="$RUN_TOKEN" gh issue comment "$TRACKING_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" --body-file "$report" >/dev/null
+
+      - name: Record failed or expired authorization
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment 845 --repo "$GITHUB_REPOSITORY" --body \
+            "apostille-me device-OAuth publication did not complete. No PAT was used and the temporary OAuth profile was removed. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"

@@ -1,0 +1,622 @@
+{
+  "fleet": {
+    "default_visibility": "public",
+    "production_org": "fiducia-cloud",
+    "repositories": [
+      {
+        "kind": "client",
+        "languages": [
+          "rust"
+        ],
+        "name": "fiducia-client-rust",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from rust through cargo, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "typescript"
+        ],
+        "name": "fiducia-client-typescript",
+        "package_managers": [
+          "npm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from typescript through npm, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "python"
+        ],
+        "name": "fiducia-client-python",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from python through pip, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "go"
+        ],
+        "name": "fiducia-client-go",
+        "package_managers": [
+          "go-modules",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from go through go-modules, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "java"
+        ],
+        "name": "fiducia-client-java",
+        "package_managers": [
+          "maven",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from java through maven, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "kotlin"
+        ],
+        "name": "fiducia-client-kotlin",
+        "package_managers": [
+          "gradle",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from kotlin through gradle, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "csharp"
+        ],
+        "name": "fiducia-client-csharp",
+        "package_managers": [
+          "nuget",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from csharp through nuget, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "dart"
+        ],
+        "name": "fiducia-client-dart",
+        "package_managers": [
+          "pub",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Consume fiducia-clients from dart through pub, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "swift"
+        ],
+        "name": "fiducia-client-swift",
+        "package_managers": [
+          "swiftpm",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "macos-latest"
+        ],
+        "purpose": "Consume fiducia-clients from swift through swiftpm, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "client",
+        "languages": [
+          "php"
+        ],
+        "name": "fiducia-client-php",
+        "package_managers": [
+          "composer",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest"
+        ],
+        "purpose": "Consume fiducia-clients from php through composer, Zed, and a pinned git source; validate lock, lease, queue, serialization, cancellation, timeout, and stable error contracts.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "sdk-surface",
+          "lock-contract",
+          "lease-contract",
+          "error-contract"
+        ]
+      },
+      {
+        "kind": "api",
+        "languages": [
+          "python"
+        ],
+        "name": "fiducia-api-contract",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate lock, lease, queue, cron, voting, health, authorization, idempotency, cancellation, and websocket contracts against canonical interfaces.",
+        "source_refs": [
+          "node",
+          "brain",
+          "interfaces",
+          "clients"
+        ],
+        "suites": [
+          "openapi-contract",
+          "websocket-contract",
+          "idempotency",
+          "negative-auth"
+        ]
+      },
+      {
+        "kind": "distributed",
+        "languages": [
+          "rust",
+          "python"
+        ],
+        "name": "fiducia-multi-node-consensus",
+        "package_managers": [
+          "cargo",
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Run three-, five-, and seven-node clusters through leader changes, quorum loss, clock skew, network partitions, process restarts, and recovery.",
+        "services": [
+          "toxiproxy"
+        ],
+        "source_refs": [
+          "node",
+          "brain",
+          "routing"
+        ],
+        "suites": [
+          "leader-election",
+          "quorum-loss",
+          "partition-heal",
+          "clock-skew"
+        ]
+      },
+      {
+        "kind": "distributed",
+        "languages": [
+          "rust",
+          "python"
+        ],
+        "name": "fiducia-routing-failover",
+        "package_managers": [
+          "cargo",
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate deterministic hash routing, replica selection, node loss, membership staleness, rebalance, zero-leader migration, and recovery.",
+        "source_refs": [
+          "routing",
+          "node",
+          "brain"
+        ],
+        "suites": [
+          "hash-routing",
+          "replica-selection",
+          "node-loss",
+          "rebalance"
+        ]
+      },
+      {
+        "kind": "edge",
+        "languages": [
+          "rust"
+        ],
+        "name": "fiducia-edge-offline",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Exercise edge buffering, local execution, lease expiry, offline windows, reconnect, reconciliation, duplicate suppression, and stale-command rejection.",
+        "source_refs": [
+          "edge",
+          "node",
+          "clients"
+        ],
+        "suites": [
+          "offline-buffer",
+          "lease-expiry",
+          "reconnect",
+          "deduplication"
+        ]
+      },
+      {
+        "kind": "security",
+        "languages": [
+          "python"
+        ],
+        "name": "fiducia-auth-interop",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Validate service authentication, tenant isolation, client credentials, token expiry, key rotation, cross-service authorization, and revocation propagation.",
+        "source_refs": [
+          "auth",
+          "node",
+          "clients"
+        ],
+        "suites": [
+          "client-credentials",
+          "tenant-isolation",
+          "token-expiry",
+          "key-rotation"
+        ]
+      },
+      {
+        "kind": "observability",
+        "languages": [
+          "python"
+        ],
+        "name": "fiducia-observability-e2e",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Verify OpenTelemetry traces, metrics, logs, correlation IDs, exemplars, cardinality budgets, sampling, and actionable failure diagnostics.",
+        "services": [
+          "otel-collector",
+          "prometheus",
+          "loki"
+        ],
+        "source_refs": [
+          "telemetry",
+          "node",
+          "brain"
+        ],
+        "suites": [
+          "otel-traces",
+          "metrics",
+          "logs",
+          "correlation"
+        ]
+      },
+      {
+        "kind": "messaging",
+        "languages": [
+          "rust",
+          "python"
+        ],
+        "name": "fiducia-nats-dlq",
+        "package_managers": [
+          "cargo",
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Prove NATS bridge delivery, acknowledgement, redelivery, ordering, dead-letter routing, replay, poison-message isolation, and backpressure.",
+        "services": [
+          "nats"
+        ],
+        "source_refs": [
+          "messaging",
+          "node",
+          "brain"
+        ],
+        "suites": [
+          "delivery",
+          "redelivery",
+          "dead-letter",
+          "replay"
+        ]
+      },
+      {
+        "kind": "cli",
+        "languages": [
+          "rust",
+          "shell"
+        ],
+        "name": "fiducia-cli-e2e",
+        "package_managers": [
+          "cargo",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest",
+          "macos-latest",
+          "windows-latest"
+        ],
+        "purpose": "Install and exercise the Fiducia CLI against local clusters, including flags-to-env translation, authentication, formatting, retries, cancellation, and exit codes.",
+        "source_refs": [
+          "cli",
+          "clients",
+          "node"
+        ],
+        "suites": [
+          "install",
+          "flags2env",
+          "auth",
+          "exit-codes"
+        ]
+      },
+      {
+        "kind": "packaging",
+        "languages": [
+          "python"
+        ],
+        "name": "fiducia-zed-submodule-parity",
+        "package_managers": [
+          "pip",
+          "zed",
+          "git-submodule"
+        ],
+        "platforms": [
+          "ubuntu-latest"
+        ],
+        "purpose": "Resolve the same fiducia-clients revision through Zed and pinned git source, then compare files, generated interfaces, checksums, native metadata, and behavior.",
+        "source_refs": [
+          "clients",
+          "interfaces"
+        ],
+        "suites": [
+          "revision-parity",
+          "file-parity",
+          "checksum-parity",
+          "behavior-parity"
+        ]
+      }
+    ],
+    "sources": {
+      "auth": {
+        "alias": "auth",
+        "repository": "fiducia-cloud/fiducia-auth.rs",
+        "required": true,
+        "role": "service",
+        "zed_dependency": false
+      },
+      "brain": {
+        "alias": "brain",
+        "repository": "fiducia-cloud/fiducia-brain.rs",
+        "required": true,
+        "role": "service",
+        "zed_dependency": false
+      },
+      "cli": {
+        "alias": "cli",
+        "repository": "fiducia-cloud/fiducia-cli.rs",
+        "required": true,
+        "role": "cli",
+        "zed_dependency": false
+      },
+      "clients": {
+        "alias": "clients",
+        "repository": "fiducia-cloud/fiducia-clients",
+        "required": true,
+        "role": "clients",
+        "zed_dependency": true
+      },
+      "edge": {
+        "alias": "edge",
+        "repository": "fiducia-cloud/fiducia-edge",
+        "required": true,
+        "role": "service",
+        "zed_dependency": false
+      },
+      "interfaces": {
+        "alias": "interfaces",
+        "repository": "fiducia-cloud/fiducia-interfaces",
+        "required": true,
+        "role": "interfaces",
+        "zed_dependency": true
+      },
+      "messaging": {
+        "alias": "messaging",
+        "repository": "fiducia-cloud/fiducia-messaging.rs",
+        "required": true,
+        "role": "service",
+        "zed_dependency": false
+      },
+      "node": {
+        "alias": "node",
+        "repository": "fiducia-cloud/fiducia-node.rs",
+        "required": true,
+        "role": "service",
+        "zed_dependency": false
+      },
+      "routing": {
+        "alias": "routing",
+        "repository": "fiducia-cloud/fiducia-routing.rs",
+        "required": true,
+        "role": "service",
+        "zed_dependency": false
+      },
+      "telemetry": {
+        "alias": "telemetry",
+        "repository": "fiducia-cloud/fiducia-telemetry.rs",
+        "required": true,
+        "role": "service",
+        "zed_dependency": false
+      }
+    },
+    "summary": "Ten native SDK consumers plus API, consensus, routing, edge, auth, observability, messaging, CLI, and dependency-parity coverage."
+  },
+  "test_org": "fiducia-cloud-test"
+}

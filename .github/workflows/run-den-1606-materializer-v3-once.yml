@@ -1,0 +1,173 @@
+# Thin wrapper over the reviewed primary carrier. It preserves Rust escape
+# literals, fixes generated capacity/configuration call sites, validates the
+# product, and self-deletes.
+name: Run DEN-1606 direct hardening materializer v3 once
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [synchronize]
+    paths:
+      - .github/workflows/run-den-1606-materializer-v3-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-den-1606-direct-hardening-materializer-v3
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-clone-server-direct-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-clone-server-direct-hardening
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Execute the reviewed transform with bounded Rust corrections
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          carrier = Path('.github/workflows/run-den-1606-materializer-pr-once.yml')
+          lines = carrier.read_text(encoding='utf-8').splitlines()
+          step = lines.index('      - name: Execute the reviewed explicit transformer')
+          next_step = next(
+              index for index in range(step + 1, len(lines))
+              if lines[index].startswith('      - uses: dtolnay/rust-toolchain@')
+          )
+          run_index = next(
+              index for index in range(step + 1, next_step)
+              if lines[index] == '        run: |'
+          )
+          block = lines[run_index + 1 : next_step]
+          opener = next(
+              index for index, line in enumerate(block)
+              if line.strip() == "python3 - <<'PY'"
+          )
+          terminator = max(
+              index for index, line in enumerate(block)
+              if index > opener and line.strip() == 'PY'
+          )
+          prefix = '          '
+          script = '\n'.join(
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in block[opener + 1 : terminator]
+          ) + '\n'
+
+          marker_anchor = (
+              "    \"new_path = '''fn valid_workflow_path(value: &str) -> bool {\",\n"
+              "):\n"
+          )
+          marker_replacement = (
+              "    \"new_path = '''fn valid_workflow_path(value: &str) -> bool {\",\n"
+              "    \"configured_path_old = '''fn valid_configured_workflow_path(value: &str) -> bool {\",\n"
+              "    \"configured_path_new = '''fn valid_configured_workflow_path(value: &str) -> bool {\",\n"
+              "):\n"
+          )
+          if script.count(marker_anchor) != 1:
+              raise SystemExit('primary raw-string marker tuple drifted')
+          script = script.replace(marker_anchor, marker_replacement, 1)
+
+          exec(compile(script, str(carrier), 'exec'), {'__name__': '__main__'})
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          main = main_path.read_text(encoding='utf-8')
+
+          reserve_start = main.find(
+              'async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {'
+          )
+          reserve_end = main.find('\nasync fn remove_runs(', reserve_start)
+          if reserve_start == -1 or reserve_end == -1:
+              raise SystemExit('generated reserve_runs boundaries are missing')
+          reserve = '''async fn reserve_runs(state: &AppState, records: &[RunRecord]) -> bool {
+              let mut runs = state.runs.write().await;
+              reserve_run_records(&mut runs, records, state.config.max_runs)
+          }
+          '''.replace('          ', '')
+          main = main[:reserve_start] + reserve + main[reserve_end + 1:]
+
+          config_old = '''            build_server_url: env_optional("GHA_CLONE_BUILD_SERVER_URL")
+                          .map(|value| value.trim_end_matches('/').to_string()),
+          '''.replace('          ', '')
+          config_new = '''            build_server_url: build_server_url_from_env()?,
+          '''.replace('          ', '')
+          if main.count(config_old) != 1:
+              raise SystemExit('generated build-server configuration site drifted')
+          main = main.replace(config_old, config_new, 1)
+
+          clone_old = 'reserve_runs(&state, &[record.clone()]).await'
+          clone_new = 'reserve_runs(&state, std::slice::from_ref(&record)).await'
+          if main.count(clone_old) != 1:
+              raise SystemExit('generated single-run reservation site drifted')
+          main = main.replace(clone_old, clone_new, 1)
+          main_path.write_text(main, encoding='utf-8')
+
+          for path in (
+              '.github/workflows/run-den-1606-materializer-v2-once.yml',
+              '.github/workflows/run-den-1606-materializer-v3-once.yml',
+          ):
+              Path(path).unlink(missing_ok=True)
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit the self-cleaned product
+        run: |
+          set -euo pipefail
+          git diff --check
+          for carrier in \
+            .github/workflows/materialize-den-1606-direct-hardening-once.yml \
+            .github/workflows/run-den-1606-materializer-once.yml \
+            .github/workflows/run-den-1606-materializer-pr-once.yml \
+            .github/workflows/run-den-1606-materializer-v2-once.yml \
+            .github/workflows/run-den-1606-materializer-v3-once.yml; do
+            test ! -e "$carrier"
+          done
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs)|\.github/workflows/(materialize-den-1606-direct-hardening-once|run-den-1606-materializer-once|run-den-1606-materializer-pr-once|run-den-1606-materializer-v2-once|run-den-1606-materializer-v3-once)\.yml)$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          workflow_non_deletions="$(git diff --cached --name-only --diff-filter=ACMRTUXB -- .github/workflows || true)"
+          if [[ -n "$workflow_non_deletions" ]]; then
+            printf 'workflow carriers must be deletions only:\n%s\n' "$workflow_non_deletions" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): harden the bounded clone-server lane directly'
+          git push origin HEAD:agent/den-1606-clone-server-direct-hardening

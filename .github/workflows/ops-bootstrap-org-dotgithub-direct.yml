@@ -8,6 +8,8 @@ on:
       - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_all.py'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories_with_app.py'
+      - 'scripts/ops/select_hypesiege_github_app_from_aws.py'
       - 'scripts/ops/run_direct_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_all_publisher.sh'
@@ -15,6 +17,7 @@ on:
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories_all.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories_with_app.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_protected_runner.py'
   push:
     branches:
@@ -24,6 +27,8 @@ on:
       - 'scripts/ops/bootstrap_org_dotgithub_repositories.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py'
       - 'scripts/ops/bootstrap_org_dotgithub_repositories_all.py'
+      - 'scripts/ops/bootstrap_org_dotgithub_repositories_with_app.py'
+      - 'scripts/ops/select_hypesiege_github_app_from_aws.py'
       - 'scripts/ops/run_direct_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_publisher.sh'
       - 'scripts/ops/run_protected_org_dotgithub_all_publisher.sh'
@@ -31,6 +36,7 @@ on:
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_repositories_all.py'
+      - 'tests/ops/test_bootstrap_org_dotgithub_repositories_with_app.py'
       - 'tests/ops/test_bootstrap_org_dotgithub_protected_runner.py'
   workflow_dispatch:
 
@@ -73,7 +79,9 @@ jobs:
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
             scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
-            scripts/ops/bootstrap_org_dotgithub_repositories_all.py
+            scripts/ops/bootstrap_org_dotgithub_repositories_all.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_with_app.py \
+            scripts/ops/select_hypesiege_github_app_from_aws.py
           python3 -m unittest discover \
             -s tests/ops \
             -p 'test_bootstrap_org_dotgithub*.py' \
@@ -83,7 +91,6 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
-      id-token: write
       issues: write
     runs-on: ubuntu-24.04
     timeout-minutes: 55
@@ -113,25 +120,21 @@ jobs:
           python3 -m py_compile \
             scripts/ops/bootstrap_org_dotgithub_repositories.py \
             scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
-            scripts/ops/bootstrap_org_dotgithub_repositories_all.py
+            scripts/ops/bootstrap_org_dotgithub_repositories_all.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_with_app.py \
+            scripts/ops/select_hypesiege_github_app_from_aws.py
           python3 -m unittest discover \
             -s tests/ops \
             -p 'test_bootstrap_org_dotgithub*.py' \
             -v
 
-      - name: Configure trusted main-ref AWS OIDC credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: direct-org-dotgithub-governance-publisher
-          retry-max-attempts: 2
-          mask-aws-account-id: true
-
-      - name: Publish and verify the fixed 61-organization fleet
+      - name: Publish and verify the fixed 61-organization fleet with a GitHub App
         id: publish
         continue-on-error: true
         shell: bash
+        env:
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
         run: |
           set -uo pipefail
           report="$RUNNER_TEMP/org-dotgithub-governance.md"
@@ -175,7 +178,7 @@ jobs:
               echo
               echo "Direct trusted-main workflow run: ${run_url}"
               echo
-              echo "The fixed 61-organization fleet was verified. Existing unmanaged notes were preserved while the organization-wide baseline was reconciled."
+              echo "The fixed 61-organization fleet was verified with short-lived GitHub App installation tokens. Existing unmanaged notes were preserved while the organization-wide baseline was reconciled."
             } >> "$body"
           else
             STDOUT="$report" STDERR="$error_log" python3 - <<'PY' > "$RUNNER_TEMP/org-dotgithub-redacted.log"
@@ -194,10 +197,12 @@ jobs:
               (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
               (r"gh[pousr]_[A-Za-z0-9_]{20,}", "gh*_***"),
               (r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
+              (r"-----BEGIN (?:RSA )?PRIVATE KEY-----.*?-----END (?:RSA )?PRIVATE KEY-----", "***REDACTED PRIVATE KEY***"),
+              (r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}", "***REDACTED JWT***"),
           ]
           for pattern, replacement in patterns:
-              text = re.sub(pattern, replacement, text, flags=re.I)
-          print("\n".join(text.splitlines()[-220:])[-24000:])
+              text = re.sub(pattern, replacement, text, flags=re.I | re.S)
+          print("\n".join(text.splitlines()[-260:])[-30000:])
           PY
             {
               echo '# Organization `.github` direct publication failed'

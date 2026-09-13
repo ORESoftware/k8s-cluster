@@ -25,10 +25,12 @@ turning the cluster into a multi-node setup.
 
 The NATS server still has **no application-layer authentication or subject
 authorization**: there is no accounts/users/token/nkey/JWT/TLS authorization
-block. `nats.networkpolicy.yaml` now limits which namespaces may reach the
-client, monitoring, and exporter ports, but any compromised or misconfigured
-pod inside an allowed client namespace can still publish to or subscribe from
-any subject permitted by the unauthenticated server.
+block. `nats.networkpolicy.yaml` is default-deny and now limits which
+namespaces — plus the EC2 VPC host-network range on the client port — may
+reach the client, monitoring, and exporter ports. That is meaningful network
+isolation, not subject-level identity: any compromised or misconfigured pod
+inside an allowed client namespace can still publish to or subscribe from any
+subject permitted by the unauthenticated server.
 
 This is the trust boundary the settlement system relies on: the
 `dd.remote.contracts.solana.{settle,resolve}` subjects are on-chain broadcast
@@ -45,8 +47,9 @@ with per-subject publish/subscribe permissions. Restrict settle/resolve to the
 legitimate publisher and `dd-contract-service` subscriber, and update the
 NetworkPolicy from namespace selectors to the smallest practical workload set.
 This is a cluster-wide migration: inventory every producer and consumer, issue
-least-privilege credentials, roll clients deliberately, and remove the explicit
-unauthenticated-bus acknowledgement only after verification.
+least-privilege credentials, prove a credential rotation path, roll clients
+deliberately, and remove the explicit unauthenticated-bus acknowledgement only
+after verification.
 
 The runtime queue path uses JetStream stream `DD_REMOTE_TASKS` for
 `dd.remote.thread.*.tasks`. `dd-remote-queue-consumer` binds durable pull
@@ -55,11 +58,14 @@ on `:8222` to scale that deployment by consumer lag.
 
 ## Hardening delivered so far (2026-07-31)
 
-- `nats.networkpolicy.yaml`: `:4222` ingress is scoped to known client
-  namespaces (`default`, `shared-auth`, `voxletra`, `messaging`, `ai-ml`, and
-  `daedalus`), `:8222` to `keda` plus `observability`, and `:7777` to
-  `observability`. This is the network half of the remaining account/nkey
-  rollout.
+- `nats.networkpolicy.yaml`: default-deny, with `:4222` ingress scoped to known
+  client namespaces (`default`, `shared-auth`, `voxletra`, `messaging`,
+  `ai-ml`, and `daedalus`) plus the EC2 VPC range `172.31.0.0/16` for
+  host-network pool workers that have no pod identity; `:8222` to `keda` plus
+  `observability`; and `:7777`/`:8222` to `observability` and the three
+  read-only proxy/tooling pods in `default`. The monitoring ports have no
+  NATS-native authentication, so that exception list is deliberately exact.
+  This is the network half of the remaining account/nkey rollout.
 - `dd-nats-bridge`: external callers use named
   `POST /v1/queues/:route` endpoints rather than raw subjects. Client-scoped
   bearer credentials grant explicit routes; each route maps internally to one

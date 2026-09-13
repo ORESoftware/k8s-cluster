@@ -1,0 +1,30 @@
+name: Portfolio project links
+
+on:
+  pull_request:
+    paths:
+      - 'ops/registries/portfolio-project-links.csv'
+      - 'docs/portfolio-project-linking.md'
+      - 'tools/validate_portfolio_project_links.py'
+      - '.github/workflows/portfolio-project-links.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'ops/registries/portfolio-project-links.csv'
+      - 'docs/portfolio-project-linking.md'
+      - 'tools/validate_portfolio_project_links.py'
+      - '.github/workflows/portfolio-project-links.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the cross-system portfolio registry
+        run: python3 tools/validate_portfolio_project_links.py

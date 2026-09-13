@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "source_org": "canonical-cloud",
+  "test_org": "canonical-cloud-test",
+  "fail_closed": true,
+  "expected_cloudflare_account_sha256": "8007ba16f4d4ff2684639b28a390e8516fcf878e80a09ee32279778cf98934c8",
+  "cloudflare": {
+    "zone_name": "canonical.plus",
+    "worker_script": "canonical-plus-auth-edge",
+    "worker_environment": "default-production",
+    "routes": [
+      "app.canonical.plus/u/*",
+      "app.canonical.plus/api/v1/quotes*",
+      "app.canonical.plus/ws/quotes*",
+      "api.canonical.plus/v1/quotes*",
+      "api.canonical.plus/v1/ws*"
+    ],
+    "dns_names": [
+      "app.canonical.plus",
+      "api.canonical.plus"
+    ],
+    "r2": {
+      "required": false,
+      "exact_bucket": null
+    }
+  },
+  "source_pins": {
+    "canonical-api-server.rs": {
+      "repository": "canonical-cloud/canonical-api-server.rs",
+      "sha": "f57528ccf2b077644917c1f770c97eca3027b8e7"
+    },
+    "canonical-web-server.rs": {
+      "repository": "canonical-cloud/canonical-web-server.rs",
+      "sha": "dcb979956a247f35a8470280717d0750109f2320"
+    },
+    "canonical-monorepo": {
+      "repository": "canonical-cloud/canonical-monorepo",
+      "sha": "1615affc1defcb20741cd5d7b59c416f73b5f356"
+    },
+    "canonical-e2e": {
+      "repository": "canonical-cloud/canonical-e2e",
+      "sha": "c1dca4b91f8c2fc3e9731a27572ec71f0c7ac1a7"
+    },
+    "canonical-infra": {
+      "repository": "canonical-cloud/canonical-infra",
+      "sha": "f5412f8c87ee9e5a4306fb75241b706d5ccc0549"
+    }
+  },
+  "test_repositories": [
+    "canonical-api-server.rs",
+    "api-server-contract-e2e",
+    "monorepo-submodules-e2e",
+    "zed-package-graph-e2e",
+    "web-server-routing-e2e",
+    "cli-install-e2e",
+    "clients-rust-consumer",
+    "clients-typescript-consumer",
+    "clients-go-consumer",
+    "clients-python-consumer",
+    "mcp-contract-e2e",
+    "legacy-mirror-guard-e2e"
+  ],
+  "harnesses": [
+    {
+      "repository": "canonical-api-server.rs",
+      "kind": "api-source"
+    },
+    {
+      "repository": "web-server-routing-e2e",
+      "kind": "infra-snapshot"
+    },
+    {
+      "repository": "monorepo-submodules-e2e",
+      "kind": "monorepo-source"
+    },
+    {
+      "repository": "zed-package-graph-e2e",
+      "kind": "topology-source"
+    }
+  ],
+  "live_writes": {
+    "canonical_cloud_source_repositories": false,
+    "cloudflare": false,
+    "dns": false,
+    "r2": false,
+    "kubernetes": false,
+    "database": false,
+    "secret_store": false,
+    "google_model_configuration": false,
+    "canonical_cloud_test_repositories": true
+  }
+}

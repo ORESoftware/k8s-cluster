@@ -30,11 +30,11 @@ import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
 import gleam/int
 import gleam/io
-import gleam/list
+import gleam/option.{Some}
 import gleam/otp/actor
 import gleam/otp/supervision
-import gleam/result
 import gleam/string
+import gleam_mcp_server/nats_wire
 
 pub type Name =
   process.Name(Message)
@@ -43,6 +43,7 @@ pub opaque type Message {
   Publish(subject: String, payload: String)
   EmitLifecycle
   Inbound(subject: String, payload: BitArray, headers: List(#(String, String)))
+  Ignore
 }
 
 type State {
@@ -163,29 +164,36 @@ fn handle(state: State, msg: Message) -> actor.Next(State, Message) {
     }
 
     Inbound(subject, payload, headers) -> {
-      case lookup_header(headers, "Source-Node") {
-        Ok(node) if node == state.self_node -> actor.continue(state)
+      case nats_wire.header_get(headers, "Source-Node") {
+        Some(node) if node == state.self_node -> actor.continue(state)
         _ -> {
           handle_control(state, subject, payload)
           actor.continue(state)
         }
       }
     }
+
+    Ignore -> actor.continue(state)
   }
 }
 
 fn do_publish(state: State, subject: String, payload: String) -> Nil {
-  let headers = [
-    #(bit_array.from_string("Source-Node"), bit_array.from_string(state.self_node)),
-  ]
-  let _ =
-    dd_nats_publish(
-      state.client_pid,
-      bit_array.from_string(subject),
-      bit_array.from_string(payload),
-      headers,
-    )
-  Nil
+  case nats_wire.subject_is_safe(subject) {
+    False -> Nil
+    True -> {
+      let headers = [
+        #(bit_array.from_string("Source-Node"), bit_array.from_string(state.self_node)),
+      ]
+      let _ =
+        dd_nats_publish(
+          state.client_pid,
+          bit_array.from_string(subject),
+          bit_array.from_string(payload),
+          headers,
+        )
+      Nil
+    }
+  }
 }
 
 /// Read-only control plane. Today only `ping` is handled (a liveness echo);
@@ -239,14 +247,6 @@ fn escape(input: String) -> String {
   |> string.replace("\t", "\\t")
 }
 
-fn lookup_header(
-  headers: List(#(String, String)),
-  key: String,
-) -> Result(String, Nil) {
-  list.find(headers, fn(kv) { kv.0 == key })
-  |> result.map(fn(kv) { kv.1 })
-}
-
 fn decode_nats_msg(raw: Dynamic) -> Message {
   // {nats_msg, Subject, Payload, Headers} — select_record passes the full
   // tuple including the tag, so 0-indexed positions are:
@@ -258,10 +258,14 @@ fn decode_nats_msg(raw: Dynamic) -> Message {
     decode.success(#(subject, payload, headers))
   }
   case decode.run(raw, pair) {
-    Ok(#(subject, payload, headers)) -> Inbound(subject, payload, headers)
+    Ok(#(subject, payload, headers)) ->
+      case nats_wire.subject_is_safe(subject) {
+        False -> Ignore
+        True -> Inbound(subject, payload, headers)
+      }
     Error(e) -> {
       io.println("dd-gleam-mcp-server nats: malformed inbound: " <> string.inspect(e))
-      Inbound("", <<>>, [])
+      Ignore
     }
   }
 }

@@ -1,0 +1,62 @@
+name: Preserve mcp-rust-libs Zed validation
+
+on:
+  push:
+    branches:
+      - agent/semantic-mcp-rust-libs-cluster-credential-current-main-20260731
+    paths:
+      - .github/workflows/fix-mcp-rust-libs-zed-validation.yml
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-mcp-rust-libs-zed-validation
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/semantic-mcp-rust-libs-cluster-credential-current-main-20260731
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Preserve the reviewed Zed package gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ops-publish-mcp-rust-libs.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '            python3 scripts/update-source-manifest.py --check\n'
+          new = old + '            sh scripts/verify-zed-package.sh "$source"\n'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one source-manifest validation step')
+          if 'sh scripts/verify-zed-package.sh "$source"' in text:
+              raise SystemExit('Zed package validation is already present')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Remove carrier and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/fix-mcp-rust-libs-zed-validation.yml
+          test ! -e .github/workflows/fix-mcp-rust-libs-zed-validation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(DEN-319): preserve Zed package validation'
+          git push origin HEAD:agent/semantic-mcp-rust-libs-cluster-credential-current-main-20260731

@@ -1,0 +1,248 @@
+# One-shot pull-request trigger for the reviewed DEN-1606 source transformer.
+# The successful product commit deletes this file and both materializer carriers.
+name: Run DEN-1606 direct hardening materializer from PR once
+
+on:
+  pull_request:
+    branches:
+      - dev
+    types:
+      - synchronize
+    paths:
+      - .github/workflows/run-den-1606-materializer-pr-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-den-1606-direct-hardening-materializer-pr
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-1606-clone-server-direct-hardening'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1606-clone-server-direct-hardening
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Execute the reviewed explicit transformer
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/materialize-den-1606-direct-hardening-once.yml')
+          lines = workflow.read_text(encoding='utf-8').splitlines()
+          step_name = '      - name: Apply explicit bounded-lane hardening'
+          next_step = '      - name: Install the pinned Rust toolchain'
+          try:
+              step_index = lines.index(step_name)
+              next_index = lines.index(next_step, step_index + 1)
+          except ValueError as error:
+              raise SystemExit(f'could not locate reviewed materializer step boundary: {error}')
+
+          run_index = step_index + 1
+          while run_index < next_index and lines[run_index] != '        run: |':
+              run_index += 1
+          if run_index >= next_index:
+              raise SystemExit('reviewed materializer step has no literal run block')
+
+          block = lines[run_index + 1 : next_index]
+          try:
+              heredoc_start = next(
+                  index for index, line in enumerate(block)
+                  if line.strip() == "python3 - <<'PY'"
+              )
+              heredoc_end = max(
+                  index for index, line in enumerate(block)
+                  if index > heredoc_start and line.strip() == 'PY'
+              )
+          except (StopIteration, ValueError) as error:
+              raise SystemExit(f'could not locate reviewed Python heredoc: {error}')
+
+          prefix = '          '
+          script_lines = block[heredoc_start + 1 : heredoc_end]
+          script_lines = [
+              line[len(prefix):] if line.startswith(prefix) else line
+              for line in script_lines
+          ]
+          script = '\n'.join(script_lines) + '\n'
+
+          # The embedded transformer writes Rust source text. Preserve the two
+          # backslashes required by Rust's escaped backslash character literal
+          # instead of allowing Python's non-raw triple string to collapse them.
+          for marker in (
+              "old_path = '''fn valid_workflow_path(value: &str) -> bool {",
+              "new_path = '''fn valid_workflow_path(value: &str) -> bool {",
+          ):
+              if script.count(marker) != 1:
+                  raise SystemExit(f'reviewed materializer no longer has expected raw-string marker: {marker}')
+              script = script.replace(marker, marker.replace("= '''", "= r'''"), 1)
+
+          replacements = [
+              (
+                  """if lib.count(old_path) != 1:
+              raise SystemExit('unexpected planner workflow-path validator')
+          lib = lib.replace(old_path, new_path, 1)
+          """,
+                  """path_start = lib.find('fn valid_workflow_path(value: &str) -> bool {')
+          if path_start == -1:
+              raise SystemExit('could not locate planner workflow-path validator')
+          path_end = lib.find('\\n}\\n', path_start)
+          if path_end == -1:
+              raise SystemExit('could not locate planner workflow-path validator end')
+          lib = lib[:path_start] + new_path + lib[path_end + 3:]
+          """,
+                  'workflow-path validator replacement',
+              ),
+              (
+                  """if lib.count(path_test_marker) != 1:
+              raise SystemExit('unexpected workflow path test')
+          lib = lib.replace(path_test_marker, path_test_replacement, 1)
+          """,
+                  """path_test_anchor = '        assert!(errors.contains(\"workflowPath\"));\\n\\n        let limits = PlannerLimits {'
+          path_test_insert = '''        assert!(errors.contains("workflowPath"));
+
+                  let mut nested_path_request = request("jobs: {}");
+                  nested_path_request.workflow_path = ".github/workflows/nested/ci.yml".into();
+                  assert!(build_plan(&nested_path_request, &PlannerLimits::default())
+                      .unwrap_err()
+                      .join("\\n")
+                      .contains("workflowPath"));
+
+                  let limits = PlannerLimits {'''.replace('          ', '')
+          if lib.count(path_test_anchor) != 1:
+              raise SystemExit('could not locate workflow path test anchor')
+          lib = lib.replace(path_test_anchor, path_test_insert, 1)
+          """,
+                  'workflow-path test insertion',
+              ),
+              (
+                  """if lib.count(ambiguity_marker) != 1:
+              raise SystemExit('unexpected workflow semantics test marker')
+          lib = lib.replace(ambiguity_marker, ambiguity_test + ambiguity_marker, 1)
+          """,
+                  """ambiguity_anchor = '    #[test]\\n    fn workflow_and_working_directory_semantics_are_not_silently_ignored() {'
+          if lib.count(ambiguity_anchor) != 1:
+              raise SystemExit('could not locate workflow semantics test anchor')
+          lib = lib.replace(ambiguity_anchor, ambiguity_test + ambiguity_anchor, 1)
+          """,
+                  'YAML ambiguity test insertion',
+              ),
+              (
+                  """if main.count(client_marker) != 1:
+              raise SystemExit('unexpected HTTP client builder')
+          main = main.replace(client_marker, client_replacement, 1)
+          """,
+                  """client_anchor = '            .timeout(Duration::from_secs(60))\\n            .user_agent(\"gha-clone-server/0.1\")'
+          client_insert = '            .timeout(Duration::from_secs(60))\\n            .redirect(reqwest::redirect::Policy::none())\\n            .user_agent(\"gha-clone-server/0.1\")'
+          if main.count(client_anchor) != 1:
+              raise SystemExit('could not locate HTTP client builder anchor')
+          main = main.replace(client_anchor, client_insert, 1)
+          """,
+                  'HTTP client builder insertion',
+              ),
+              (
+                  """if main.count(webhook_old) != 1:
+              raise SystemExit('unexpected webhook run insertion block')
+          main = main.replace(webhook_old, webhook_new, 1)
+          """,
+                  """webhook_start_marker = '        if !remember_webhook_delivery(&state, &delivery).await {'
+          webhook_end_marker = '            run_ids.push(run_id);\\n        }\\n'
+          webhook_start = main.find(webhook_start_marker)
+          if webhook_start == -1:
+              raise SystemExit('could not locate webhook dispatch start')
+          webhook_end = main.find(webhook_end_marker, webhook_start)
+          if webhook_end == -1:
+              raise SystemExit('could not locate webhook dispatch end')
+          webhook_end += len(webhook_end_marker)
+          main = main[:webhook_start] + webhook_new + main[webhook_end:]
+          """,
+                  'webhook dispatch replacement',
+              ),
+              (
+                  """if main.count(configured_path_old) != 1:
+              raise SystemExit('unexpected configured workflow path validator')
+          main = main.replace(configured_path_old, configured_path_new, 1)
+          """,
+                  """configured_path_start = main.find('fn valid_configured_workflow_path(value: &str) -> bool {')
+          if configured_path_start == -1:
+              raise SystemExit('could not locate configured workflow path validator')
+          configured_path_end = main.find('\\n}\\n', configured_path_start)
+          if configured_path_end == -1:
+              raise SystemExit('could not locate configured workflow path validator end')
+          main = main[:configured_path_start] + configured_path_new + main[configured_path_end + 3:]
+          """,
+                  'configured workflow-path validator replacement',
+              ),
+          ]
+          for brittle, robust, label in replacements:
+              if script.count(brittle) != 1:
+                  raise SystemExit(f'reviewed materializer no longer has expected {label}')
+              script = script.replace(brittle, robust, 1)
+
+          # YAML has already removed the ten-space block indentation. Removing
+          # it again from embedded Rust snippets corrupts valid nested blocks.
+          indent_normalizer = ".replace('          ', '')"
+          if indent_normalizer not in script:
+              raise SystemExit('reviewed materializer has no indentation normalizers')
+          script = script.replace(indent_normalizer, '')
+
+          exec(compile(script, str(workflow), 'exec'), {'__name__': '__main__'})
+          for path in (
+              Path('.github/workflows/run-den-1606-materializer-once.yml'),
+              Path('.github/workflows/run-den-1606-materializer-pr-once.yml'),
+          ):
+              path.unlink(missing_ok=True)
+          PY
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate every clone-server target
+        working-directory: remote/deployments/gha-clone-server-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets -- --nocapture
+
+      - name: Validate repository continuity contracts
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          corepack enable
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Commit the self-cleaned product diff
+        run: |
+          set -euo pipefail
+          git diff --check
+          test ! -e .github/workflows/materialize-den-1606-direct-hardening-once.yml
+          test ! -e .github/workflows/run-den-1606-materializer-once.yml
+          test ! -e .github/workflows/run-den-1606-materializer-pr-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          allowed='^(docs/gha-indie-worker-clone-reconciliation\.md|remote/deployments/gha-clone-server-rs/(README\.md|src/(lib|main)\.rs))$'
+          unexpected="$(git diff --cached --name-only | grep -Ev "$allowed" || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'unexpected staged paths:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+          git commit -m 'fix(DEN-1606): harden the bounded clone-server lane directly'
+          git push origin HEAD:agent/den-1606-clone-server-direct-hardening

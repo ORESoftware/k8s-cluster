@@ -1,0 +1,282 @@
+name: Semantic port DEN-2328 exact-gap verification once v2
+
+on:
+  push:
+    branches:
+      - fix/den-2328-integrate-exact-gap-verification-20260805
+    paths:
+      - .github/workflows/semantic-port-den-2328-once-v2.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: semantic-port-den-2328-once-v2
+  cancel-in-progress: false
+
+jobs:
+  port:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      SOURCE_COMMIT: 09cad0db86bddb709896292b06bec26e5910978c
+    steps:
+      - name: Check out the current-main replacement branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-2328-integrate-exact-gap-verification-20260805
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Port exact-gap verification into the integrated workflow
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --no-tags origin "$SOURCE_COMMIT"
+
+          git show "$SOURCE_COMMIT:scripts/ops/verify_expected_repository_gaps.py" \
+            > scripts/ops/verify_expected_repository_gaps.py
+          git show "$SOURCE_COMMIT:scripts/ops/test_verify_expected_repository_gaps.py" \
+            > scripts/ops/test_verify_expected_repository_gaps.py
+          chmod 0755 scripts/ops/verify_expected_repository_gaps.py \
+            scripts/ops/test_verify_expected_repository_gaps.py
+
+          python3 - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          verifier = Path("scripts/ops/verify_expected_repository_gaps.py")
+          text = verifier.read_text(encoding="utf-8")
+          old_function = dedent('''\
+          def assert_expected_missing(observed: list[str] | tuple[str, ...]) -> None:
+              observed_set = {value.casefold() for value in observed}
+              expected_set = {value.casefold() for value in EXPECTED_MISSING}
+              if observed_set != expected_set:
+                  unexpected = sorted(observed_set - expected_set)
+                  absent = sorted(expected_set - observed_set)
+                  raise GapVerificationError(
+                      f"remote gap set changed: unexpected={unexpected} absent={absent}"
+                  )
+          ''')
+          new_function = dedent('''\
+          def classify_expected_missing(observed: list[str] | tuple[str, ...]) -> str:
+              """Accept only the reviewed four-gap publication or a complete no-op."""
+
+              observed_set = {value.casefold() for value in observed}
+              expected_set = {value.casefold() for value in EXPECTED_MISSING}
+              if not observed_set:
+                  return "complete"
+              if observed_set == expected_set:
+                  return "publish"
+              unexpected = sorted(observed_set - expected_set)
+              absent = sorted(expected_set - observed_set)
+              raise GapVerificationError(
+                  f"remote gap set changed: unexpected={unexpected} absent={absent}"
+              )
+
+
+          def assert_expected_missing(observed: list[str] | tuple[str, ...]) -> None:
+              if classify_expected_missing(observed) != "publish":
+                  raise GapVerificationError(
+                      "remote gap set changed: expected the reviewed four-repository gap"
+                  )
+          ''')
+          if old_function not in text:
+              raise SystemExit("expected exact-gap function anchor is missing")
+          text = text.replace(old_function, new_function, 1)
+
+          old_preflight = dedent('''\
+              assert_expected_missing(missing)
+              write_json(
+                  output,
+                  {
+                      "schema_version": 1,
+                      "source_repository": SOURCE_REPOSITORY,
+                      "source_sha": SOURCE_SHA,
+                      "expected_missing": list(EXPECTED_MISSING),
+                      "observed_missing": sorted(missing, key=str.casefold),
+                      "existing": existing,
+                      "sealed_commits": sealed_commits,
+                  },
+              )
+              print(f"VERIFIED_EXPECTED_GAPS missing={len(missing)} preserved={len(existing)}")
+          ''')
+          new_preflight = dedent('''\
+              mode = classify_expected_missing(missing)
+              write_json(
+                  output,
+                  {
+                      "schema_version": 1,
+                      "source_repository": SOURCE_REPOSITORY,
+                      "source_sha": SOURCE_SHA,
+                      "mode": mode,
+                      "expected_missing": list(EXPECTED_MISSING),
+                      "observed_missing": sorted(missing, key=str.casefold),
+                      "existing": existing,
+                      "sealed_commits": sealed_commits,
+                  },
+              )
+              print(
+                  f"VERIFIED_EXPECTED_GAPS mode={mode} "
+                  f"missing={len(missing)} preserved={len(existing)}"
+              )
+          ''')
+          if old_preflight not in text:
+              raise SystemExit("preflight anchor is missing")
+          text = text.replace(old_preflight, new_preflight, 1)
+
+          old_postflight = dedent('''\
+              assert_expected_missing([str(value) for value in expected])
+
+              existing = preflight.get("existing")
+          ''')
+          new_postflight = dedent('''\
+              assert_expected_missing([str(value) for value in expected])
+              observed = preflight.get("observed_missing")
+              if not isinstance(observed, list):
+                  raise GapVerificationError("preflight observed-gap evidence is malformed")
+              observed_mode = classify_expected_missing([str(value) for value in observed])
+              if preflight.get("mode") != observed_mode:
+                  raise GapVerificationError("preflight gap mode does not match observed state")
+
+              existing = preflight.get("existing")
+          ''')
+          if old_postflight not in text:
+              raise SystemExit("postflight anchor is missing")
+          verifier.write_text(text.replace(old_postflight, new_postflight, 1), encoding="utf-8")
+
+          tests = Path("scripts/ops/test_verify_expected_repository_gaps.py")
+          test_text = tests.read_text(encoding="utf-8")
+          test_anchor = "    def test_private_main_state_requires_stable_id_and_exact_sha(self) -> None:\n"
+          new_test = dedent('''\
+              def test_preflight_accepts_only_publish_or_complete_modes(self) -> None:
+                  self.assertEqual(
+                      MODULE.classify_expected_missing(MODULE.EXPECTED_MISSING), "publish"
+                  )
+                  self.assertEqual(MODULE.classify_expected_missing([]), "complete")
+                  with self.assertRaisesRegex(MODULE.GapVerificationError, "gap set changed"):
+                      MODULE.classify_expected_missing(MODULE.EXPECTED_MISSING[:-1])
+
+              def test_private_main_state_requires_stable_id_and_exact_sha(self) -> None:
+          ''')
+          if test_anchor not in test_text:
+              raise SystemExit("verifier test anchor is missing")
+          tests.write_text(test_text.replace(test_anchor, new_test, 1), encoding="utf-8")
+
+          workflow = Path(".github/workflows/ops-sync-org-project-docs-rate-aware-once.yml")
+          workflow_text = workflow.read_text(encoding="utf-8")
+          path_line = "      - scripts/ops/publish_missing_org_repositories_current.py\n"
+          if workflow_text.count(path_line) != 1:
+              raise SystemExit("integrated workflow path anchor changed")
+          workflow_text = workflow_text.replace(
+              path_line,
+              path_line
+              + "      - scripts/ops/verify_expected_repository_gaps.py\n"
+              + "      - scripts/ops/test_verify_expected_repository_gaps.py\n",
+              1,
+          )
+
+          compile_line = "            scripts/ops/publish_missing_org_repositories_current.py \\\n"
+          if workflow_text.count(compile_line) != 1:
+              raise SystemExit("integrated workflow compile line changed")
+          workflow_text = workflow_text.replace(
+              compile_line,
+              compile_line + "            scripts/ops/verify_expected_repository_gaps.py \\\n",
+              1,
+          )
+
+          test_line = "          python3 scripts/ops/test_private_fleet_publisher_contract.py -v\n"
+          if workflow_text.count(test_line) != 1:
+              raise SystemExit("integrated workflow test line changed")
+          workflow_text = workflow_text.replace(
+              test_line,
+              test_line + "          python3 scripts/ops/test_verify_expected_repository_gaps.py -v\n",
+              1,
+          )
+
+          mkdir_line = "          mkdir -p \"$REPOSITORY_EVIDENCE_DIR\"\n"
+          if workflow_text.count(mkdir_line) != 1:
+              raise SystemExit("integrated workflow evidence directory anchor changed")
+          workflow_text = workflow_text.replace(
+              mkdir_line,
+              mkdir_line
+              + "          python3 scripts/ops/verify_expected_repository_gaps.py preflight \\\n"
+              + "            --output \"$REPOSITORY_EVIDENCE_DIR/preflight.json\" \\\n"
+              + "            2>&1 | tee \"$REPOSITORY_EVIDENCE_DIR/preflight.log\"\n",
+              1,
+          )
+
+          post_anchor = (
+              "          PY\n\n"
+              "      - name: Reconcile all registered organization Projects and docs\n"
+          )
+          if workflow_text.count(post_anchor) != 1:
+              raise SystemExit("integrated workflow postflight anchor changed")
+          workflow_text = workflow_text.replace(
+              post_anchor,
+              "          PY\n"
+              + "          python3 scripts/ops/verify_expected_repository_gaps.py postflight \\\n"
+              + "            --preflight \"$REPOSITORY_EVIDENCE_DIR/preflight.json\" \\\n"
+              + "            --output \"$REPOSITORY_EVIDENCE_DIR/postflight.json\" \\\n"
+              + "            2>&1 | tee \"$REPOSITORY_EVIDENCE_DIR/postflight.log\"\n\n"
+              + "      - name: Reconcile all registered organization Projects and docs\n",
+              1,
+          )
+          workflow.write_text(workflow_text, encoding="utf-8")
+
+          contracts = Path(".github/workflows/den-319-private-fleet-contracts.yml")
+          contracts_text = contracts.read_text(encoding="utf-8")
+          contract_path_line = "      - scripts/ops/publish_missing_org_repositories_current.py\n"
+          if contracts_text.count(contract_path_line) != 2:
+              raise SystemExit("private-fleet workflow path anchors changed")
+          contracts_text = contracts_text.replace(
+              contract_path_line,
+              contract_path_line
+              + "      - scripts/ops/verify_expected_repository_gaps.py\n"
+              + "      - scripts/ops/test_verify_expected_repository_gaps.py\n",
+          )
+
+          contract_source_line = "            scripts/ops/test_encrypted_repository_gap_workflow.py \\\n"
+          if contracts_text.count(contract_source_line) != 2:
+              raise SystemExit("private-fleet source anchors changed")
+          contracts_text = contracts_text.replace(
+              contract_source_line,
+              contract_source_line
+              + "            scripts/ops/verify_expected_repository_gaps.py \\\n"
+              + "            scripts/ops/test_verify_expected_repository_gaps.py \\\n",
+          )
+
+          contract_test_line = "          python3 scripts/ops/test_encrypted_repository_gap_workflow.py -v\n"
+          if contracts_text.count(contract_test_line) != 1:
+              raise SystemExit("private-fleet verifier test anchor changed")
+          contracts_text = contracts_text.replace(
+              contract_test_line,
+              "          python3 scripts/ops/test_verify_expected_repository_gaps.py -v\n"
+              + contract_test_line,
+              1,
+          )
+          contracts.write_text(contracts_text, encoding="utf-8")
+          PY
+
+          python3 -m py_compile \
+            scripts/ops/verify_expected_repository_gaps.py \
+            scripts/ops/test_verify_expected_repository_gaps.py
+          python3 scripts/ops/test_verify_expected_repository_gaps.py -v
+          python3 scripts/ops/test_encrypted_repository_gap_workflow.py -v
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
+          grep -F 'verify_expected_repository_gaps.py preflight' \
+            .github/workflows/ops-sync-org-project-docs-rate-aware-once.yml
+          grep -F 'verify_expected_repository_gaps.py postflight' \
+            .github/workflows/ops-sync-org-project-docs-rate-aware-once.yml
+
+          find scripts/ops -type d -name __pycache__ -prune -exec rm -rf '{}' +
+          rm -f \
+            .github/workflows/semantic-port-den-2328-once.yml \
+            .github/workflows/semantic-port-den-2328-once-v2.yml
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(DEN-2328): integrate exact-gap preflight and preservation evidence"
+          git push origin HEAD:fix/den-2328-integrate-exact-gap-verification-20260805

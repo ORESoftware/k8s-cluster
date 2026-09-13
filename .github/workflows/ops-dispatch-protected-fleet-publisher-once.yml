@@ -1,4 +1,4 @@
-name: Dispatch protected fleet publisher once
+name: Dispatch and observe protected fleet publisher once
 
 on:
   push:
@@ -9,18 +9,81 @@ on:
 permissions:
   actions: write
   contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: dispatch-protected-fleet-publisher-once
+  cancel-in-progress: false
 
 jobs:
-  dispatch:
+  dispatch-and-observe:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 60
     steps:
       - name: Dispatch reviewed protected-profile publisher
+        id: dispatch
         env:
           GH_TOKEN: ${{ github.token }}
+          TRACKING_PR: "291"
+          WORKFLOW: ops-publish-missing-org-repositories-gh-profile.yml
         run: |
           set -Eeuo pipefail
-          gh workflow run ops-publish-missing-org-repositories-gh-profile.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main
+          marker="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "marker=$marker" >> "$GITHUB_OUTPUT"
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Protected fleet dispatcher started from \`${GITHUB_SHA}\` at \`${marker}\`."
+          gh workflow run "$WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Discover dispatched child run
+        id: child
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKING_PR: "291"
+          WORKFLOW: ops-publish-missing-org-repositories-gh-profile.yml
+          MARKER: ${{ steps.dispatch.outputs.marker }}
+        run: |
+          set -Eeuo pipefail
+          run_id=""
+          run_url=""
+          for _ in $(seq 1 40); do
+            runs="$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow "$WORKFLOW" \
+              --event workflow_dispatch \
+              --limit 20 \
+              --json databaseId,createdAt,status,conclusion,url)"
+            run_id="$(jq -r --arg marker "$MARKER" \
+              '[.[] | select(.createdAt >= $marker)] | sort_by(.createdAt) | last | .databaseId // empty' \
+              <<<"$runs")"
+            if test -n "$run_id"; then
+              run_url="$(jq -r --argjson id "$run_id" '.[] | select(.databaseId == $id) | .url' <<<"$runs")"
+              break
+            fi
+            sleep 3
+          done
+          test -n "$run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Observed protected gh-profile publisher child run \`${run_id}\`: ${run_url}"
+
+      - name: Wait for child and report exact outcome
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRACKING_PR: "291"
+          RUN_ID: ${{ steps.child.outputs.run_id }}
+          RUN_URL: ${{ steps.child.outputs.run_url }}
+        run: |
+          set -Eeuo pipefail
+          set +e
+          gh run watch "$RUN_ID" --repo "$GITHUB_REPOSITORY" --exit-status
+          watch_rc=$?
+          set -e
+          result="$(gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --json status,conclusion,url)"
+          status="$(jq -r '.status' <<<"$result")"
+          conclusion="$(jq -r '.conclusion // ""' <<<"$result")"
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Protected gh-profile publisher child run \`${RUN_ID}\` finished with status \`${status}\`, conclusion \`${conclusion}\`: ${RUN_URL}"
+          test "$watch_rc" -eq 0

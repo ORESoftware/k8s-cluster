@@ -1,0 +1,478 @@
+#!/usr/bin/env python3
+"""Render, publish, and verify the fixed Zed-adjacent Astro marketing fleet.
+
+The executable target set is intentionally data-bound and test-covered.  The
+script can render the complete fleet without credentials for pull-request
+validation, or publish through GitHub's REST API when invoked by the protected
+trusted-main runner.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import dataclasses
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+SPEC_PART_GLOB = "zed_pkg_marketing_sites.json.part*"
+BRANCH_NAME = "feat/astro-marketing-refresh-20260805"
+MARKER = "zed-pkg-marketing-site-v1"
+EXPECTED_SLUGS = (
+    "agent-pontifex",
+    "gha-indie-worker",
+    "file-tunnel",
+    "memebank",
+    "daedalus-fab",
+    "claritas-viz",
+    "discrete-event-systems",
+    "opto-sync",
+    "voxletra",
+    "drone-mngr",
+    "shared-auth",
+    "streempilot",
+    "fanwaave",
+    "hypesiege",
+)
+GENERATED_DATE = "2026-08-05"
+ALLOWED_SOURCE_KINDS = {"client", "protocol", "api", "preview"}
+
+
+class PublicationError(RuntimeError):
+    """Bounded publication failure with a safe public message."""
+
+
+class GitHubApiError(PublicationError):
+    def __init__(self, status: int, method: str, path: str, message: str):
+        self.status = status
+        self.method = method
+        self.path = path
+        super().__init__(f"GitHub API {method} {path} returned {status}: {message}")
+
+
+@dataclasses.dataclass(frozen=True)
+class SiteResult:
+    slug: str
+    repository: str
+    site_url: str
+    created_repository: bool
+    pull_request_url: str
+    pull_request_number: int
+    merge_sha: str
+    source_verified: bool
+    pages_enabled: bool
+    pages_url: str | None
+    pages_workflow: str
+    pages_run_url: str | None
+    verified: bool
+    notes: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat()
+
+
+def load_specs() -> list[dict[str, Any]]:
+    try:
+        parts = sorted(SCRIPT_DIR.glob(SPEC_PART_GLOB))
+        if not parts:
+            raise OSError(f"no specification parts matched {SPEC_PART_GLOB}")
+        raw = "".join(part.read_text(encoding="utf-8") for part in parts)
+        payload = json.loads(raw)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PublicationError(f"unable to read site specifications: {exc}") from exc
+    if payload.get("schema_version") != 1:
+        raise PublicationError("unsupported site specification schema")
+    sites = payload.get("sites")
+    if not isinstance(sites, list):
+        raise PublicationError("site specifications must contain a sites list")
+    validate_specs(sites)
+    return sites
+
+
+def validate_specs(sites: list[dict[str, Any]]) -> None:
+    if len(sites) != len(EXPECTED_SLUGS):
+        raise PublicationError(
+            f"expected {len(EXPECTED_SLUGS)} sites, received {len(sites)}"
+        )
+    slugs = tuple(site.get("slug") for site in sites)
+    if slugs != EXPECTED_SLUGS:
+        raise PublicationError(f"site order mismatch: {slugs!r}")
+    repositories: set[str] = set()
+    site_urls: set[str] = set()
+    for site in sites:
+        required = {
+            "org",
+            "repo",
+            "slug",
+            "name",
+            "monogram",
+            "eyebrow",
+            "tagline",
+            "description",
+            "accent",
+            "accent2",
+            "surface",
+            "github_url",
+            "source_url",
+            "source_label",
+            "source_status",
+            "commit_sha",
+            "commit_url",
+            "commit_title",
+            "stats",
+            "capabilities",
+            "flow",
+            "signals",
+            "code_heading",
+            "code_intro",
+            "languages_note",
+            "examples",
+            "site_url",
+            "repository_full_name",
+        }
+        missing = required - site.keys()
+        if missing:
+            raise PublicationError(f"{site.get('slug', '<unknown>')}: missing {sorted(missing)}")
+        slug = site["slug"]
+        if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug):
+            raise PublicationError(f"invalid site slug: {slug!r}")
+        if slug.endswith("-test") or "-test." in site["repo"]:
+            raise PublicationError(f"test organization entered publication set: {slug}")
+        expected_repo = f"{slug}.github.io"
+        if site["repo"] != expected_repo:
+            raise PublicationError(f"{slug}: repository must be {expected_repo}")
+        expected_url = f"https://{slug}.github.io/"
+        if site["site_url"] != expected_url:
+            raise PublicationError(f"{slug}: canonical URL must be {expected_url}")
+        expected_full = f"{site['org']}/{site['repo']}"
+        if site["repository_full_name"] != expected_full:
+            raise PublicationError(f"{slug}: repository_full_name mismatch")
+        if expected_full.lower() in repositories:
+            raise PublicationError(f"duplicate repository: {expected_full}")
+        repositories.add(expected_full.lower())
+        if expected_url in site_urls:
+            raise PublicationError(f"duplicate site URL: {expected_url}")
+        site_urls.add(expected_url)
+        for key, expected_min in (("stats", 3), ("capabilities", 3), ("flow", 4), ("signals", 3)):
+            value = site[key]
+            if not isinstance(value, list) or len(value) < expected_min:
+                raise PublicationError(f"{slug}: {key} requires at least {expected_min} entries")
+        examples = site["examples"]
+        if not isinstance(examples, list) or len(examples) < 3:
+            raise PublicationError(f"{slug}: at least three code examples are required")
+        languages: set[str] = set()
+        for example in examples:
+            language = example.get("language")
+            if not isinstance(language, str) or not language.strip():
+                raise PublicationError(f"{slug}: invalid example language")
+            if language.casefold() in languages:
+                raise PublicationError(f"{slug}: duplicate example language {language}")
+            languages.add(language.casefold())
+            if example.get("source_kind") not in ALLOWED_SOURCE_KINDS:
+                raise PublicationError(f"{slug}: invalid source kind")
+            source_url = example.get("source_url")
+            if not isinstance(source_url, str) or not source_url.startswith("https://github.com/"):
+                raise PublicationError(f"{slug}: example source must be a GitHub URL")
+            code = example.get("code")
+            if not isinstance(code, str) or len(code.strip()) < 40:
+                raise PublicationError(f"{slug}: code example is too small")
+        for color_key in ("accent", "accent2", "surface"):
+            if not re.fullmatch(r"#[0-9a-fA-F]{6}", site[color_key]):
+                raise PublicationError(f"{slug}: invalid {color_key}")
+
+
+def package_json(site: Mapping[str, Any]) -> str:
+    payload = {
+        "name": site["repo"],
+        "version": "1.0.0",
+        "private": True,
+        "type": "module",
+        "scripts": {
+            "dev": "astro dev",
+            "build": "astro check && astro build",
+            "check": "astro check",
+            "test": "node --test tests/*.test.mjs",
+            "preview": "astro preview",
+        },
+        "dependencies": {
+            "@astrojs/check": "0.9.10",
+            "astro": "7.1.6",
+            "typescript": "6.0.2",
+        },
+        "license": "MIT",
+    }
+    return json.dumps(payload, indent=2) + "\n"
+
+
+ASTRO_CONFIG = """import { defineConfig } from 'astro/config';
+
+export default defineConfig({
+  site: '__SITE_URL__',
+  trailingSlash: 'always',
+});
+"""
+
+TSCONFIG = """{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": true
+  }
+}
+"""
+
+LAYOUT_ASTRO = r'''---
+import "../styles/global.css";
+interface SiteMeta {
+  name: string;
+  tagline: string;
+  description: string;
+  site_url: string;
+  github_url: string;
+  accent: string;
+  accent2: string;
+  surface: string;
+  monogram: string;
+}
+
+interface Props {
+  site: SiteMeta;
+  title?: string;
+  description?: string;
+  bodyClass?: string;
+}
+
+const { site, title = site.name, description = site.description, bodyClass } = Astro.props;
+const pageTitle = title === site.name ? `${site.name} — ${site.tagline}` : `${title} — ${site.name}`;
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: site.name,
+  description,
+  url: site.site_url,
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Web, server, mobile and desktop runtimes",
+  codeRepository: site.github_url,
+};
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content={site.surface} />
+    <link rel="canonical" href={site.site_url} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={site.site_url} />
+    <meta property="og:site_name" content={site.name} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={description} />
+    <script type="application/ld+json" set:html={JSON.stringify(schema)}></script>
+    <title>{pageTitle}</title>
+  </head>
+  <body
+    class={bodyClass}
+    style={`--accent:${site.accent};--accent-2:${site.accent2};--surface:${site.surface};`}
+  >
+    <a class="skip-link" href="#content">Skip to content</a>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+    <slot />
+  </body>
+</html>
+'''
+
+CODE_EXPLORER_ASTRO = r'''---
+interface Example {
+  language: string;
+  label: string;
+  filename: string;
+  source_url: string;
+  source_kind: "client" | "protocol" | "api" | "preview";
+  code: string;
+}
+
+interface Props {
+  examples: Example[];
+  heading: string;
+  intro: string;
+  note: string;
+  sourceUrl: string;
+  sourceLabel: string;
+  sourceStatus: string;
+}
+
+const { examples, heading, intro, note, sourceUrl, sourceLabel, sourceStatus } = Astro.props;
+const explorerId = `code-${heading.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+---
+<section class="code-card" data-code-explorer>
+  <div class="code-card__header">
+    <div>
+      <p class="section-kicker">Source-backed examples</p>
+      <h2>{heading}</h2>
+      <p class="section-lede">{intro}</p>
+    </div>
+    <div class="source-summary">
+      <span class="source-summary__dot" aria-hidden="true"></span>
+      <div>
+        <span>{sourceStatus}</span>
+        <a href={sourceUrl}>{sourceLabel} <span aria-hidden="true">↗</span></a>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-toolbar">
+    <label for={explorerId}>Language</label>
+    <div class="select-wrap">
+      <select id={explorerId} data-code-select>
+        {examples.map((example, index) => (
+          <option value={String(index)}>{example.language} · {example.label}</option>
+        ))}
+      </select>
+      <span aria-hidden="true">⌄</span>
+    </div>
+    <p>{note}</p>
+  </div>
+
+  <div class="code-stage" aria-live="polite">
+    {examples.map((example, index) => (
+      <article class="code-panel" data-code-panel data-index={String(index)} hidden={index !== 0}>
+        <header>
+          <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+          <span>{example.filename}</span>
+          <div class="code-actions">
+            <span class={`source-kind source-kind--${example.source_kind}`}>{example.source_kind}</span>
+            <button type="button" data-copy-code>Copy</button>
+            <a href={example.source_url}>Source ↗</a>
+          </div>
+        </header>
+        <pre tabindex="0"><code>{example.code}</code></pre>
+      </article>
+    ))}
+  </div>
+</section>
+
+<script is:inline>
+  const copyText = async (text, button) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      const previous = button.textContent;
+      button.textContent = "Copied";
+      window.setTimeout(() => { button.textContent = previous; }, 1400);
+    } catch {
+      button.textContent = "Select code";
+    }
+  };
+
+  document.querySelectorAll("[data-code-explorer]").forEach((explorer) => {
+    const select = explorer.querySelector("[data-code-select]");
+    const panels = [...explorer.querySelectorAll("[data-code-panel]")];
+    const show = (value) => {
+      panels.forEach((panel) => { panel.hidden = panel.dataset.index !== value; });
+    };
+    select?.addEventListener("change", (event) => show(event.currentTarget.value));
+    explorer.querySelectorAll("[data-copy-code]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const code = button.closest("[data-code-panel]")?.querySelector("code")?.textContent ?? "";
+        copyText(code, button);
+      });
+    });
+  });
+</script>
+'''
+
+NETWORK_ASTRO = r'''---
+interface NetworkSite {
+  slug: string;
+  name: string;
+  site_url: string;
+  eyebrow: string;
+  monogram: string;
+  accent: string;
+}
+
+interface Props {
+  sites: NetworkSite[];
+  current: string;
+}
+
+const { sites, current } = Astro.props;
+---
+<section class="network-section" id="network" aria-labelledby="network-heading">
+  <div class="section-heading section-heading--split">
+    <div>
+      <p class="section-kicker">Engineering network</p>
+      <h2 id="network-heading">Fourteen focused systems. One connected toolkit.</h2>
+    </div>
+    <p>Explore the source-backed product and infrastructure sites moving through the same Zed-oriented engineering fleet.</p>
+  </div>
+  <div class="network-grid">
+    {sites.map((item, index) => (
+      <a
+        class:list={["network-card", { "network-card--current": item.slug === current }]}
+        href={item.site_url}
+        aria-current={item.slug === current ? "page" : undefined}
+        style={`--network-accent:${item.accent}`}
+      >
+        <span class="network-card__index">{String(index + 1).padStart(2, "0")}</span>
+        <span class="network-card__monogram">{item.monogram}</span>
+        <strong>{item.name}</strong>
+        <span>{item.eyebrow}</span>
+        <i aria-hidden="true">↗</i>
+      </a>
+    ))}
+  </div>
+</section>
+'''
+
+INDEX_ASTRO = r'''---
+import Layout from "../layouts/Layout.astro";
+import CodeExplorer from "../components/CodeExplorer.astro";
+import Network from "../components/Network.astro";
+import site from "../data/site.json";
+
+const capabilityPhrase = site.source_status.toLowerCase();
+---
+<Layout site={site}>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label={`${site.name} home`}>
+      <span class="brand__mark">{site.monogram}</span>
+      <span><strong>{site.name}</strong><small>{site.eyebrow}</small></span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#platform">Platform</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="#code">Code</a>
+      <a href="#network">Network</a>
+    </nav>
+    <a class="header-cta" href={site.github_url}>GitHub <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main id="content">
+    <section class="hero">
+      <div class="hero__copy">
+        <div class="eyebrow-row">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span>{site.eyebrow}</span>
+          <span class="eyebrow-divider">/</span>

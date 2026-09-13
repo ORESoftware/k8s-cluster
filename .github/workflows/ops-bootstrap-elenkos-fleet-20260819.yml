@@ -26,7 +26,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: bootstrap-elenkos-repository-fleets
@@ -135,8 +134,13 @@ jobs:
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [validate, rust-contracts]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
     steps:
       - name: Check out trusted main revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -144,22 +148,101 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 1
+          clean: true
+          show-progress: false
       - name: Materialize reviewed payload
         shell: bash
         run: bash scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
-      - name: Configure short-lived AWS credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: bootstrap-elenkos-repository-fleets
-          retry-max-attempts: 2
-          mask-aws-account-id: true
-      - name: Publish exact fleets through protected GitHub App installations
+      - name: Verify protected publisher credential
         shell: bash
-        env:
-          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is configured.' >&2
+            exit 65
+          }
+          printf '::add-mask::%s\n' "$GH_TOKEN"
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          token = os.environ["GH_TOKEN"]
+          request = urllib.request.Request(
+              "https://api.github.com/user",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {token}",
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "elenkos-fleet-publisher",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              document = json.load(response)
+          if document.get("login") != "ORESoftware":
+              raise SystemExit(f"unexpected protected publisher identity: {document.get('login')!r}")
+          PY
+      - name: Publish and independently verify the exact 22-repository fleets
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
           trusted_sha="$(git rev-parse HEAD)"
-          bash scripts/ops/dispatch_elenkos_fleet_via_ssm_20260819.sh "$trusted_sha" "$AWS_REGION"
+          test "$trusted_sha" = "${GITHUB_SHA}"
+
+          token_dir="$RUNNER_TEMP/elenkos-publisher-tokens"
+          output="$RUNNER_TEMP/elenkos-live-fleet"
+          evidence="$RUNNER_TEMP/elenkos-publication.json"
+          rm -rf "$token_dir" "$output" "$evidence"
+          install -d -m 0700 "$token_dir"
+          cleanup() {
+            rm -rf "$token_dir"
+            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+          }
+          trap cleanup EXIT
+
+          printf '%s' "$GH_TOKEN" > "$token_dir/elenkos-systems.token"
+          printf '%s' "$GH_TOKEN" > "$token_dir/elenkos-systems-test.token"
+          chmod 0600 "$token_dir"/*.token
+
+          python3 scripts/ops/publish_elenkos_fleet_20260819.py \
+            --execute \
+            --output "$output" \
+            --trusted-k8s-cluster-sha "$trusted_sha" \
+            --token-file "elenkos-systems=$token_dir/elenkos-systems.token" \
+            --token-file "elenkos-systems-test=$token_dir/elenkos-systems-test.token" \
+            --evidence-out "$evidence"
+
+          python3 - "$evidence" <<'PY'
+          import json
+          import pathlib
+          import re
+          import sys
+
+          document = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          publication = document.get("publication", {})
+          repositories = publication.get("repositories", [])
+          if document.get("executed") is not True:
+              raise SystemExit("publisher evidence does not record execution")
+          if publication.get("repository_count") != 22 or len(repositories) != 22:
+              raise SystemExit("publisher evidence does not contain exactly 22 repositories")
+          names_by_org = {}
+          for item in repositories:
+              full_name = item.get("full_name", "")
+              main_sha = item.get("main_sha", "")
+              tag_sha = item.get("tag_sha", "")
+              visibility = item.get("visibility")
+              if not re.fullmatch(r"[0-9a-f]{40}", main_sha):
+                  raise SystemExit(f"invalid main SHA for {full_name}")
+              if tag_sha != main_sha:
+                  raise SystemExit(f"v0.1.0 tag drift for {full_name}")
+              if visibility != "private":
+                  raise SystemExit(f"visibility drift for {full_name}")
+              org, name = full_name.split("/", 1)
+              names_by_org.setdefault(org, set()).add(name)
+          if names_by_org.get("elenkos-systems") != names_by_org.get("elenkos-systems-test"):
+              raise SystemExit("production and test repository names are not exact mirrors")
+          print("ELENKOS_REMOTE_FLEET_VERIFIED repositories=22 production=11 test=11")
+          for item in sorted(repositories, key=lambda value: value["full_name"]):
+              print(f"published={item['full_name']}@{item['main_sha']}")
+          PY

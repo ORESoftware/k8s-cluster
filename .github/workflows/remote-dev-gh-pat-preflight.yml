@@ -1,0 +1,120 @@
+name: preflight remote-dev GitHub publication identity
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/remote-dev-gh-pat-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Assume the existing remote-maintenance role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Inventory cluster-side GitHub credential metadata through SSM
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${INSTANCE_ID:-}" ]]; then
+            echo '::error::AWS_SSM_INSTANCE_ID is unavailable.'
+            exit 78
+          fi
+
+          cat > /tmp/cluster-github-metadata.py <<'PY'
+          import json
+          import re
+          import subprocess
+
+          allowed_namespaces = {'default', 'ai-agent-coordinator', 'arc-runners'}
+          name_pattern = re.compile(r'(agent|github|coordinator|arc)', re.I)
+          result = subprocess.run(
+              ['kubectl', 'get', 'secrets', '--all-namespaces', '-o', 'json'],
+              text=True,
+              stdout=subprocess.PIPE,
+              stderr=subprocess.DEVNULL,
+              check=True,
+          )
+          items = json.loads(result.stdout).get('items') or []
+          candidates = []
+          for item in items:
+              metadata = item.get('metadata') or {}
+              namespace = metadata.get('namespace') or ''
+              name = metadata.get('name') or ''
+              if namespace not in allowed_namespaces or not name_pattern.search(name):
+                  continue
+              keys = sorted((item.get('data') or {}).keys())
+              candidates.append((namespace, name, keys))
+          print(f'candidate_secret_count={len(candidates)}')
+          for index, (namespace, name, keys) in enumerate(candidates, start=1):
+              print(f'candidate_{index}: namespace={namespace} name={name} keys={",".join(keys)}')
+          PY
+
+          payload="$(base64 -w0 /tmp/cluster-github-metadata.py)"
+          python3 - "$payload" > /tmp/cluster-github-metadata-commands.json <<'PY'
+          import json
+          import shlex
+          import sys
+
+          payload = sys.argv[1]
+          script = f'''set -euo pipefail
+          target=/tmp/cluster-github-metadata.py
+          trap 'rm -f "$target"' EXIT
+          printf %s {shlex.quote(payload)} | base64 -d > "$target"
+          chmod 700 "$target"
+          chown ec2-user:ec2-user "$target"
+          sudo -u ec2-user -H python3 "$target"
+          '''
+          print(json.dumps({'commands': [script]}))
+          PY
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment 'Inventory cluster-side GitHub credential metadata' \
+              --parameters file:///tmp/cluster-github-metadata-commands.json \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=${command_id}"
+
+          status=''
+          for attempt in $(seq 1 120); do
+            status="$(aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'Status' \
+              --output text 2>/dev/null || true)"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 2
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query 'StandardOutputContent' \
+            --output text || true
+          if [[ "$status" != Success ]]; then
+            aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query 'StandardErrorContent' \
+              --output text >&2 || true
+            echo "::error::SSM metadata inventory ended with status ${status:-unknown}."
+            exit 78
+          fi

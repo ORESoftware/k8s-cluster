@@ -2,11 +2,18 @@ name: Rotate k8s library read-only deploy key
 run-name: Rotate k8s library deploy key @ ${{ github.sha }}
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-rotate-k8s-libs-deploy-key.yml
+      - scripts/ops/rotate_k8s_libs_deploy_key.sh
+      - scripts/ops/test_rotate_k8s_libs_deploy_key.py
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-rotate-k8s-libs-deploy-key.yml
       - scripts/ops/rotate_k8s_libs_deploy_key.sh
+      - scripts/ops/test_rotate_k8s_libs_deploy_key.py
   workflow_dispatch:
 
 permissions:
@@ -18,8 +25,48 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact revision without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+          show-progress: false
+
+      - name: Validate transactional deploy-key rotation contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          script=scripts/ops/rotate_k8s_libs_deploy_key.sh
+          tests=scripts/ops/test_rotate_k8s_libs_deploy_key.py
+          bash -n "$script"
+          python3 -m py_compile "$tests"
+          python3 -m unittest "$tests" -v
+          grep -qF 'K8S_LIBS_DEPLOY_KEY' "$script"
+          grep -qF -- '-F read_only=true' "$script"
+          grep -qF 'credential_value_recorded: false' "$script"
+          grep -qF 'git ls-remote' "$script"
+          grep -qF 'secret_updated=true' "$script"
+          grep -qF 'actions_secret_updated_before_retirement: true' "$script"
+          grep -qF 'rollback_removes_only_uninstalled_new_key: true' "$script"
+          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY'
+          if grep -nE "$credential_pattern" "$script" "$tests" .github/workflows/ops-rotate-k8s-libs-deploy-key.yml; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
   rotate:
-    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
@@ -32,17 +79,6 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
           show-progress: false
-
-      - name: Validate deploy-key rotation contract
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          bash -n scripts/ops/rotate_k8s_libs_deploy_key.sh
-          grep -qF 'K8S_LIBS_DEPLOY_KEY' scripts/ops/rotate_k8s_libs_deploy_key.sh
-          grep -qF -- '-F read_only=true' scripts/ops/rotate_k8s_libs_deploy_key.sh
-          grep -qF 'credential_value_recorded: false' scripts/ops/rotate_k8s_libs_deploy_key.sh
-          grep -qF 'git ls-remote' scripts/ops/rotate_k8s_libs_deploy_key.sh
-          git diff --check
 
       - name: Configure short-lived AWS credentials for SSM orchestration
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -98,13 +134,17 @@ jobs:
             ORESoftware/k8s-libs-and-shared-defs \
             "$evidence"
           jq -e '
-            .schema_version == 1 and
+            .schema_version == 2 and
             .target_repository == "ORESoftware/k8s-cluster" and
             .source_repository == "ORESoftware/k8s-libs-and-shared-defs" and
             .read_only == true and
             .ssh_authentication_verified == true and
             .repository_read_verified == true and
             .actions_secret_name == "K8S_LIBS_DEPLOY_KEY" and
+            .actions_secret_updated_before_retirement == true and
+            .prior_matching_key_count == .retired_prior_key_count and
+            .final_matching_key_count == 1 and
+            .rollback_removes_only_uninstalled_new_key == true and
             .credential_value_recorded == false
           ' "$evidence" >/dev/null
 
@@ -160,23 +200,28 @@ jobs:
           evidence="$RUNNER_TEMP/k8s-libs-deploy-key-evidence.json"
           printf '%s' "$evidence_encoded" | base64 --decode > "$evidence"
           jq -e '
-            .schema_version == 1 and
+            .schema_version == 2 and
             .target_repository == "ORESoftware/k8s-cluster" and
             .source_repository == "ORESoftware/k8s-libs-and-shared-defs" and
             .read_only == true and
             .ssh_authentication_verified == true and
             .repository_read_verified == true and
             .actions_secret_name == "K8S_LIBS_DEPLOY_KEY" and
+            .actions_secret_updated_before_retirement == true and
+            .prior_matching_key_count == .retired_prior_key_count and
+            .final_matching_key_count == 1 and
+            .rollback_removes_only_uninstalled_new_key == true and
             .credential_value_recorded == false
           ' "$evidence" >/dev/null
 
           deploy_key_id="$(jq -r '.deploy_key_id' "$evidence")"
           fingerprint="$(jq -r '.deploy_key_fingerprint' "$evidence")"
           source_sha="$(jq -r '.source_main_sha' "$evidence")"
+          retired="$(jq -r '.retired_prior_key_count' "$evidence")"
           cat >> "$GITHUB_STEP_SUMMARY" <<MARKDOWN
           ## k8s library deploy key
 
-          Rotated and verified read-only deploy key \`$deploy_key_id\` (\`$fingerprint\`) for \`ORESoftware/k8s-libs-and-shared-defs\`. Repository read access resolved \`main\` to \`$source_sha\`; the private key was stored only as \`K8S_LIBS_DEPLOY_KEY\` in \`ORESoftware/k8s-cluster\` Actions secrets.
+          Transactionally rotated and verified read-only deploy key \`$deploy_key_id\` (\`$fingerprint\`) for \`ORESoftware/k8s-libs-and-shared-defs\`. Repository read access resolved \`main\` to \`$source_sha\`; the private key was stored only as \`K8S_LIBS_DEPLOY_KEY\` in \`ORESoftware/k8s-cluster\` Actions secrets before \`$retired\` prior contract-owned key(s) were retired.
           MARKDOWN
 
       - name: Upload non-secret rotation evidence

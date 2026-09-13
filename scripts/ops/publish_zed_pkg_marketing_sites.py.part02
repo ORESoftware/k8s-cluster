@@ -1,0 +1,288 @@
+          <span>Source-backed · {site.generated_date}</span>
+        </div>
+        <h1>{site.tagline}</h1>
+        <p>{site.description}</p>
+        <div class="hero__actions">
+          <a class="button button--primary" href="#code">Explore the integration <span aria-hidden="true">↓</span></a>
+          <a class="button button--ghost" href={site.source_url}>Inspect {site.source_label} <span aria-hidden="true">↗</span></a>
+        </div>
+        <div class="hero__meta">
+          <div><span>Client boundary</span><strong>{capabilityPhrase}</strong></div>
+          <div><span>Latest evidence</span><a href={site.commit_url}>{site.commit_sha} · {site.commit_title}</a></div>
+        </div>
+      </div>
+
+      <div class="hero__visual" aria-label={`${site.name} system overview`}>
+        <div class="orbital orbital--outer" aria-hidden="true"></div>
+        <div class="orbital orbital--inner" aria-hidden="true"></div>
+        <div class="hero-console">
+          <header>
+            <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span>system.signal</span>
+            <span class="console-status"><i></i> operational</span>
+          </header>
+          <div class="console-core">
+            <span class="console-core__halo" aria-hidden="true"></span>
+            <span class="console-core__mark">{site.monogram}</span>
+            <strong>{site.name}</strong>
+            <small>{site.source_status}</small>
+          </div>
+          <div class="console-lines" aria-hidden="true">
+            <span style="--width:88%"></span><span style="--width:66%"></span><span style="--width:78%"></span>
+          </div>
+          <footer>
+            <span>commit/{site.commit_sha}</span>
+            <span>astro/pages</span>
+          </footer>
+        </div>
+        <span class="floating-chip floating-chip--one"><i></i> typed boundary</span>
+        <span class="floating-chip floating-chip--two"><i></i> evidence first</span>
+        <span class="floating-chip floating-chip--three"><i></i> polyglot edge</span>
+      </div>
+    </section>
+
+    <section class="stats" aria-label="Platform highlights">
+      {site.stats.map((stat) => (
+        <div><strong>{stat.value}</strong><span>{stat.label}</span></div>
+      ))}
+      <div class="stats__source">
+        <span>Verified against</span>
+        <a href={site.commit_url}>{site.source_label} @ {site.commit_sha} ↗</a>
+      </div>
+    </section>
+
+    <section class="platform-section" id="platform" aria-labelledby="platform-heading">
+      <div class="section-heading section-heading--split">
+        <div>
+          <p class="section-kicker">Platform shape</p>
+          <h2 id="platform-heading">Designed around explicit boundaries.</h2>
+        </div>
+        <p>{site.description}</p>
+      </div>
+      <div class="capability-grid">
+        {site.capabilities.map((capability) => (
+          <article class="capability-card">
+            <span>{capability.number}</span>
+            <h3>{capability.title}</h3>
+            <p>{capability.text}</p>
+            <i aria-hidden="true"></i>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <section class="flow-section" aria-labelledby="flow-heading">
+      <div class="flow-intro">
+        <p class="section-kicker">Operational path</p>
+        <h2 id="flow-heading">From intent to verifiable outcome.</h2>
+        <p>The marketing layer mirrors the architecture: show the boundary, show the evidence, and make the next integration obvious.</p>
+      </div>
+      <ol class="flow-list">
+        {site.flow.map((step, index) => (
+          <li>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <div><strong>{step.label}</strong><small>{step.text}</small></div>
+            {index < site.flow.length - 1 && <i aria-hidden="true">→</i>}
+          </li>
+        ))}
+      </ol>
+    </section>
+
+    <section class="roadmap-section" id="roadmap" aria-labelledby="roadmap-heading">
+      <div class="section-heading section-heading--split">
+        <div>
+          <p class="section-kicker">Live engineering signal</p>
+          <h2 id="roadmap-heading">What the code and roadmap say now.</h2>
+        </div>
+        <p>These priorities are distilled from the connected Linear project, GitHub issues, and recent implementation history.</p>
+      </div>
+      <div class="signal-grid">
+        {site.signals.map((signal, index) => (
+          <article class="signal-card">
+            <header><span>{signal.kicker}</span><i>{signal.status}</i></header>
+            <h3>{signal.title}</h3>
+            <p>{signal.text}</p>
+            <footer><span>{String(index + 1).padStart(2, "0")}</span><i aria-hidden="true"></i></footer>
+          </article>
+        ))}
+      </div>
+    </section>
+
+    <div id="code" class="code-section">
+      <CodeExplorer
+        examples={site.examples}
+        heading={site.code_heading}
+        intro={site.code_intro}
+        note={site.languages_note}
+        sourceUrl={site.source_url}
+        sourceLabel={site.source_label}
+        sourceStatus={site.source_status}
+      />
+    </div>
+
+    <Network sites={site.network} current={site.slug} />
+
+    <section class="closing-cta">
+      <div>
+        <p class="section-kicker">Build with the real boundary</p>
+        <h2>{site.tagline}</h2>
+      </div>
+      <div>
+        <p>Start with the source, choose the client surface that actually exists, and keep product authority where it belongs.</p>
+        <a class="button button--primary" href={site.source_url}>Open {site.source_label} <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="brand brand--footer" href="/">
+      <span class="brand__mark">{site.monogram}</span>
+      <span><strong>{site.name}</strong><small>{site.eyebrow}</small></span>
+    </a>
+    <p>Astro marketing surface · source-backed on {site.generated_date} · {site.marker}</p>
+    <div><a href={site.github_url}>GitHub</a><a href="#content">Back to top ↑</a></div>
+  </footer>
+</Layout>
+'''
+
+GLOBAL_CSS = r''':root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --ink: #f8fafc;
+  --muted: #a7b0c0;
+  --line: rgba(255, 255, 255, 0.11);
+  --line-strong: rgba(255, 255, 255, 0.2);
+  --panel: rgba(10, 15, 28, 0.76);
+  --panel-solid: #0a0f1c;
+  --page: #050811;
+  --max: 1240px;
+  --radius: 24px;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; background: var(--page); }
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 50% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 38rem),
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 38%, var(--page)) 0, var(--page) 38rem);
+  overflow-x: hidden;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .23;
+  background-image:
+    linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: linear-gradient(to bottom, black, transparent 78%);
+  z-index: -1;
+}
+a { color: inherit; text-decoration: none; }
+button, select { font: inherit; }
+button, a, select { -webkit-tap-highlight-color: transparent; }
+::selection { background: color-mix(in srgb, var(--accent) 65%, white); color: #020617; }
+:focus-visible { outline: 3px solid var(--accent-2); outline-offset: 4px; }
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 100;
+  padding: .8rem 1rem;
+  border-radius: 12px;
+  background: white;
+  color: #050811;
+  transform: translateY(-180%);
+  transition: transform .2s ease;
+}
+.skip-link:focus { transform: translateY(0); }
+.ambient { position: fixed; width: 30rem; height: 30rem; border-radius: 50%; filter: blur(110px); opacity: .12; pointer-events: none; z-index: -1; }
+.ambient-one { left: -12rem; top: 34rem; background: var(--accent); }
+.ambient-two { right: -14rem; top: 72rem; background: var(--accent-2); }
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  width: min(calc(100% - 2rem), var(--max));
+  margin: 1rem auto 0;
+  min-height: 68px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 1.5rem;
+  padding: .7rem .8rem .7rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(5, 8, 17, .72);
+  box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  backdrop-filter: blur(22px) saturate(130%);
+}
+.brand { display: inline-flex; align-items: center; gap: .75rem; min-width: 0; }
+.brand__mark {
+  width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center;
+  border-radius: 13px; font-size: .72rem; font-weight: 900; letter-spacing: -.02em;
+  color: #fff; background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: inset 0 1px rgba(255,255,255,.35), 0 10px 30px color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.brand > span:last-child { min-width: 0; display: grid; gap: .05rem; }
+.brand strong { font-size: .92rem; letter-spacing: -.02em; }
+.brand small { color: var(--muted); font-size: .67rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 18rem; }
+.site-header nav { display: flex; align-items: center; gap: 1.5rem; color: #cbd5e1; font-size: .78rem; }
+.site-header nav a, .site-footer a { transition: color .2s ease; }
+.site-header nav a:hover, .site-footer a:hover { color: white; }
+.header-cta {
+  justify-self: end; padding: .7rem .95rem; border: 1px solid var(--line-strong); border-radius: 11px;
+  color: #eef2ff; font-size: .76rem; font-weight: 800; background: rgba(255,255,255,.055);
+  transition: transform .2s ease, border-color .2s ease, background .2s ease;
+}
+.header-cta:hover { transform: translateY(-2px); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+main, .site-footer { width: min(calc(100% - 2rem), var(--max)); margin-inline: auto; }
+.hero { min-height: 720px; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(420px, .95fr); gap: 4rem; align-items: center; padding: 7rem 0 5.5rem; }
+.eyebrow-row { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; color: #c9d1df; font-size: .7rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent-2) 16%, transparent), 0 0 18px var(--accent-2); }
+.eyebrow-divider { color: var(--line-strong); }
+.hero h1 { max-width: 790px; margin: 1.5rem 0 1.4rem; font-size: clamp(3.3rem, 6.6vw, 6.8rem); line-height: .94; letter-spacing: -.072em; font-weight: 850; text-wrap: balance; }
+.hero h1::first-line { color: #fff; }
+.hero__copy > p { max-width: 700px; margin: 0; color: var(--muted); font-size: clamp(1rem, 1.45vw, 1.22rem); line-height: 1.75; }
+.hero__actions { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 2rem; }
+.button { display: inline-flex; align-items: center; justify-content: center; gap: .6rem; min-height: 48px; padding: .85rem 1.1rem; border-radius: 13px; font-size: .78rem; font-weight: 850; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.button:hover { transform: translateY(-3px); }
+.button--primary { color: #050811; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 80%, white), var(--accent-2)); box-shadow: 0 18px 45px color-mix(in srgb, var(--accent) 22%, transparent); }
+.button--ghost { border: 1px solid var(--line-strong); background: rgba(255,255,255,.045); }
+.button--ghost:hover { border-color: var(--accent-2); }
+.hero__meta { margin-top: 3rem; padding-top: 1.4rem; border-top: 1px solid var(--line); display: grid; grid-template-columns: .75fr 1.25fr; gap: 2rem; }
+.hero__meta div { min-width: 0; display: grid; gap: .4rem; }
+.hero__meta span { color: #7f8a9d; font-size: .65rem; text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
+.hero__meta strong, .hero__meta a { color: #dce4f1; font-size: .78rem; line-height: 1.45; }
+.hero__meta a { text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 4px; }
+.hero__visual { position: relative; min-height: 520px; display: grid; place-items: center; isolation: isolate; }
+.hero__visual::before { content: ""; position: absolute; width: 72%; aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 25%, transparent), transparent 67%); filter: blur(12px); }
+.orbital { position: absolute; border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); border-radius: 50%; animation: orbit 22s linear infinite; }
+.orbital::before, .orbital::after { content: ""; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 18px var(--accent-2); }
+.orbital::before { left: 18%; top: 5%; }
+.orbital::after { right: 6%; bottom: 24%; }
+.orbital--outer { width: 96%; aspect-ratio: 1; transform: rotate(18deg); }
+.orbital--inner { width: 70%; aspect-ratio: 1; transform: rotate(-22deg); animation-direction: reverse; animation-duration: 16s; }
+@keyframes orbit { to { rotate: 1turn; } }
+.hero-console { position: relative; z-index: 2; width: min(88%, 450px); min-height: 410px; border: 1px solid var(--line-strong); border-radius: 26px; overflow: hidden; background: linear-gradient(155deg, rgba(19,26,44,.92), rgba(5,8,17,.95)); box-shadow: inset 0 1px rgba(255,255,255,.08), 0 50px 100px rgba(0,0,0,.45), 0 0 70px color-mix(in srgb, var(--accent) 16%, transparent); transform: perspective(900px) rotateY(-7deg) rotateX(3deg); }
+.hero-console > header, .code-panel > header { min-height: 48px; padding: .7rem .9rem; display: flex; align-items: center; gap: .8rem; border-bottom: 1px solid var(--line); color: #9ba8ba; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .65rem; }
+.window-dots { display: flex; gap: 5px; }
+.window-dots i { display: block; width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.2); }
+.window-dots i:first-child { background: #fb7185; } .window-dots i:nth-child(2) { background: #facc15; } .window-dots i:last-child { background: #4ade80; }
+.console-status { margin-left: auto; display: flex; align-items: center; gap: .35rem; color: #b8c4d6; }
+.console-status i { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 10px #4ade80; }
+.console-core { min-height: 245px; position: relative; display: grid; place-items: center; align-content: center; gap: .55rem; text-align: center; }
+.console-core__halo { position: absolute; width: 150px; height: 150px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 28%, transparent), transparent 68%); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); animation: breathe 4s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.08); opacity: .7; } }
+.console-core__mark { position: relative; width: 72px; height: 72px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent-2) 50%, white 8%); border-radius: 22px; font-size: 1.2rem; font-weight: 950; background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 38%, #10172a), color-mix(in srgb, var(--accent-2) 22%, #08101d)); box-shadow: 0 18px 60px color-mix(in srgb, var(--accent) 28%, transparent); }
+.console-core strong { position: relative; margin-top: .6rem; font-size: 1.05rem; }
+.console-core small { position: relative; max-width: 70%; color: var(--muted); font-size: .68rem; line-height: 1.4; }
+.console-lines { display: grid; gap: .5rem; padding: 0 1.2rem; }

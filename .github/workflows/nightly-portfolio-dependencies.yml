@@ -1,0 +1,202 @@
+name: Nightly portfolio dependency graph and minor updates
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/nightly-portfolio-dependencies.yml
+      - docs/nightly-portfolio-dependencies.md
+      - ops/registries/portfolio-dependency-policy.json
+      - ops/registries/portfolio-project-links.csv
+      - scripts/ops/portfolio_dependency_bot.py
+      - scripts/ops/portfolio_dependency/**
+      - scripts/ops/tests/test_portfolio_dependency_bot.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/nightly-portfolio-dependencies.yml
+      - docs/nightly-portfolio-dependencies.md
+      - ops/registries/portfolio-dependency-policy.json
+      - ops/registries/portfolio-project-links.csv
+      - scripts/ops/portfolio_dependency_bot.py
+      - scripts/ops/portfolio_dependency/**
+      - scripts/ops/tests/test_portfolio_dependency_bot.py
+  schedule:
+    - cron: '0 2 * * *'
+      timezone: America/Chicago
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Scan the portfolio, test eligible updates, open PRs, and create Linear work
+        required: true
+        default: false
+        type: boolean
+      organization:
+        description: Optional canonical GitHub organization for a bounded manual run
+        required: false
+        type: string
+      repository:
+        description: Optional owner/repository filter for a bounded manual run
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-portfolio-dependencies
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate minor-only dependency policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/nightly-portfolio-dependencies.yml
+
+      - name: Run dependency controller unit tests
+        run: python -m unittest discover -s scripts/ops/tests -p 'test_portfolio_dependency_bot.py' -v
+
+      - name: Build a credential-free policy report
+        run: |
+          set -euo pipefail
+          python scripts/ops/portfolio_dependency_bot.py \
+            --validate-only \
+            --json-output artifacts/portfolio-dependencies.json \
+            --dot-output artifacts/portfolio-dependencies.dot \
+            --markdown-output artifacts/portfolio-dependencies.md
+          cat artifacts/portfolio-dependencies.md >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Reject credential material in controller files
+        run: |
+          set -euo pipefail
+          if grep -RIE \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|lin_api_[A-Za-z0-9]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
+            scripts/ops/portfolio_dependency_bot.py \
+            scripts/ops/portfolio_dependency \
+            scripts/ops/tests/test_portfolio_dependency_bot.py \
+            docs/nightly-portfolio-dependencies.md \
+            ops/registries/portfolio-dependency-policy.json; then
+            echo 'credential-like material found in dependency-controller files' >&2
+            exit 1
+          fi
+
+      - name: Upload validation evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portfolio-dependency-validation
+          path: artifacts/portfolio-dependencies.*
+          if-no-files-found: error
+          retention-days: 14
+
+  reconcile:
+    name: Scan, bisect, test, and propose updates
+    needs: validate
+    if: >-
+      ${{
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.apply)
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: portfolio-dependency-bot
+    env:
+      PORTFOLIO_DEPENDENCY_GITHUB_TOKEN: ${{ secrets.PORTFOLIO_DEPENDENCY_GITHUB_TOKEN }}
+      LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+      GHA_INDIE_WORKER_URL: ${{ secrets.GHA_INDIE_WORKER_URL }}
+      GHA_INDIE_WORKER_AUTH: ${{ secrets.GHA_INDIE_WORKER_AUTH }}
+      DEPENDENCY_REPAIR_ENDPOINT: ${{ secrets.DEPENDENCY_REPAIR_ENDPOINT }}
+      DEPENDENCY_REPAIR_TOKEN: ${{ secrets.DEPENDENCY_REPAIR_TOKEN }}
+      MANUAL_ORGANIZATION: ${{ inputs.organization || '' }}
+      MANUAL_REPOSITORY: ${{ inputs.repository || '' }}
+    steps:
+      - name: Check out controller without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+
+      - name: Install Nix for deterministic flake.lock rewrites
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            accept-flake-config = false
+
+      - name: Install the pinned Rust toolchain for zed-cli
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+
+      - name: Build the pinned zed lockfile writer
+        shell: bash
+        run: |
+          set -euo pipefail
+          zed_root="$RUNNER_TEMP/portfolio-zed"
+          cargo install \
+            --git https://github.com/zed-pkg/zed-cli.git \
+            --rev ad6ff369a763f0fbdc3b677894655c73b23e062c \
+            --locked \
+            --root "$zed_root" \
+            zed-cli
+          echo "ZED_BIN=$zed_root/bin/zed" >>"$GITHUB_ENV"
+
+      - name: Run the nightly dependency controller
+        id: controller
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --apply
+            --json-output artifacts/portfolio-dependencies.json
+            --dot-output artifacts/portfolio-dependencies.dot
+            --markdown-output artifacts/portfolio-dependencies.md
+          )
+          if [[ -n "${MANUAL_ORGANIZATION:-}" ]]; then
+            args+=(--organization "$MANUAL_ORGANIZATION")
+          fi
+          if [[ -n "${MANUAL_REPOSITORY:-}" ]]; then
+            args+=(--repository "$MANUAL_REPOSITORY")
+          fi
+          python scripts/ops/portfolio_dependency_bot.py "${args[@]}"
+
+      - name: Publish the run summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -f artifacts/portfolio-dependencies.md ]]; then
+            cat artifacts/portfolio-dependencies.md >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Dependency controller exited before producing its report.' >>"$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload graph, decisions, PRs, and blockers
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: portfolio-dependencies-${{ github.run_id }}
+          path: artifacts/portfolio-dependencies.*
+          if-no-files-found: warn
+          retention-days: 30

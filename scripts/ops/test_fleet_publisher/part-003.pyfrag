@@ -1,0 +1,315 @@
+            print(f"notice: no manifest probe registered for {{manager}}")
+            continue
+        manager_found = []
+        for alias in ALIASES:
+            base = ROOT / "vendor" / alias
+            if base.exists():
+                manager_found.extend(candidates(base, patterns))
+        if not manager_found:
+            failures.append(f"{{manager}}: no {{patterns}} found under available pinned sources")
+            continue
+        for path in manager_found[:12]:
+            validate(path)
+        print(f"{{manager}}: validated {{len(manager_found)}} native manifest(s)")
+    if failures:
+        raise SystemExit("native dependency probe failed:\n- " + "\n- ".join(failures))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def render_unittest(test_org: str, repo_name: str, suites: Sequence[str]) -> str:
+    return f'''from __future__ import annotations
+import json
+from pathlib import Path
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class FleetManifestTest(unittest.TestCase):
+    def test_identity_and_suites(self) -> None:
+        payload = json.loads((ROOT / "test-fleet.json").read_text(encoding="utf-8"))
+        self.assertEqual(payload["test_org"], {test_org!r})
+        self.assertEqual(payload["repository"]["name"], {repo_name!r})
+        self.assertEqual(payload["repository"]["suites"], {list(suites)!r})
+
+    def test_source_pin_shape(self) -> None:
+        payload = json.loads((ROOT / "source-pins.json").read_text(encoding="utf-8"))
+        for source in payload["sources"]:
+            self.assertIn("repository", source)
+            self.assertIn("alias", source)
+            if source["exists"]:
+                self.assertEqual(len(source["commit_sha"]), 40)
+
+
+if __name__ == "__main__":
+    unittest.main()
+'''
+
+
+def render_ci_workflow() -> str:
+    return """name: Test fleet scaffold
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/verify_fleet.py
+      - run: python3 -m unittest discover -s tests -v
+"""
+
+
+def render_integration_workflow() -> str:
+    return """name: Materialize production dependencies
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_native_probe:
+        description: Validate native package metadata after source materialization
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      TEST_FLEET_READ_TOKEN: ${{ secrets.TEST_FLEET_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+      - name: Materialize pinned production sources
+        shell: bash
+        run: |
+          if [[ -z "$TEST_FLEET_READ_TOKEN" ]]; then
+            echo "::notice::TEST_FLEET_READ_TOKEN is not configured; private source materialization is skipped."
+            exit 0
+          fi
+          scripts/materialize_dependencies.sh
+      - name: Probe native package metadata
+        if: ${{ inputs.run_native_probe }}
+        shell: bash
+        run: |
+          if [[ -z "$TEST_FLEET_READ_TOKEN" ]]; then
+            exit 0
+          fi
+          python3 scripts/probe_native_packages.py
+"""
+
+
+def render_kind_fixture(repo: Mapping[str, Any]) -> tuple[str, str]:
+    kind = str(repo.get("kind", "contract"))
+    payload = {
+        "kind": kind,
+        "suites": repo.get("suites", []),
+        "platforms": repo.get("platforms", []),
+        "languages": repo.get("languages", []),
+        "services": repo.get("services", []),
+        "fixtures": repo.get("fixtures", []),
+        "external_target_required": kind in {"api", "ui", "device", "desktop", "load", "realtime", "media", "security", "chaos", "distributed"},
+    }
+    return f"tests/contracts/{slug(kind)}-matrix.json", json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def render_repo_files(
+    test_org: str,
+    production_org: str,
+    repo: Mapping[str, Any],
+    pins: Sequence[SourcePin],
+) -> tuple[dict[str, tuple[str, str]], str]:
+    contract = {
+        "renderer_version": RENDERER_VERSION,
+        "test_org": test_org,
+        "production_org": production_org,
+        "repository": repo,
+        "sources": [pin.as_json() for pin in pins],
+    }
+    canonical = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(canonical).hexdigest()
+    test_fleet = {
+        "schema_version": 1,
+        "renderer_version": RENDERER_VERSION,
+        "test_org": test_org,
+        "production_org": production_org,
+        "repository": repo,
+        "contract_digest": digest,
+    }
+    source_pins = {
+        "schema_version": 1,
+        "renderer_version": RENDERER_VERSION,
+        "sources": [pin.as_json() for pin in pins],
+    }
+    kind_path, kind_content = render_kind_fixture(repo)
+    files: dict[str, tuple[str, str]] = {
+        "README.md": (render_readme(test_org, production_org, repo, pins, digest), "100644"),
+        "AGENTS.md": ("""# Test repository agent policy
+
+Preserve source pins and test intent. Resolve conflicts semantically using the production repositories, interfaces, history, and adjacent test repositories. Do not force-push, rewrite history, delete unrelated state, bypass tests, expose secrets, or replace unavailable integrations with misleading mocks. Prefer additive changes, synthetic fixtures, reproducible test environments, and explicit skips for unavailable external targets.
+""", "100644"),
+        "test-fleet.json": (json.dumps(test_fleet, indent=2, sort_keys=True) + "\n", "100644"),
+        "source-pins.json": (json.dumps(source_pins, indent=2, sort_keys=True) + "\n", "100644"),
+        ".zpkg.toml": (render_zpkg(test_org, repo, pins), "100644"),
+        "test-plan.md": (render_test_plan(repo, pins), "100644"),
+        "scripts/verify_fleet.py": (render_verify_script(test_org, str(repo["name"]), digest), "100755"),
+        "scripts/materialize_dependencies.sh": (render_materialize_script(), "100755"),
+        "scripts/probe_native_packages.py": (render_probe_script(repo, pins), "100755"),
+        "tests/test_fleet_manifest.py": (render_unittest(test_org, str(repo["name"]), repo.get("suites", [])), "100644"),
+        kind_path: (kind_content, "100644"),
+        ".github/workflows/ci.yml": (render_ci_workflow(), "100644"),
+        ".github/workflows/integration.yml": (render_integration_workflow(), "100644"),
+        ".gitignore": (".vendor/\n__pycache__/\n.pytest_cache/\n.env\n*.local\n", "100644"),
+    }
+    available = [pin for pin in pins if pin.exists]
+    if available:
+        files[".gitmodules"] = (render_gitmodules(available), "100644")
+    return files, digest
+
+
+def render_org_dotgithub_files(test_org: str, production_org: str, repositories: Sequence[Mapping[str, Any]]) -> tuple[dict[str, tuple[str, str]], str]:
+    catalog = {
+        "schema_version": 1,
+        "test_org": test_org,
+        "production_org": production_org,
+        "repository_count": len(repositories),
+        "repositories": [
+            {
+                "name": item["name"],
+                "kind": item["kind"],
+                "purpose": item["purpose"],
+                "languages": item.get("languages", []),
+                "platforms": item.get("platforms", []),
+                "package_managers": item.get("package_managers", []),
+                "suites": item.get("suites", []),
+            }
+            for item in repositories
+        ],
+    }
+    canonical = json.dumps(catalog, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    digest = hashlib.sha256(canonical).hexdigest()
+    table = "\n".join(
+        f"| [`{item['name']}`](https://github.com/{test_org}/{item['name']}) | `{item['kind']}` | {item['purpose']} |"
+        for item in repositories
+    )
+    readme = f"""{MANAGED_MARKER} digest={digest} -->
+# {test_org} organization defaults
+
+This public `.github` repository is the catalog and reusable-governance home for the test fleet accompanying [`{production_org}`](https://github.com/{production_org}).
+
+## Fleet catalog
+
+| Repository | Kind | Purpose |
+| --- | --- | --- |
+{table}
+
+Every generated repository records immutable production source pins, declares Zed and/or git-submodule acquisition, exposes a native-package probe, and receives its bootstrap through a pull request.
+
+GitHub does not automatically inherit arbitrary workflows or `AGENTS.md` from this repository. Member repositories therefore contain local policy and may explicitly call the reusable workflows here.
+"""
+    profile = f"""# {test_org}
+
+Focused SDK, API, UI, device, database, distributed-system, interoperability, security, and performance test repositories for [`{production_org}`](https://github.com/{production_org}).
+
+See the [fleet catalog](https://github.com/{test_org}/.github) for the complete {len(repositories)}-repository matrix.
+"""
+    reusable = """name: Reusable test-fleet structural CI
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/verify_fleet.py
+      - run: python3 -m unittest discover -s tests -v
+"""
+    files = {
+        "README.md": (readme, "100644"),
+        "profile/README.md": (profile, "100644"),
+        "AGENTS.md": ("""# Organization test-fleet agent policy
+
+Treat production source pins, API contracts, rollback/convergence invariants, platform matrices, and synthetic-fixture boundaries as part of the test contract. Resolve conflicts semantically with production and test repository context. Never force-push, rewrite history, delete unrelated state, bypass checks, or expose credentials or user data.
+""", "100644"),
+        "CONTRIBUTING.md": ("""# Contributing
+
+Keep each repository focused on its declared test boundary. Link production components explicitly, pin source revisions, add native package-manager coverage where applicable, and document external services or devices required. Use synthetic fixtures and make unavailable integrations explicit skips rather than false passes.
+""", "100644"),
+        "SECURITY.md": ("""# Security policy
+
+Do not place live tokens, production data, personal conversations, biometric data, customer exports, or private media in test fixtures. Report vulnerabilities privately through the affected production repository's security channel.
+""", "100644"),
+        ".github/PULL_REQUEST_TEMPLATE.md": ("""## Test boundary
+
+- Production component(s):
+- Source revision(s):
+- Test suites changed:
+- Platforms/services exercised:
+
+## Validation
+
+- [ ] Structural fleet verification
+- [ ] Native package-manager probe, when applicable
+- [ ] API/UI/device/database integration evidence, when applicable
+- [ ] Synthetic fixtures only
+- [ ] No secrets or production data
+""", "100644"),
+        ".github/workflows/reusable-test-fleet-ci.yml": (reusable, "100644"),
+        "test-fleet-catalog.json": (json.dumps(catalog, indent=2, sort_keys=True) + "\n", "100644"),
+    }
+    return files, digest
+
+
+def validate_rendered_files(
+    test_org: str,
+    repository_name: str,
+    files: Mapping[str, tuple[str, str]],
+    digest: str,
+    *,
+    dotgithub: bool,
+) -> None:
+    required = {"README.md", "AGENTS.md"}
+    if dotgithub:
+        required |= {"profile/README.md", "test-fleet-catalog.json", ".github/workflows/reusable-test-fleet-ci.yml"}
+    else:
+        required |= {

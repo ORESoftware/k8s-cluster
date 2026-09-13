@@ -15,7 +15,7 @@ chmod 700 "$runtime_dir"
 
 cleanup_environment() {
   unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-  unset raw_pat secret_json encoded_pat credential_source ec2_home
+  unset raw_pat secret_json encoded_pat credential_source ec2_home selector_path
   unset profile_path profile_owner profile_mode profile_expected_uid profile_record
 }
 trap cleanup_environment EXIT
@@ -34,8 +34,11 @@ GH_TOKEN=''
 credential_source=''
 
 # Prefer the protected host's instance role. The credential never crosses the
-# GitHub-hosted runner or appears in SSM command arguments.
-if command -v aws >/dev/null 2>&1; then
+# GitHub-hosted runner or appears in SSM command arguments. The protected JSON
+# may contain nested or differently named credential fields, so use the trusted
+# selector from the exact source revision and require owner-admin membership in
+# every organization in the fixed 36-organization fleet.
+if command -v aws >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
   secret_json="$(
     aws secretsmanager get-secret-value \
       --region "$publisher_region" \
@@ -44,26 +47,20 @@ if command -v aws >/dev/null 2>&1; then
       --output text 2>/dev/null || true
   )"
   if test -n "$secret_json"; then
-    raw_pat="$(
-      printf '%s' "$secret_json" | python3 -c '
-import json
-import sys
-try:
-    payload = json.load(sys.stdin)
-except (json.JSONDecodeError, OSError):
-    raise SystemExit(0)
-value = payload.get("GH_PAT")
-if isinstance(value, str) and value and not any(ch.isspace() for ch in value):
-    sys.stdout.write(value)
-' 2>/dev/null || true
-    )"
-    if valid_token "$raw_pat"; then
-      GH_TOKEN="$raw_pat"
-      credential_source=aws-secrets-manager
+    selector_path="$source_root/scripts/ops/select_org_dotgithub_owner_token.py"
+    if test -f "$selector_path"; then
+      raw_pat="$(
+        printf '%s' "$secret_json" |
+          python3 "$selector_path" 2>/dev/null || true
+      )"
+      if valid_token "$raw_pat"; then
+        GH_TOKEN="$raw_pat"
+        credential_source=aws-secrets-manager-validated-owner-admin-fleet
+      fi
     fi
   fi
 fi
-unset raw_pat secret_json
+unset raw_pat secret_json selector_path
 
 # Fall back to the External-Secrets-reconciled Kubernetes Secret on the
 # protected host. Only fixed kubeconfig paths and the fixed secret/key are read.
@@ -213,8 +210,10 @@ stage=trusted-source
 required_paths=(
   scripts/ops/bootstrap_org_dotgithub_repositories.py
   scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+  scripts/ops/select_org_dotgithub_owner_token.py
   tests/ops/test_bootstrap_org_dotgithub_repositories.py
   tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py
+  tests/ops/test_bootstrap_org_dotgithub_repositories_owner_token_selector.py
 )
 for relative_path in "${required_paths[@]}"; do
   test -f "$source_root/$relative_path"
@@ -224,7 +223,8 @@ printf 'publisher-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha" >&2
 stage=publisher-validation
 python3 -m py_compile \
   "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories.py" \
-  "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py"
+  "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py" \
+  "$source_root/scripts/ops/select_org_dotgithub_owner_token.py"
 python3 -m unittest discover \
   -s "$source_root/tests/ops" \
   -p 'test_bootstrap_org_dotgithub_repositories*.py' \

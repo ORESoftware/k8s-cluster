@@ -1,0 +1,23 @@
+name: Shared Auth introspection validator contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-shared-auth-introspection-exact-head.yml
+      - .github/workflows/ops-shared-auth-introspection-exact-head-contract.yml
+      - docs/operations/shared-auth-introspection-exact-head-validation.md
+      - scripts/tests/shared-auth-introspection-exact-head-contract-test.sh
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.2.2
+      - name: Verify the trusted workflow boundary
+        shell: bash
+        run: bash scripts/tests/shared-auth-introspection-exact-head-contract-test.sh

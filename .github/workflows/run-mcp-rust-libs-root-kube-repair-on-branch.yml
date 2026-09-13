@@ -1,0 +1,68 @@
+name: Run canonical MCP publisher boundary repair on exact branch
+
+on:
+  push:
+    branches:
+      - agent/fix-mcp-publisher-root-kube-boundary-20260731
+    paths:
+      - .github/workflows/run-mcp-rust-libs-root-kube-repair-on-branch.yml
+      - .github/workflows/repair-mcp-rust-libs-root-kube-boundary.yml
+      - .github/workflows/ops-publish-mcp-rust-libs.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run-mcp-rust-libs-root-kube-repair-on-exact-branch
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.ref_name == 'agent/fix-mcp-publisher-root-kube-boundary-20260731'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/fix-mcp-publisher-root-kube-boundary-20260731
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Execute the reviewed deterministic repair program
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/repair-mcp-rust-libs-root-kube-boundary.yml').read_text(encoding='utf-8')
+          begin_marker = "          python3 - <<'PYTHON'\n"
+          end_marker = "          PYTHON\n\n          bash -n /tmp/mcp-rust-libs-publisher-outer.sh"
+          begin = workflow.index(begin_marker) + len(begin_marker)
+          end = workflow.index(end_marker, begin)
+          program = textwrap.dedent(workflow[begin:end])
+          exec(compile(program, 'reviewed-mcp-publisher-boundary-repair.py', 'exec'), {})
+          PYTHON
+
+          bash -n /tmp/mcp-rust-libs-publisher-outer.sh
+          bash -n /tmp/mcp-rust-libs-publisher-remote.sh
+          python3 -m py_compile /tmp/mcp-rust-libs-publisher-api.py
+          git diff --check -- .github/workflows/ops-publish-mcp-rust-libs.yml
+
+      - name: Commit the exact repaired publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .github/workflows/ops-publish-mcp-rust-libs.yml; then
+            echo 'publisher boundary already repaired'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ops-publish-mcp-rust-libs.yml
+          git commit -m 'fix(ops): split root Kubernetes read from unprivileged MCP publication'
+          git push origin HEAD:agent/fix-mcp-publisher-root-kube-boundary-20260731
+
+# Manual retrigger after current-main semantic synchronization.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -20,6 +20,21 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readRustSourceTree(relativeDirectory: string): Promise<string> {
+  const directory = resolve(repoRoot, relativeDirectory);
+  const sourceFiles = (await readdir(directory, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.rs'))
+    .map((entry) => entry.name)
+    .sort();
+
+  return (
+    await Promise.all(sourceFiles.map((file) => readFile(resolve(directory, file), 'utf8')))
+  ).join('\n');
+}
+
+// rest-api-rs was split out of a single main.rs. Read the whole module directory
+// so a symbol that moves between modules is still seen, and separately assert
+// that main.rs registers each module so a file cannot be silently orphaned.
 async function readRestApiSource(): Promise<string> {
   const modules = [
     'api_docs',
@@ -48,12 +63,7 @@ async function readRestApiSource(): Promise<string> {
       `rest-api-rs main.rs must register ${moduleName}.rs`,
     );
   }
-  const moduleSources = await Promise.all(
-    modules.map((moduleName) =>
-      readRepoFile(`remote/deployments/rest-api-rs/src/${moduleName}.rs`),
-    ),
-  );
-  return [main, ...moduleSources].join('\n');
+  return readRustSourceTree('remote/deployments/rest-api-rs/src');
 }
 
 test('rest api publishes queued handoffs while preserving direct worker dispatch', async () => {
@@ -72,42 +82,57 @@ test('rest api publishes queued handoffs while preserving direct worker dispatch
   // breaks the build here instead of silently producing the wrong subject.
   assert.match(cargo, /dd-nats-subject-defs\s*=\s*\{\s*path/);
   assert.match(
-  natsEventsSource,
-  /use dd_nats_subject_defs::cdc_table_filter_subject;/,
-);
-assert.match(
-  natsSharedSource,
-  /use dd_nats_subject_defs::\{[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
-);
-assert.match(server, /use dd_shared_interfaces::AgentTaskQueueMessage/);
-assert.match(server, /let message = AgentTaskQueueMessage \{/);
-assert.match(server, /dispatch_mode: Some\(dispatch_mode\)/);
-assert.match(server, /container_pool_dispatch: Some\(container_pool_dispatch\)/);
-assert.match(server, /thread_title: Option<String>/);
-assert.match(server, /fn nats_task_subject/);
-assert.match(server, /thread_tasks_subject\(thread_id\)/);
-assert.match(server, /fn nats_task_stream_name/);
-assert.match(server, /DD_REMOTE_TASKS_STREAM_NAME/);
-assert.match(server, /THREAD_TASKS_WILDCARD/);
-assert.match(server, /ensure_nats_task_stream/);
-assert.match(server, /jetstream_publish_task/);
-assert.match(server, /RetentionPolicy::WorkQueue/);
-assert.match(server, /fn nats_wakeup_subject/);
-assert.match(server, /ORCHESTRATOR_WAKEUP_SUBJECT/);
-assert.match(server, /fn nats_event_subject/);
-assert.match(server, /RUNTIME_EVENTS_SUBJECT/);
-assert.match(
-  server,
-  /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"lambda_functions",?\s*\)/,
-);
-assert.match(
-  server,
-  /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"known_git_repos",?\s*\)/,
-);
-assert.match(
-  server,
-  /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"agent_remote_dev_events",?\s*\)/,
-);
+    natsEventsSource,
+    /use dd_nats_subject_defs::cdc_table_filter_subject;/,
+  );
+  assert.match(
+    natsSharedSource,
+    /use dd_nats_subject_defs::\{[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
+  );
+  // Whichever module ends up owning them, every generated subject symbol must
+  // still be referenced somewhere in the crate.
+  assert.match(server, /use dd_nats_subject_defs::/);
+  for (const generatedSymbol of [
+    'cdc_table_filter_subject',
+    'thread_tasks_subject',
+    'DD_REMOTE_TASKS_STREAM_NAME',
+    'GIT_REPOS_CHANGES_SUBJECT',
+    'LAMBDAS_FUNCTIONS_SUBJECT',
+    'ORCHESTRATOR_WAKEUP_SUBJECT',
+    'RUNTIME_EVENTS_SUBJECT',
+    'THREAD_TASKS_WILDCARD',
+  ]) {
+    assert.match(server, new RegExp(`\\b${generatedSymbol}\\b`));
+  }
+  assert.match(server, /use dd_shared_interfaces::AgentTaskQueueMessage/);
+  assert.match(server, /let message = AgentTaskQueueMessage \{/);
+  assert.match(server, /dispatch_mode: Some\(dispatch_mode\)/);
+  assert.match(server, /container_pool_dispatch: Some\(container_pool_dispatch\)/);
+  assert.match(server, /thread_title: Option<String>/);
+  assert.match(server, /fn nats_task_subject/);
+  assert.match(server, /thread_tasks_subject\(thread_id\)/);
+  assert.match(server, /fn nats_task_stream_name/);
+  assert.match(server, /DD_REMOTE_TASKS_STREAM_NAME/);
+  assert.match(server, /THREAD_TASKS_WILDCARD/);
+  assert.match(server, /ensure_nats_task_stream/);
+  assert.match(server, /jetstream_publish_task/);
+  assert.match(server, /RetentionPolicy::WorkQueue/);
+  assert.match(server, /fn nats_wakeup_subject/);
+  assert.match(server, /ORCHESTRATOR_WAKEUP_SUBJECT/);
+  assert.match(server, /fn nats_event_subject/);
+  assert.match(server, /RUNTIME_EVENTS_SUBJECT/);
+  assert.match(
+    server,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"lambda_functions",?\s*\)/,
+  );
+  assert.match(
+    server,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"known_git_repos",?\s*\)/,
+  );
+  assert.match(
+    server,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"agent_remote_dev_events",?\s*\)/,
+  );
   assert.match(server, /persist_task_status_event/);
   assert.match(server, /publish_task_event_to_nats/);
   assert.match(server, /queued-dispatch-accepted/);
