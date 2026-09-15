@@ -7,20 +7,29 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import {
+  CANDIDATE_ACTION_SET,
+  EVIDENCE_DISPOSITION_SET,
+  EXCLUSION_REASON_SET,
+  MAX_IMPLEMENTATION_REFERENCES,
+  MAX_LINEAR_ISSUES,
+  QUARANTINE_REASON_SET,
+  REAPER_SCHEMA_VERSION,
+  assertReconciliationReceiptContract,
+} from './reaper-contracts.mjs';
+import {
   EXPECTED_SPACE_ID,
   EXPECTED_SPACE_NAME,
   PLAN_SCHEMA_VERSION,
   computePlanId,
 } from './import-plan.mjs';
 
-export const RECEIPT_SCHEMA_VERSION = 1;
+export const RECEIPT_SCHEMA_VERSION = REAPER_SCHEMA_VERSION;
 
 const ROLLING_WINDOW_MILLISECONDS = 15 * 24 * 60 * 60 * 1000;
 const PLAN_ID_PATTERN = /^google-chat-import-plan:[0-9a-f]{24}$/;
 const CANDIDATE_KEY_PATTERN = new RegExp(
   `^google-chat:${EXPECTED_SPACE_ID}:[0-9a-f]{24}$`,
 );
-const MAX_IMPLEMENTATION_REFERENCES = 32;
 
 const TOP_LEVEL_KEYS = new Set(['schemaVersion', 'planId', 'entries']);
 const ENTRY_KEYS = new Set([
@@ -30,20 +39,6 @@ const ENTRY_KEYS = new Set([
   'pullRequests',
   'defaultBranchCommits',
   'reasonCode',
-]);
-const EXCLUSION_REASONS = new Set([
-  'non_actionable',
-  'private_or_personal',
-  'credential_only',
-  'duplicate_refinement',
-  'invalid_prompt',
-  'out_of_scope',
-]);
-const QUARANTINE_REASONS = new Set([
-  'sensitive_content',
-  'ambiguous_scope',
-  'unsafe_automation',
-  'requires_human_review',
 ]);
 
 function usage() {
@@ -205,11 +200,7 @@ function validatePlan(plan) {
       throw new Error(`duplicate plan candidateKey ${candidate.candidateKey}`);
     }
     seen.add(candidate.candidateKey);
-    if (
-      !['create', 'comment-existing', 'manual-review', 'skip-non-actionable'].includes(
-        candidate.action,
-      )
-    ) {
+    if (!CANDIDATE_ACTION_SET.has(candidate.action)) {
       throw new Error(`unsupported plan action for ${candidate.candidateKey}`);
     }
     if (!Number.isSafeInteger(candidate.messageCount) || candidate.messageCount < 1) {
@@ -254,7 +245,7 @@ function normalizeEvidence(evidence, planId, candidateKeys) {
     if (entries.has(raw.candidateKey)) {
       throw new Error(`duplicate evidence entry for ${raw.candidateKey}`);
     }
-    if (!['covered', 'excluded', 'quarantined'].includes(raw.disposition)) {
+    if (!EVIDENCE_DISPOSITION_SET.has(raw.disposition)) {
       throw new Error(`${label}.disposition is invalid`);
     }
 
@@ -262,7 +253,7 @@ function normalizeEvidence(evidence, planId, candidateKeys) {
       raw.linearIssues,
       `${label}.linearIssues`,
       /^[A-Z][A-Z0-9]+-[1-9][0-9]*$/,
-      2,
+      MAX_LINEAR_ISSUES,
     );
     const pullRequests = uniqueStrings(
       raw.pullRequests,
@@ -288,7 +279,7 @@ function normalizeEvidence(evidence, planId, candidateKeys) {
       if (linearIssues.length || pullRequests.length || defaultBranchCommits.length) {
         throw new Error(`${label} cannot attach implementation evidence to ${raw.disposition} content`);
       }
-      const allowedReasons = raw.disposition === 'excluded' ? EXCLUSION_REASONS : QUARANTINE_REASONS;
+      const allowedReasons = raw.disposition === 'excluded' ? EXCLUSION_REASON_SET : QUARANTINE_REASON_SET;
       if (!reasonCode || !allowedReasons.has(reasonCode)) {
         throw new Error(`${label}.reasonCode is not allowed for ${raw.disposition}`);
       }
@@ -402,10 +393,12 @@ export function buildReconciliationReceipt(plan, evidence) {
     counts,
     dispositions,
   };
-  return {
+  const receipt = {
     ...receiptCore,
     receiptId: `google-chat-reconciliation-receipt:${sha256(stableStringify(receiptCore)).slice(0, 24)}`,
   };
+  assertReconciliationReceiptContract(receipt);
+  return receipt;
 }
 
 async function readJson(pathname) {

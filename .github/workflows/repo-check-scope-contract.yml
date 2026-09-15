@@ -7,6 +7,7 @@ on:
       - .github/workflows/repo-check-scope-contract.yml
       - scripts/ci/classify_repo_check_scope.py
       - scripts/ci/test_classify_repo_check_scope.py
+      - scripts/ci/test_google_chat_reaper_scope.py
   push:
     branches: [main]
     paths:
@@ -14,6 +15,7 @@ on:
       - .github/workflows/repo-check-scope-contract.yml
       - scripts/ci/classify_repo_check_scope.py
       - scripts/ci/test_classify_repo_check_scope.py
+      - scripts/ci/test_google_chat_reaper_scope.py
   workflow_dispatch:
 
 permissions:
@@ -39,8 +41,10 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             scripts/ci/classify_repo_check_scope.py \
-            scripts/ci/test_classify_repo_check_scope.py
+            scripts/ci/test_classify_repo_check_scope.py \
+            scripts/ci/test_google_chat_reaper_scope.py
           python3 scripts/ci/test_classify_repo_check_scope.py -v
+          python3 scripts/ci/test_google_chat_reaper_scope.py -v
 
       - name: Reject whitespace errors and conflict markers
         shell: bash
@@ -51,4 +55,5 @@ jobs:
             .github/workflows/repo-checks.yml \
             .github/workflows/repo-check-scope-contract.yml \
             scripts/ci/classify_repo_check_scope.py \
-            scripts/ci/test_classify_repo_check_scope.py
+            scripts/ci/test_classify_repo_check_scope.py \
+            scripts/ci/test_google_chat_reaper_scope.py
