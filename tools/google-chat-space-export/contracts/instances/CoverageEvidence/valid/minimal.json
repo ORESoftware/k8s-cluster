@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "planId": "google-chat-import-plan:aaaaaaaaaaaaaaaaaaaaaaaa",
+  "entries": [
+    {
+      "candidateKey": "google-chat:AAQAoHKdzvI:bbbbbbbbbbbbbbbbbbbbbbbb",
+      "disposition": "covered",
+      "linearIssues": ["DEN-3473"],
+      "pullRequests": ["ORESoftware/k8s-cluster#1539"],
+      "defaultBranchCommits": []
+    },
+    {
+      "candidateKey": "google-chat:AAQAoHKdzvI:cccccccccccccccccccccccc",
+      "disposition": "excluded",
+      "reasonCode": "privacy_sensitive"
+    }
+  ]
+}
