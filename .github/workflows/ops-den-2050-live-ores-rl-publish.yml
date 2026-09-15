@@ -1,0 +1,198 @@
+name: DEN-2050 live ores-rl Zed publication
+run-name: DEN-2050 live ores-rl Zed publication @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2050-live-ores-rl-publish.yml
+      - scripts/ops/publish_den2050_ores_rl.py
+      - scripts/ops/test_publish_den2050_ores_rl.py
+      - scripts/ops/den2050_registry_token_via_ssm.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-2050-live-ores-rl-publish.yml
+      - scripts/ops/publish_den2050_ores_rl.py
+      - scripts/ops/test_publish_den2050_ores_rl.py
+      - scripts/ops/den2050_registry_token_via_ssm.py
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: den-2050-live-ores-rl-zed-publication
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-den-2050-live-ores-rl-publish.yml
+
+      - name: Validate bounded publisher contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          publisher=scripts/ops/publish_den2050_ores_rl.py
+          tests=scripts/ops/test_publish_den2050_ores_rl.py
+          helper=scripts/ops/den2050_registry_token_via_ssm.py
+          python3 -m py_compile "$publisher" "$tests" "$helper"
+          python3 -m unittest "$tests" -v
+          python3 "$publisher" --help >/dev/null
+          for needle in \
+            'ores-rate-limit/ores-rl-lib-core' \
+            'cfc81aef5d1de60ff6c46798745a6b3f970bc39d' \
+            'v0.1.0' \
+            '--install-mode' \
+            '--frozen'; do
+            grep -qF -- "$needle" "$publisher"
+          done
+          grep -qF 'create-token' "$helper"
+          grep -qF 'revoke-token' "$helper"
+          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY|zpkg_[A-Za-z0-9]{20,}'
+          if grep -nE "$credential_pattern" "$publisher" "$tests" .github/workflows/ops-den-2050-live-ores-rl-publish.yml; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          if grep -nE 'push.*--force|tag.*-f|git (checkout|reset|stash)' "$publisher" "$tests"; then
+            echo 'destructive or prohibited git path detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ISSUE_NUMBER: 1220
+      ZED_REGISTRY: https://registry.zpkg.net
+      ZED_CLI_URL: https://github.com/zed-pkg/zed-cli/releases/download/v0.2.3/zed-x86_64-unknown-linux-gnu.tar.gz
+      ZED_CLI_SHA256: b8f81a8e4943cbaeb47153386819a911dcf02666a8709c5bd013e4f35b1ba1b9
+      INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+    steps:
+      - name: Check out exact trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Install checksum-verified Zed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/zed-dist"
+          curl --fail --location --proto '=https' --tlsv1.2 \
+            --retry 5 --retry-all-errors \
+            --output "$RUNNER_TEMP/zed.tar.gz" "$ZED_CLI_URL"
+          printf '%s  %s\n' "$ZED_CLI_SHA256" "$RUNNER_TEMP/zed.tar.gz" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/zed.tar.gz" -C "$RUNNER_TEMP/zed-dist"
+          zed_bin="$(find "$RUNNER_TEMP/zed-dist" -type f -name zed -perm -u+x -print -quit)"
+          test -n "$zed_bin"
+          printf 'ZED_BIN=%s\n' "$zed_bin" >> "$GITHUB_ENV"
+          "$zed_bin" --version
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: den2050-ores-rl-zed-publish
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Mint encrypted short-lived Zed registry token inside the cluster
+        id: zed_token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          token_name="den2050-ores-rl-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          token_file="$RUNNER_TEMP/den-2050-ores-rl-zed-token"
+          python3 scripts/ops/den2050_registry_token_via_ssm.py mint \
+            --instance-id "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --token-name "$token_name" \
+            --token-file "$token_file"
+          token="$(cat "$token_file")"
+          echo "::add-mask::${token}"
+          {
+            echo "token_name=${token_name}"
+            echo "token_file=${token_file}"
+            echo "minted=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish and resolve exact ores-rl-lib-core package
+        shell: bash
+        env:
+          REGISTRY_TOKEN_FILE: ${{ steps.zed_token.outputs.token_file }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/publish_den2050_ores_rl.py \
+            --registry-token-file "$REGISTRY_TOKEN_FILE" \
+            --zed-bin "$ZED_BIN" \
+            --registry "$ZED_REGISTRY" \
+            --work-dir "$RUNNER_TEMP/den-2050-ores-rl-live-zed" \
+            --evidence-out "$RUNNER_TEMP/den-2050-ores-rl-evidence.json" \
+            --lock-out "$RUNNER_TEMP/den-2050-ores-rl.zpkg.lock"
+
+      - name: Upload non-secret package evidence
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-2050-ores-rl-zed-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/den-2050-ores-rl-evidence.json
+            ${{ runner.temp }}/den-2050-ores-rl.zpkg.lock
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish bounded completion receipt
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${ISSUE_NUMBER}/comments" \
+            -f body="DEN2050_ORES_RL_ZED_COMPLETE protocol=1 commit=cfc81aef5d1de60ff6c46798745a6b3f970bc39d version=0.1.0 registry=${ZED_REGISTRY}" >/dev/null
+
+      - name: Revoke short-lived Zed registry token
+        if: always() && steps.zed_token.outputs.minted == 'true'
+        shell: bash
+        env:
+          TOKEN_NAME: ${{ steps.zed_token.outputs.token_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/den2050_registry_token_via_ssm.py revoke \
+            --instance-id "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --token-name "$TOKEN_NAME"
+
+      - name: Destroy credential material
+        if: always()
+        shell: bash
+        run: |
+          shred -u "$RUNNER_TEMP/den-2050-ores-rl-zed-token" 2>/dev/null || true
