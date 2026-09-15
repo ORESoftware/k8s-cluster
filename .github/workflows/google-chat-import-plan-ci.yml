@@ -5,6 +5,7 @@ on:
     paths:
       - tools/google-chat-space-export/import-plan.mjs
       - tools/google-chat-space-export/test/import-plan.test.mjs
+      - tools/google-chat-space-export/test/import-plan-classification.test.mjs
       - tools/google-chat-space-export/import-project-map.example.json
       - tools/google-chat-space-export/README.md
       - .github/workflows/google-chat-import-plan-ci.yml
@@ -14,6 +15,7 @@ on:
     paths:
       - tools/google-chat-space-export/import-plan.mjs
       - tools/google-chat-space-export/test/import-plan.test.mjs
+      - tools/google-chat-space-export/test/import-plan-classification.test.mjs
       - tools/google-chat-space-export/import-project-map.example.json
       - tools/google-chat-space-export/README.md
       - .github/workflows/google-chat-import-plan-ci.yml
@@ -38,7 +40,7 @@ jobs:
         run: node --check tools/google-chat-space-export/import-plan.mjs
 
       - name: Run deterministic import-planner tests
-        run: node --test tools/google-chat-space-export/test/import-plan.test.mjs
+        run: node --test tools/google-chat-space-export/test/import-plan*.test.mjs
 
       - name: Verify planner never contains Linear write credentials or endpoints
         shell: bash

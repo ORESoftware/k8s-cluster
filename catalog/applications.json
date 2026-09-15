@@ -2392,6 +2392,41 @@
           "application_namespace": "argocd",
           "destination": {
             "name": "",
+            "namespace": "pmap",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/pmap.applications.yaml",
+          "project": "pmap",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s",
+              "repo_url": "git@github.com:premarital-asset-protection/pmap-infra.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-pmap"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
             "namespace": "default",
             "server": "https://kubernetes.default.svc"
           },
@@ -3643,6 +3678,42 @@
             "namespace": "zed",
             "server": "https://kubernetes.default.svc"
           },
+          "document_index": 2,
+          "manifest_path": "remote/argocd/apps/zed.applications.yaml",
+          "project": "zed",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s/overlays/k8s-cluster",
+              "repo_url": "https://github.com/zed-pkg/zed-infra.git",
+              "target_revision": "a48040bbb18cf3d6455ff986918825db84a45e26"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": false,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "FailOnSharedResource=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-zed-account-registry-candidate"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "zed",
+            "server": "https://kubernetes.default.svc"
+          },
           "document_index": 0,
           "manifest_path": "remote/argocd/apps/zed.applications.yaml",
           "project": "zed",
@@ -4689,8 +4760,8 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 141,
-    "applications": 99,
+    "application_documents": 143,
+    "applications": 101,
     "default_destination_namespace_declarations": 55,
     "default_project_declarations": 106,
     "duplicate_names": 22,

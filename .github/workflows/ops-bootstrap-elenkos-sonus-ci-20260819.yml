@@ -2,12 +2,6 @@ name: Bootstrap Elenkos repositories with protected PAT (one shot)
 run-name: Publish and verify the exact Elenkos fleet from ${{ github.sha }}
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/ops-bootstrap-elenkos-sonus-ci-20260819.yml
-      - scripts/ops/patch_elenkos_empty_repository_409_20260820.py
-      - scripts/ops/recover_elenkos_partial_bootstrap_20260820.py
   workflow_dispatch:
 
 permissions:
