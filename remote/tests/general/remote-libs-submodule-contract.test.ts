@@ -136,7 +136,7 @@ test('tracked Rust and Gleam consumers resolve to the canonical generated packag
   }
 });
 
-test('CI and repository documentation preserve recursive pinned checkout semantics', () => {
+test('CI and repository documentation preserve recursive exact-pin App checkout semantics', () => {
   const repoRoot = findRepoRoot();
   const repoChecks = readFileSync(resolve(repoRoot, '.github/workflows/repo-checks.yml'), 'utf8');
   const helper = readFileSync(resolve(repoRoot, 'scripts/ci/init-submodules-with-report.sh'), 'utf8');
@@ -145,12 +145,21 @@ test('CI and repository documentation preserve recursive pinned checkout semanti
 
   const staticJob = repoChecks.slice(
     repoChecks.indexOf('  static-contracts:'),
-    repoChecks.indexOf('  backend-contracts:'),
+    repoChecks.indexOf('  fiducia-secret-contract:'),
   );
-  assert.match(staticJob, /K8S_LIBS_DEPLOY_KEY:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /ssh-key:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
-  assert.match(staticJob, /SUBMODULE_AUTH_MODE:\s*ssh/);
-  assert.match(staticJob, /init-submodules-with-report\.sh remote\/libs/);
+  assert.doesNotMatch(staticJob, /K8S_LIBS_DEPLOY_KEY/);
+  assert.doesNotMatch(staticJob, /ssh-key:/);
+  assert.match(
+    staticJob,
+    /actions\/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42/,
+  );
+  assert.match(staticJob, /owner:\s*ORESoftware/);
+  assert.match(staticJob, /repositories:\s*k8s-libs-and-shared-defs/);
+  assert.match(staticJob, /permission-contents:\s*read/);
+  assert.match(staticJob, /git ls-files --stage -- remote\/libs/);
+  assert.match(staticJob, /ref:\s*\$\{\{ steps\.remote-libs-pin\.outputs\.sha \}\}/);
+  assert.match(staticJob, /submodules:\s*recursive/);
+  assert.match(staticJob, /git -C remote\/libs rev-parse HEAD/);
   assert.doesNotMatch(staticJob, /REMOTE_DEV_GH_PAT/);
 
   assert.match(helper, /git "\$\{git_config\[@\]\}" submodule update --init --recursive --depth 1 -- "\$path"/);
@@ -158,9 +167,11 @@ test('CI and repository documentation preserve recursive pinned checkout semanti
   assert.match(helper, /git -C "\$path" rev-parse HEAD/);
   assert.match(helper, /pinned-commit-mismatch/);
 
-  assert.match(docs, /K8S_LIBS_DEPLOY_KEY/);
-  assert.match(docs, /init-submodules-with-report\.sh remote\/libs/);
+  assert.match(docs, /K8S_SUBMODULE_APP_ID/);
+  assert.match(docs, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+  assert.match(docs, /actions\/create-github-app-token/);
   assert.match(docs, /git submodule update --init --recursive remote\/libs/);
+  assert.doesNotMatch(docs, /K8S_LIBS_DEPLOY_KEY/);
   assert.doesNotMatch(docs, /repo-checks\.yml` uses the[\s\S]{0,80}REMOTE_DEV_GH_PAT/);
   assert.match(
     submodules,

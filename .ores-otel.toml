@@ -1,0 +1,24 @@
+# Cluster/GitOps control-plane telemetry policy. Credentials and collector URLs stay in env/secrets.
+version = 1
+
+[server]
+enabled = true
+service_name = "ores-k8s-cluster"
+
+[server.logging]
+enabled = true
+level = "info"
+console = true
+auto_send = false
+
+[server.tracing]
+enabled = true
+sample_ratio = 1.0
+propagators = ["tracecontext", "baggage"]
+
+[server.metrics]
+enabled = true
+
+[server.exporter]
+protocol = "otlp_grpc"
+endpoint_env = "ORES_K8S_OTEL_ENDPOINT"
