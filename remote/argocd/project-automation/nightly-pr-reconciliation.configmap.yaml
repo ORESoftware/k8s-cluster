@@ -1,0 +1,329 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-nightly-pr-reconciliation-bootstrap
+  namespace: default
+  labels:
+    app.kubernetes.io/name: dd-nightly-pr-reconciliation
+    app.kubernetes.io/component: scheduler
+    app.kubernetes.io/part-of: project-automation
+  annotations:
+    denman.linear.app/issue: DEN-801
+    denman.linear.app/linear-reconciliation-issue: DEN-2876
+data:
+  bootstrap.mjs: |-
+    import { createSign } from 'node:crypto';
+    import { mkdir, writeFile } from 'node:fs/promises';
+    import { dirname, resolve } from 'node:path';
+    import { pathToFileURL } from 'node:url';
+
+    const GITHUB_API = 'https://api.github.com';
+    const SOURCE_OWNER = 'ORESoftware';
+    const SOURCE_REPOSITORY = 'project-registry';
+    const WORKDIR = '/tmp/project-registry';
+    const MAX_GITHUB_RESPONSE_BYTES = 4 * 1024 * 1024;
+    const SOURCE_FILES = Object.freeze([
+      'src/nightly-pr-reconciliation.mjs',
+      'src/nightly-linear-reconciliation.mjs',
+      'src/nightly-linear-reconciliation-policy.mjs',
+      'src/nightly-linear-reconciliation-stage.mjs',
+      'src/nightly-org-maintenance-dispatch.mjs',
+      'src/nightly-org-maintenance-plan.mjs',
+      'src/nightly-org-maintenance-policy.mjs',
+      'src/project-automation-policy.mjs',
+      'registry/nightly-pr-reconciliation.json',
+      'registry/nightly-linear-reconciliation.json',
+      'registry/nightly-interdependency.json',
+      'registry/nightly-org-maintenance.json',
+      'registry/project-automation.json',
+      'registry/project-contexts.json'
+    ]);
+
+    function requiredEnvironment(name) {
+      const value = process.env[name];
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new Error(`${name} is required`);
+      }
+      return value.trim();
+    }
+
+    function log(event, details = {}) {
+      process.stderr.write(`${JSON.stringify({
+        schema: 'dd.log.v1',
+        level: 'info',
+        service: 'nightly-governed-reconciliation-bootstrap',
+        event,
+        ...details
+      })}\n`);
+    }
+
+    function base64Url(value) {
+      return Buffer.from(value)
+        .toString('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+    }
+
+    function createGitHubAppJwt(appId, rawPrivateKey, now = Date.now()) {
+      const issuedAt = Math.floor(now / 1000) - 60;
+      const header = base64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+      const payload = base64Url(JSON.stringify({
+        iat: issuedAt,
+        exp: issuedAt + 9 * 60,
+        iss: appId
+      }));
+      const unsigned = `${header}.${payload}`;
+      const signer = createSign('RSA-SHA256');
+      signer.update(unsigned);
+      signer.end();
+      const privateKey = rawPrivateKey.includes('\\n')
+        ? rawPrivateKey.replace(/\\n/g, '\n')
+        : rawPrivateKey;
+      const signature = signer
+        .sign(privateKey)
+        .toString('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+      return `${unsigned}.${signature}`;
+    }
+
+    async function boundedJson(response, label) {
+      const text = await response.text();
+      if (Buffer.byteLength(text, 'utf8') > MAX_GITHUB_RESPONSE_BYTES) {
+        throw new Error(`${label} exceeded the response size limit`);
+      }
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error(`${label} returned invalid JSON`);
+      }
+    }
+
+    async function githubRequest(path, {
+      token,
+      method = 'GET',
+      body,
+      expectedStatuses = [200]
+    }) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20_000);
+      let response;
+      try {
+        response = await fetch(`${GITHUB_API}${path}`, {
+          method,
+          redirect: 'error',
+          signal: controller.signal,
+          headers: {
+            accept: 'application/vnd.github+json',
+            authorization: `Bearer ${token}`,
+            'content-type': 'application/json',
+            'user-agent': 'oresoftware-nightly-governed-reconciliation/1',
+            'x-github-api-version': '2022-11-28'
+          },
+          body: body === undefined ? undefined : JSON.stringify(body)
+        });
+      } catch (error) {
+        if (error?.name === 'AbortError') throw new Error(`GitHub request timed out for ${path}`);
+        throw new Error(`GitHub request failed for ${path}: ${error.message}`);
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (!expectedStatuses.includes(response.status)) {
+        await response.text();
+        throw new Error(`GitHub rejected ${method} ${path} with HTTP ${response.status}`);
+      }
+      return boundedJson(response, `GitHub ${method} ${path}`);
+    }
+
+    async function findInstallation(jwt, login) {
+      const expected = login.toLowerCase();
+      for (let page = 1; page <= 20; page += 1) {
+        const installations = await githubRequest(`/app/installations?per_page=100&page=${page}`, {
+          token: jwt
+        });
+        if (!Array.isArray(installations)) {
+          throw new Error('GitHub App installation response must be an array');
+        }
+        const installation = installations.find((candidate) =>
+          candidate?.account?.login?.toLowerCase() === expected
+        );
+        if (installation) return installation;
+        if (installations.length < 100) break;
+      }
+      throw new Error(`GitHub App is not installed for ${login}`);
+    }
+
+    async function mintRepositoryToken(jwt, installationId) {
+      const response = await githubRequest(`/app/installations/${installationId}/access_tokens`, {
+        token: jwt,
+        method: 'POST',
+        expectedStatuses: [201],
+        body: {
+          repositories: [SOURCE_REPOSITORY],
+          permissions: { contents: 'read' }
+        }
+      });
+      if (typeof response?.token !== 'string' || response.token.length < 20) {
+        throw new Error('GitHub returned an invalid installation token');
+      }
+      return response.token;
+    }
+
+    function encodedRepositoryPath(path) {
+      return path.split('/').map(encodeURIComponent).join('/');
+    }
+
+    async function fetchSourceFile(token, revision, path) {
+      const response = await githubRequest(
+        `/repos/${SOURCE_OWNER}/${SOURCE_REPOSITORY}/contents/${encodedRepositoryPath(path)}?ref=${revision}`,
+        { token }
+      );
+      if (response?.type !== 'file' || response?.encoding !== 'base64' || typeof response.content !== 'string') {
+        throw new Error(`GitHub returned an invalid source file for ${path}`);
+      }
+      const content = Buffer.from(response.content.replace(/\n/g, ''), 'base64');
+      const destination = resolve(WORKDIR, path);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, content, { mode: 0o400 });
+    }
+
+    async function loadRuntimes(revision, installationToken) {
+      const commit = await githubRequest(
+        `/repos/${SOURCE_OWNER}/${SOURCE_REPOSITORY}/commits/${revision}`,
+        { token: installationToken }
+      );
+      if (commit?.sha !== revision) {
+        throw new Error(`project-registry revision mismatch: expected ${revision}`);
+      }
+      await Promise.all(SOURCE_FILES.map((path) => fetchSourceFile(installationToken, revision, path)));
+      const [pullRequests, linear] = await Promise.all([
+        import(pathToFileURL(resolve(WORKDIR, 'src/nightly-pr-reconciliation.mjs')).href),
+        import(pathToFileURL(resolve(WORKDIR, 'src/nightly-linear-reconciliation.mjs')).href)
+      ]);
+      return { pullRequests, linear };
+    }
+
+    function coordinatorCompatiblePlan(plan, queueTaskType) {
+      return {
+        ...plan,
+        jobs: plan.jobs.map((job) => ({
+          ...job,
+          request: {
+            ...job.request,
+            task_type: queueTaskType,
+            payload: {
+              ...job.request.payload,
+              logical_task_type: job.request.task_type,
+              coordinator_task_type: queueTaskType
+            }
+          }
+        }))
+      };
+    }
+
+    async function main() {
+      const appId = requiredEnvironment('GITHUB_APP_ID');
+      const privateKey = requiredEnvironment('GITHUB_APP_PRIVATE_KEY');
+      const revision = requiredEnvironment('PROJECT_REGISTRY_REVISION');
+      const coordinatorEndpoint = requiredEnvironment('AI_AGENT_COORDINATOR_URL');
+      const coordinatorToken = requiredEnvironment('COORDINATOR_API_TOKEN');
+      const queueTaskType = requiredEnvironment('COORDINATOR_TASK_TYPE');
+      if (!/^[0-9a-f]{40}$/.test(revision)) {
+        throw new Error('PROJECT_REGISTRY_REVISION must be an exact lowercase 40-character commit SHA');
+      }
+      if (queueTaskType !== 'nightly_org_maintenance') {
+        throw new Error('COORDINATOR_TASK_TYPE must use the deployed nightly_org_maintenance worker lane');
+      }
+
+      const jwt = createGitHubAppJwt(appId, privateKey);
+      const installation = await findInstallation(jwt, SOURCE_OWNER);
+      const installationToken = await mintRepositoryToken(jwt, installation.id);
+      log('source_installation_verified', { owner: SOURCE_OWNER, installation_id: installation.id });
+
+      const runtime = await loadRuntimes(revision, installationToken);
+      log('source_revision_verified', {
+        repository: `${SOURCE_OWNER}/${SOURCE_REPOSITORY}`,
+        revision
+      });
+
+      const [pullRequestPolicy, linearPolicy] = await Promise.all([
+        runtime.pullRequests.loadNightlyPrReconciliationPolicy(),
+        runtime.linear.loadNightlyLinearReconciliationPolicy()
+      ]);
+      const pullRequestPlan = coordinatorCompatiblePlan(
+        runtime.pullRequests.createNightlyPrReconciliationPlan(pullRequestPolicy),
+        queueTaskType
+      );
+      const linearPlan = coordinatorCompatiblePlan(
+        runtime.linear.createNightlyLinearReconciliationPlan(linearPolicy),
+        queueTaskType
+      );
+      log('reconciliation_dispatch_started', {
+        schedule_date: pullRequestPlan.scheduleDate,
+        organization_units: pullRequestPlan.jobs.length,
+        linear_workspace_jobs: linearPlan.jobs.length,
+        pull_request_logical_task_type: pullRequestPolicy.execution.taskType,
+        linear_logical_task_type: linearPolicy.execution.taskType,
+        coordinator_task_type: queueTaskType,
+        required_linear_agents: linearPolicy.execution.agents,
+        linear_draft_status: linearPolicy.statusMapping.denman.draft,
+        linear_pending_status: linearPolicy.statusMapping.denman.pending,
+        readiness_threshold_exclusive: pullRequestPolicy.readiness.probabilityThresholdExclusive,
+        minimum_continuous_open_hours: pullRequestPolicy.readiness.minimumContinuousOpenHours
+      });
+
+      const [pullRequests, linear] = await Promise.all([
+        runtime.pullRequests.dispatchNightlyPrReconciliationPlan(
+          pullRequestPlan,
+          pullRequestPolicy,
+          {
+            endpoint: coordinatorEndpoint,
+            token: coordinatorToken,
+            onProgress(event) {
+              log('pull_request_coordinator_progress', { progress: event });
+            }
+          }
+        ),
+        runtime.linear.dispatchNightlyLinearReconciliationPlan(
+          linearPlan,
+          linearPolicy,
+          {
+            endpoint: coordinatorEndpoint,
+            token: coordinatorToken,
+            onProgress(event) {
+              log('linear_coordinator_progress', { progress: event });
+            }
+          }
+        )
+      ]);
+      const result = {
+        schema_version: 'nightly_governed_reconciliation_run.v1',
+        schedule_date: pullRequestPlan.scheduleDate,
+        source_revision: revision,
+        coordinator_task_type: queueTaskType,
+        required_linear_agents: linearPolicy.execution.agents,
+        linear_status_mapping: linearPolicy.statusMapping.denman,
+        readiness_threshold_exclusive: pullRequestPolicy.readiness.probabilityThresholdExclusive,
+        minimum_continuous_open_hours: pullRequestPolicy.readiness.minimumContinuousOpenHours,
+        successful: pullRequests.successful && linear.successful,
+        pull_requests: pullRequests,
+        linear
+      };
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return result.successful ? 0 : 1;
+    }
+
+    try {
+      process.exitCode = await main();
+    } catch (error) {
+      process.stderr.write(`${JSON.stringify({
+        schema: 'dd.log.v1',
+        level: 'error',
+        service: 'nightly-governed-reconciliation-bootstrap',
+        event: 'fatal',
+        error: error instanceof Error ? error.message : 'unknown fatal error'
+      })}\n`);
+      process.exitCode = 2;
+    }
