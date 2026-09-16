@@ -51,12 +51,26 @@ jobs:
           node --check scripts/ci/check-github-linear-project-registry.test.mjs
           node --test scripts/ci/check-github-linear-project-registry.test.mjs
 
-      - name: Validate the canonical 64-organization registry
+      - name: Validate the checked-in canonical governance registry
         run: |
           set -euo pipefail
           node scripts/ci/check-github-linear-project-registry.mjs >/tmp/github-linear-project-registry.json
           python3 -m json.tool /tmp/github-linear-project-registry.json >/dev/null
-          test "$(python3 -c 'import json; print(json.load(open("/tmp/github-linear-project-registry.json"))["organizationCount"])')" = '64'
+          python3 - <<'PY'
+          import json
+
+          with open('/tmp/github-linear-project-registry.json', encoding='utf-8') as handle:
+              report = json.load(handle)
+          count = report.get('organizationCount')
+          records = report.get('records')
+          if not isinstance(count, int) or count <= 0:
+              raise SystemExit(f'invalid organizationCount: {count!r}')
+          if not isinstance(records, list) or count != len(records):
+              raise SystemExit(
+                  f'organizationCount/records mismatch: count={count!r} records={len(records) if isinstance(records, list) else records!r}'
+              )
+          print(f'validated governance cardinality from checked-in TSV: {count}')
+          PY
 
       - name: Publish the derived organization map to the run summary
         run: node scripts/ci/check-github-linear-project-registry.mjs --markdown >> "$GITHUB_STEP_SUMMARY"

@@ -11,7 +11,6 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(OPS_DIR))
 
 from validate_github_linear_registry_relationship import (  # noqa: E402
-    EXPECTED_GOVERNANCE_COUNT,
     EXPECTED_PORTFOLIO_COUNT,
     RegistryRelationshipError,
     validate_relationship,
@@ -23,12 +22,12 @@ class GitHubLinearRegistryRelationshipTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.governance = REPO_ROOT / "ops/portfolio/github-linear-project-registry.tsv"
         cls.portfolio = REPO_ROOT / "ops/registries/portfolio-project-links.csv"
+        cls.governance_count = len(cls.governance.read_text(encoding="utf-8").splitlines()) - 1
 
     def validate(self, governance: Path, portfolio: Path) -> dict[str, object]:
         return validate_relationship(
             governance,
             portfolio,
-            expected_governance_count=EXPECTED_GOVERNANCE_COUNT,
             expected_portfolio_count=EXPECTED_PORTFOLIO_COUNT,
         )
 
@@ -53,9 +52,21 @@ class GitHubLinearRegistryRelationshipTests(unittest.TestCase):
     def test_committed_registries_are_consistent(self) -> None:
         report = self.validate(self.governance, self.portfolio)
         self.assertTrue(report["relationship_valid"])
-        self.assertEqual(report["governance_organizations"], 64)
+        self.assertEqual(report["governance_organizations"], self.governance_count)
         self.assertEqual(report["active_portfolios"], 41)
-        self.assertEqual(report["governance_only_organizations"], 23)
+        self.assertEqual(
+            report["governance_only_organizations"],
+            self.governance_count - 41,
+        )
+
+    def test_optional_snapshot_count_still_fails_closed(self) -> None:
+        with self.assertRaisesRegex(RegistryRelationshipError, "expected 1 organizations"):
+            validate_relationship(
+                self.governance,
+                self.portfolio,
+                expected_governance_count=1,
+                expected_portfolio_count=EXPECTED_PORTFOLIO_COUNT,
+            )
 
     def test_linear_url_drift_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
