@@ -13,6 +13,7 @@ CONTROL_FILES = {
     ".github/workflows/repo-checks.yml",
     "scripts/ci/classify_repo_check_scope.py",
     "scripts/ci/test_classify_repo_check_scope.py",
+    "scripts/ci/test_gcp_fleet_scope.py",
     "scripts/ci/test_google_chat_reaper_scope.py",
 }
 
@@ -70,6 +71,7 @@ GOVERNANCE_PREFIXES = (
 CREDENTIAL_FREE_CONTRACT_FILES = {
     ".github/workflows/athleto-ui-tests.yml",
     ".github/workflows/ephemeral-google-chat-relay-cleanup.yml",
+    ".github/workflows/gcp-fleet-target-contract.yml",
     ".github/workflows/google-chat-daily-reconciliation.yml",
     ".github/workflows/google-chat-relay-contract.yml",
     ".github/workflows/browser-mcp-external-smoke.yml",
@@ -82,6 +84,7 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     "catalog/namespaces/migration-manifest.json",
     "config/ci/k8s-submodule-github-app-allowlist.json",
     "docs/namespace-migration-manifest.md",
+    "remote/gcp/fleet-rust-service-target.schema.json",
     "remote/tests/general/browser-mcp-public-e2e.test.ts",
     "remote/tests/general/github-app-submodule-token.test.ts",
     "remote/tests/general/private-submodule-ci-contract.test.ts",
@@ -90,6 +93,7 @@ CREDENTIAL_FREE_CONTRACT_FILES = {
     "remote/tests/ui/lib/live-targets.mjs",
     "scripts/ops/repository_rename_alias_guard.py",
     "scripts/ops/test_repository_rename_alias_guard.py",
+    "tests/gcp_fleet_target_contract_test.py",
     "tests/namespace_migration_workflow_test.py",
     "tools/google-chat-space-export/REAPER_HARDENING.md",
     "tools/google-chat-space-export/reaper-contracts.mjs",
