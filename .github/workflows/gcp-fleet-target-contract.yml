@@ -54,13 +54,13 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           cp artifacts/namespace-inventory.json /tmp/namespace-inventory.before.json
+          trap 'mv /tmp/namespace-inventory.before.json artifacts/namespace-inventory.json' EXIT
           python3 tools/namespace_migration.py inventory --root . --format json > artifacts/namespace-inventory.json
           python3 tools/namespace_manifest.py render --root . > /tmp/migration-manifest.generated.json
           cmp -s /tmp/migration-manifest.generated.json catalog/namespaces/migration-manifest.json || {
             echo 'catalog/namespaces/migration-manifest.json is stale; regenerate it with the canonical namespace tools' >&2
             exit 1
           }
-          mv /tmp/namespace-inventory.before.json artifacts/namespace-inventory.json
           python3 tools/namespace_manifest.py check --root .
 
       - name: Reject whitespace errors and conflict markers
