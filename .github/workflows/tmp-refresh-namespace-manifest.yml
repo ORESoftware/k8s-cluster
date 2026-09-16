@@ -33,6 +33,10 @@ jobs:
           python3 tools/namespace_migration.py inventory --root . --format json > artifacts/namespace-inventory.json
           python3 tools/namespace_manifest.py render --root . > catalog/namespaces/migration-manifest.json
           python3 tools/namespace_manifest.py check --root .
+          # The inventory is a run-local intermediate for this repair. Restore
+          # the reviewed checked-in copy so the automated commit can contain
+          # exactly the canonical generated manifest and nothing else.
+          git checkout -- artifacts/namespace-inventory.json
 
       - name: Commit only canonical generated manifest when stale
         shell: bash
