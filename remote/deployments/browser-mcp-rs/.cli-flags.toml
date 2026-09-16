@@ -9,11 +9,12 @@
 # defaults, or — critically — which values are credentials. This file makes the
 # contract explicit and gives the CLI the same surface as the env.
 #
-# CREDENTIALS HAVE NO DEFAULTS
+# CREDENTIALS ARE ENVIRONMENT-ONLY
 # ----------------------------
 # A well-known "dummy" credential is still a credential an attacker can present.
-# Secret flags are optional in generated types and must be supplied by the
-# operator. The Rust process independently refuses to start without the private
+# Credentials are deliberately absent from public argv/help/completions and
+# must be supplied through the runtime secret environment. The Rust process
+# independently refuses to start without the private
 # worker secret, or with public bearer auth enabled but no bearer secret.
 #
 # CHATGPT OAUTH CONTRACT
@@ -27,6 +28,15 @@
 [help]
 url = "https://github.com/ORESoftware/k8s-cluster/blob/main/docs/browser-mcp-chatgpt-2026-07-25.md"
 columns = ["options", "env", "type", "default", "description"]
+
+[env]
+# flags-2-env must leave credential delivery to the environment/secret store.
+# Startup validation still requires these values; none receives a default.
+ignore = [
+  "SERVER_AUTH_SECRET",
+  "BROWSER_MCP_OAUTH_SIGNING_SECRET",
+  "BROWSER_MCP_OAUTH_OPERATOR_SECRET",
+]
 
 # ---- listener -------------------------------------------------------------
 
@@ -62,12 +72,6 @@ type = "integer"
 default = 65000
 help = "Per-call worker timeout in ms. The server clamps this to 120000."
 
-[flags.worker_auth_secret]
-env = "SERVER_AUTH_SECRET"
-aliases = ["worker-auth-secret", "server-auth-secret"]
-type = "string"
-help = "Required shared secret sent as X-Server-Auth to the worker. CREDENTIAL - supply it from dd-agent-secrets or a local secret source."
-
 # ---- public MCP surface gate ---------------------------------------------
 
 [flags.require_auth]
@@ -83,18 +87,6 @@ aliases = ["public-base-urls", "oauth-issuers", "resources"]
 type = "string"
 default = "https://98.90.186.114/browser-mcp,https://hello.95-217-171-250.sslip.io/browser-mcp"
 help = "Comma-separated trusted public HTTPS MCP endpoint URLs. Host matching selects the OAuth issuer/resource and audience."
-
-[flags.oauth_signing_secret]
-env = "BROWSER_MCP_OAUTH_SIGNING_SECRET"
-aliases = ["oauth-signing-secret"]
-type = "string"
-help = "Required 32+ byte HMAC key for signed client IDs, authorization requests, and access tokens. CREDENTIAL - supply from dd-browser-mcp-rs-secrets."
-
-[flags.oauth_operator_secret]
-env = "BROWSER_MCP_OAUTH_OPERATOR_SECRET"
-aliases = ["oauth-operator-secret"]
-type = "string"
-help = "Required 20+ byte human authorization secret used by the OAuth consent page. CREDENTIAL - supply from dd-browser-mcp-rs-secrets."
 
 [flags.oauth_redis_url]
 env = "BROWSER_MCP_OAUTH_REDIS_URL"

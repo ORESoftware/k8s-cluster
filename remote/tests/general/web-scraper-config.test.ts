@@ -204,3 +204,115 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
   assert.match(runtimeReadme, /revalidates redirect and browser subresource targets/);
   assert.match(runtimeReadme, /`linkedom`/);
 });
+
+test('scraper CLI contract, secrets, supervisor limits, and pod hardening stay aligned', async () => {
+  const flags = await readRepoFile('remote/deployments/web-scraper-service/.cli-flags.toml');
+  const deployment = await readRepoFile(
+    'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml',
+  );
+
+  function flagBlock(name: string): string {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = flags.match(new RegExp(`\\[flags\\.${escaped}\\]([\\s\\S]*?)(?=\\n\\[|$)`));
+    assert.ok(match, `missing scraper flag contract block: ${name}`);
+    return match[1];
+  }
+
+  for (const [name, env, type, defaultValue] of [
+    ['core-port', 'SCRAPER_CORE_PORT', 'integer', '18097'],
+    ['core-startup-timeout-ms', 'SCRAPER_CORE_STARTUP_TIMEOUT_MS', 'integer', '30000'],
+    ['supervisor-max-body-bytes', 'SCRAPER_SUPERVISOR_MAX_BODY_BYTES', 'integer', '1048576'],
+    ['supervisor-max-core-response-bytes', 'SCRAPER_SUPERVISOR_MAX_CORE_RESPONSE_BYTES', 'integer', '4194304'],
+    ['default-strategy', 'SCRAPER_DEFAULT_STRATEGY', 'string', 'auto'],
+    ['max-concurrent', 'SCRAPER_MAX_CONCURRENT', 'integer', '4'],
+    ['max-timeout-ms', 'SCRAPER_MAX_TIMEOUT_MS', 'integer', '60000'],
+    ['dns-timeout-ms', 'SCRAPER_DNS_TIMEOUT_MS', 'integer', '5000'],
+    ['max-redirects', 'SCRAPER_MAX_REDIRECTS', 'integer', '5'],
+    ['respect-robots', 'SCRAPER_RESPECT_ROBOTS', 'bool', 'true'],
+    ['min-origin-delay-ms', 'SCRAPER_MIN_ORIGIN_DELAY_MS', 'integer', '1000'],
+    ['allow-private-networks', 'SCRAPER_ALLOW_PRIVATE_NETWORKS', 'bool', 'false'],
+    ['allow-sensitive-headers', 'SCRAPER_ALLOW_SENSITIVE_HEADERS', 'bool', 'false'],
+    ['allow-url-credentials', 'SCRAPER_ALLOW_URL_CREDENTIALS', 'bool', 'false'],
+    ['apify-timeout-ms', 'APIFY_FALLBACK_TIMEOUT_MS', 'integer', '90000'],
+    ['apify-max-request-retries', 'APIFY_MAX_REQUEST_RETRIES', 'integer', '2'],
+    ['apify-max-concurrent', 'APIFY_FALLBACK_MAX_CONCURRENT', 'integer', '1'],
+    ['apify-min-delay-ms', 'APIFY_FALLBACK_MIN_DELAY_MS', 'integer', '1000'],
+    ['apify-failure-cooldown-ms', 'APIFY_FALLBACK_FAILURE_COOLDOWN_MS', 'integer', '60000'],
+    ['apify-max-total-charge-usd', 'APIFY_MAX_TOTAL_CHARGE_USD', 'double', '0.25'],
+    ['apify-max-response-bytes', 'APIFY_MAX_RESPONSE_BYTES', 'integer', '2000000'],
+  ] as const) {
+    const block = flagBlock(name);
+    assert.match(block, new RegExp(`env\\s*=\\s*"${env}"`), `${name} env mapping drifted`);
+    assert.match(block, new RegExp(`type\\s*=\\s*"${type}"`), `${name} type drifted`);
+    assert.match(
+      block,
+      new RegExp(`default\\s*=\\s*(?:"${defaultValue.replace('.', '\\.')}"|${defaultValue.replace('.', '\\.')})`),
+      `${name} default drifted`,
+    );
+    assert.match(
+      deployment,
+      new RegExp(`name:\\s*${env}[\\s\\S]*?value:\\s*['"]?${defaultValue.replace('.', '\\.')}['"]?`),
+      `${env} deployment value drifted from the CLI contract`,
+    );
+  }
+
+  const fallbackBlock = flagBlock('apify-fallback');
+  assert.match(fallbackBlock, /env\s*=\s*"APIFY_FALLBACK_ENABLED"/);
+  assert.match(fallbackBlock, /default\s*=\s*"false"/);
+  assert.match(
+    deployment,
+    /name:\s*APIFY_FALLBACK_ENABLED[\s\S]*?value:\s*'true'/,
+    'production may opt into fallback, but the reusable CLI contract must remain disabled by default',
+  );
+  assert.match(deployment, /name:\s*APIFY_FALLBACK_FOR_EXPLICIT_STRATEGY[\s\S]*?value:\s*'false'/);
+  assert.match(
+    deployment,
+    /name:\s*APIFY_TOKEN[\s\S]*?secretKeyRef:[\s\S]*?key:\s*APIFY_TOKEN[\s\S]*?optional:\s*true/,
+  );
+
+  for (const secretFlag of [
+    'apify-token',
+    'server-auth-secret',
+    'browserless-token',
+    'browserless-content-url',
+    'captcha-api-key',
+    'proxies',
+    'browser-agent-secrets-file',
+  ]) {
+    assert.doesNotMatch(
+      flags,
+      new RegExp(`\\[flags\\.${secretFlag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`),
+      `${secretFlag} must remain secret-env-only rather than argv-exposed`,
+    );
+  }
+
+  for (const dangerousFlag of [
+    'allow-robots-override',
+    'allow-private-networks',
+    'allow-sensitive-headers',
+    'allow-url-credentials',
+    'allow-unauthenticated',
+    'captcha-autosolve',
+    'allow-captcha-solving',
+    'apify-explicit-strategies',
+  ]) {
+    const block = flagBlock(dangerousFlag);
+    assert.match(block, /default\s*=\s*"false"/, `${dangerousFlag} must default fail-closed`);
+    assert.match(block, /requires_tty\s*=\s*true/, `${dangerousFlag} must retain its operator TTY gate`);
+  }
+
+  assert.match(deployment, /runAsUser:\s*1000/);
+  assert.match(deployment, /runAsGroup:\s*1000/);
+  assert.match(deployment, /fsGroup:\s*1000/);
+  assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
+  assert.match(deployment, /privileged:\s*false/);
+  assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
+  assert.match(deployment, /runAsNonRoot:\s*true/);
+  assert.match(deployment, /capabilities:[\s\S]*?drop:[\s\S]*?- ALL/);
+  assert.match(deployment, /seccompProfile:[\s\S]*?type:\s*RuntimeDefault/);
+  assert.match(deployment, /volumeMounts:[\s\S]*?- name:\s*tmp[\s\S]*?mountPath:\s*\/tmp/);
+  assert.match(deployment, /volumes:[\s\S]*?- name:\s*tmp[\s\S]*?emptyDir:[\s\S]*?sizeLimit:\s*2Gi/);
+  assert.match(deployment, /PLAYWRIGHT_BROWSERS_PATH[\s\S]*?value:\s*\/ms-playwright/);
+  assert.match(deployment, /PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD[\s\S]*?value:\s*'1'/);
+  assert.match(deployment, /PUPPETEER_SKIP_DOWNLOAD[\s\S]*?value:\s*'true'/);
+});

@@ -1,0 +1,6 @@
+{
+  "url": "https://example.com/",
+  "strategy": "auto",
+  "includeText": true,
+  "respectRobots": true
+}

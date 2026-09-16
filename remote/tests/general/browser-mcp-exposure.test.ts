@@ -382,19 +382,24 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
   );
 });
 
-test('browser-mcp CLI contract has no credential or implicit navigation defaults', () => {
+test('browser-mcp credentials stay environment-only and navigation has no implicit default', () => {
   const flags = readFileSync(resolve(repoRoot, CLI_FLAGS), 'utf8');
 
   assert.doesNotMatch(flags, /dummy-.*credential/);
   assert.match(flags, /\[flags\.require_auth\][\s\S]*?default = "true"/);
-  for (const section of [
-    'worker_auth_secret',
-    'oauth_signing_secret',
-    'oauth_operator_secret',
-    'allowed_domains',
+  const environment = flags.match(/\[env\]([\s\S]*?)(?=\n\[|$)/)?.[1];
+  assert.ok(environment, 'missing environment-only credential policy');
+  assert.match(environment, /ignore\s*=\s*\[/);
+  for (const secret of [
+    'SERVER_AUTH_SECRET',
+    'BROWSER_MCP_OAUTH_SIGNING_SECRET',
+    'BROWSER_MCP_OAUTH_OPERATOR_SECRET',
   ]) {
-    const body = flags.match(new RegExp(`\\[flags\\.${section}\\]([\\s\\S]*?)(?=\\n\\[|$)`))?.[1];
-    assert.ok(body, `missing ${section} flag`);
-    assert.doesNotMatch(body, /\ndefault\s*=/, `${section} must not have an implicit default`);
+    assert.ok(environment.includes(`"${secret}"`), `${secret} must stay environment-only`);
+    assert.ok(!flags.includes(`env = "${secret}"`), `${secret} must not have a public flag`);
   }
+  assert.doesNotMatch(flags, /\[flags\.(?:worker_auth_secret|oauth_signing_secret|oauth_operator_secret)\]/);
+  const allowedDomains = flags.match(/\[flags\.allowed_domains\]([\s\S]*?)(?=\n\[|$)/)?.[1];
+  assert.ok(allowedDomains, 'missing allowed_domains flag');
+  assert.doesNotMatch(allowedDomains, /\ndefault\s*=/, 'navigation must not have an implicit default');
 });
