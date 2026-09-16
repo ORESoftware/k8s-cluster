@@ -1,0 +1,76 @@
+name: GCP fleet target contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/gcp-fleet-target-contract.yml
+      - remote/gcp/fleet-rust-service-target.schema.json
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_gcp_fleet_scope.py
+      - tests/gcp_fleet_target_contract_test.py
+      - catalog/namespaces/migration-manifest.json
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/gcp-fleet-target-contract.yml
+      - remote/gcp/fleet-rust-service-target.schema.json
+      - scripts/ci/classify_repo_check_scope.py
+      - scripts/ci/test_gcp_fleet_scope.py
+      - tests/gcp_fleet_target_contract_test.py
+      - catalog/namespaces/migration-manifest.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gcp-fleet-target-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compile and run GCP contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ci/classify_repo_check_scope.py \
+            scripts/ci/test_gcp_fleet_scope.py \
+            tests/gcp_fleet_target_contract_test.py
+          python3 scripts/ci/test_gcp_fleet_scope.py -v
+          python3 tests/gcp_fleet_target_contract_test.py -v
+
+      - name: Validate generated namespace manifest stays canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp artifacts/namespace-inventory.json /tmp/namespace-inventory.before.json
+          python3 tools/namespace_migration.py inventory --root . --format json > artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py render --root . > /tmp/migration-manifest.generated.json
+          cmp -s /tmp/migration-manifest.generated.json catalog/namespaces/migration-manifest.json || {
+            echo 'catalog/namespaces/migration-manifest.json is stale; regenerate it with the canonical namespace tools' >&2
+            exit 1
+          }
+          mv /tmp/namespace-inventory.before.json artifacts/namespace-inventory.json
+          python3 tools/namespace_manifest.py check --root .
+
+      - name: Reject whitespace errors and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          ! git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/gcp-fleet-target-contract.yml \
+            remote/gcp/fleet-rust-service-target.schema.json \
+            scripts/ci/classify_repo_check_scope.py \
+            scripts/ci/test_gcp_fleet_scope.py \
+            tests/gcp_fleet_target_contract_test.py
