@@ -47,12 +47,7 @@ impl AdversarialApi {
     }
 
     fn lease_lost(message: &str) -> DurableWorkerError {
-        DurableWorkerError::LeaseLost(ProtocolError::new(
-            "lease_lost",
-            message,
-            Some(409),
-            false,
-        ))
+        DurableWorkerError::LeaseLost(ProtocolError::new("lease_lost", message, Some(409), false))
     }
 
     fn protocol_error(message: &str) -> DurableWorkerError {
@@ -406,7 +401,9 @@ async fn cancellation_is_idempotent_and_pre_cancelled_waiters_complete_immediate
     cancellation.cancel();
     cancellation.cancel();
     assert!(cancellation.is_cancelled());
-    let error = cancellation.check().expect_err("cancelled lease must fail check");
+    let error = cancellation
+        .check()
+        .expect_err("cancelled lease must fail check");
     assert!(error.is_lease_lost());
     tokio::time::timeout(Duration::from_millis(25), cancellation.cancelled())
         .await
