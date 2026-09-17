@@ -2,7 +2,7 @@ use crate::client::{
     Assignment, Client, JsonObject, Lease, StepCompletion, StepFailure, StepOutput, WorkerPoll,
     WorkerRegistration,
 };
-use crate::error::{DurableWorkerError, ProtocolError};
+use crate::error::{DurableWorkerError, ProtocolError, TransportError};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -10,7 +10,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
+use tokio::time::Instant;
 
 pub type WorkerFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, DurableWorkerError>> + Send + 'a>>;
@@ -144,6 +145,11 @@ impl WorkerConfig {
                 "worker TTL and heartbeat intervals must be positive".to_owned(),
             ));
         }
+        if self.worker_heartbeat_ms >= self.ttl_ms {
+            return Err(DurableWorkerError::Configuration(
+                "worker heartbeat interval must be shorter than the worker TTL".to_owned(),
+            ));
+        }
         Ok(())
     }
 }
@@ -170,8 +176,11 @@ impl Default for WorkerConfig {
 pub struct WorkerSummary {
     pub accepted: usize,
     pub completed: usize,
+    /// Handler failures that the durable control plane acknowledged.
     pub failed: usize,
     pub lease_lost: usize,
+    /// Terminal mutations or lifecycle operations whose durable result is unknown.
+    pub protocol_errors: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -354,6 +363,7 @@ impl Worker {
             Arc::clone(&self.api),
             self.config.worker_id.clone(),
             self.config.worker_heartbeat_ms,
+            self.config.ttl_ms,
             heartbeat_stop.clone(),
             shutdown.clone(),
         ));
@@ -384,17 +394,23 @@ impl Worker {
                     continue;
                 }
 
-                let poll = self
-                    .api
-                    .poll_worker(&self.config.worker_id, self.config.poll_wait_ms)
-                    .await?;
+                let poll = tokio::select! {
+                    _ = shutdown.cancelled() => continue,
+                    result = self.api.poll_worker(
+                        &self.config.worker_id,
+                        self.config.poll_wait_ms,
+                    ) => result?,
+                };
                 let Some(assignment) = poll.assignment else {
                     let delay = if poll.retry_after_ms == 0 {
                         self.config.idle_sleep_ms
                     } else {
                         poll.retry_after_ms
                     };
-                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                    tokio::select! {
+                        _ = shutdown.cancelled() => continue,
+                        _ = tokio::time::sleep(Duration::from_millis(delay)) => {},
+                    }
                     continue;
                 };
 
@@ -416,10 +432,14 @@ impl Worker {
         let heartbeat_result = heartbeat_handle
             .await
             .map_err(|error| DurableWorkerError::WorkerJoin(error.to_string()))?;
-        let _ = self
-            .api
-            .heartbeat_worker(&self.config.worker_id, Some(true))
-            .await;
+        let final_heartbeat_budget =
+            heartbeat_request_timeout(Duration::from_millis(self.config.worker_heartbeat_ms));
+        let _ = tokio::time::timeout(
+            final_heartbeat_budget,
+            self.api
+                .heartbeat_worker(&self.config.worker_id, Some(true)),
+        )
+        .await;
 
         run_result?;
         heartbeat_result?;
@@ -431,22 +451,42 @@ async fn worker_heartbeat_loop(
     api: Arc<dyn WorkerApi>,
     worker_id: String,
     interval_ms: u64,
+    ttl_ms: u64,
     stop: Cancellation,
     shutdown: Cancellation,
 ) -> Result<(), DurableWorkerError> {
     let interval = Duration::from_millis(interval_ms);
+    let ttl = Duration::from_millis(ttl_ms);
+    let request_timeout = heartbeat_request_timeout(interval);
+    let mut last_success = Instant::now();
     loop {
         tokio::select! {
             _ = stop.cancelled() => break,
             _ = tokio::time::sleep(interval) => {
-                if let Err(error) = api
-                    .heartbeat_worker(&worker_id, Some(shutdown.is_cancelled()))
-                    .await
-                {
-                    if !error.retryable() {
-                        shutdown.cancel();
-                        return Err(error);
+                let heartbeat = tokio::select! {
+                    biased;
+                    _ = stop.cancelled() => break,
+                    result = tokio::time::timeout(
+                        request_timeout,
+                        api.heartbeat_worker(&worker_id, Some(shutdown.is_cancelled())),
+                    ) => result,
+                };
+                match heartbeat {
+                    Ok(Ok(())) => last_success = Instant::now(),
+                    Ok(Err(error)) => {
+                        if !error.retryable() || last_success.elapsed() >= ttl {
+                            shutdown.cancel();
+                            return Err(error);
+                        }
                     }
+                    Err(_) if last_success.elapsed() >= ttl => {
+                        shutdown.cancel();
+                        return Err(DurableWorkerError::Transport(TransportError::new(
+                            "worker heartbeat exceeded its local request budget until the worker TTL became uncertain",
+                            true,
+                        )));
+                    }
+                    Err(_) => {}
                 }
             }
         }
@@ -459,6 +499,7 @@ enum TaskOutcome {
     Completed,
     Failed,
     LeaseLost,
+    ProtocolError,
 }
 
 fn apply_outcome(summary: &mut WorkerSummary, outcome: TaskOutcome) {
@@ -466,7 +507,14 @@ fn apply_outcome(summary: &mut WorkerSummary, outcome: TaskOutcome) {
         TaskOutcome::Completed => summary.completed += 1,
         TaskOutcome::Failed => summary.failed += 1,
         TaskOutcome::LeaseLost => summary.lease_lost += 1,
+        TaskOutcome::ProtocolError => summary.protocol_errors += 1,
     }
+}
+
+enum HandlerResolution {
+    Finished(Result<JsonObject, WorkerFailure>),
+    LeaseLost,
+    TimedOut,
 }
 
 async fn execute_assignment(
@@ -476,15 +524,20 @@ async fn execute_assignment(
     handler: Option<Handler>,
     heartbeat_ms: u64,
 ) -> TaskOutcome {
-    if assignment.step_id.is_empty() || assignment.task_type.is_empty() {
-        return TaskOutcome::Failed;
+    if assignment.step_id.is_empty()
+        || assignment.task_type.is_empty()
+        || assignment.lease_token.is_empty()
+        || assignment.lease_generation <= 0
+        || assignment.timeout_ms == 0
+    {
+        return TaskOutcome::ProtocolError;
     }
     let lease = assignment.lease(worker_id);
     if let Err(error) = api.start_step(&assignment.step_id, lease.clone()).await {
         return if error.is_lease_lost() {
             TaskOutcome::LeaseLost
         } else {
-            TaskOutcome::Failed
+            TaskOutcome::ProtocolError
         };
     }
 
@@ -505,51 +558,127 @@ async fn execute_assignment(
         cancellation.clone(),
     );
 
-    let result = match handler {
-        Some(handler) => handler(context).await,
-        None => Err(WorkerFailure::new(
-            "handler_not_found",
-            format!(
-                "no handler registered for task type {}",
-                assignment.task_type
-            ),
-            false,
-        )),
-    };
+    let resolution = run_handler(
+        handler,
+        context,
+        assignment.task_type.clone(),
+        assignment.timeout_ms,
+        cancellation.clone(),
+    )
+    .await;
 
     heartbeat_stop.cancel();
     if heartbeat_handle.await.is_err() {
         cancellation.cancel();
     }
-    if cancellation.is_cancelled() {
+    if cancellation.is_cancelled() || matches!(&resolution, HandlerResolution::LeaseLost) {
         return TaskOutcome::LeaseLost;
     }
 
-    match result {
-        Ok(result) => match api
+    match resolution {
+        HandlerResolution::Finished(Ok(result)) => match api
             .complete_step(&assignment.step_id, StepCompletion { lease, result })
             .await
         {
             Ok(()) => TaskOutcome::Completed,
             Err(error) if error.is_lease_lost() => TaskOutcome::LeaseLost,
-            Err(_) => TaskOutcome::Failed,
+            Err(_) => TaskOutcome::ProtocolError,
         },
-        Err(failure) => match api
-            .fail_step(
+        HandlerResolution::Finished(Err(failure)) => {
+            report_failure(&*api, &assignment.step_id, lease, failure).await
+        }
+        HandlerResolution::TimedOut => {
+            report_failure(
+                &*api,
                 &assignment.step_id,
-                StepFailure {
-                    lease,
-                    code: failure.code,
-                    message: failure.message,
-                    retryable: failure.retryable,
-                },
+                lease,
+                WorkerFailure::new(
+                    "handler_timeout",
+                    format!(
+                        "handler exceeded the assignment timeout of {} ms",
+                        assignment.timeout_ms
+                    ),
+                    true,
+                ),
             )
             .await
-        {
-            Ok(()) => TaskOutcome::Failed,
-            Err(error) if error.is_lease_lost() => TaskOutcome::LeaseLost,
-            Err(_) => TaskOutcome::Failed,
-        },
+        }
+        HandlerResolution::LeaseLost => TaskOutcome::LeaseLost,
+    }
+}
+
+async fn run_handler(
+    handler: Option<Handler>,
+    context: TaskContext,
+    task_type: String,
+    timeout_ms: u64,
+    cancellation: Cancellation,
+) -> HandlerResolution {
+    let Some(handler) = handler else {
+        return HandlerResolution::Finished(Err(WorkerFailure::new(
+            "handler_not_found",
+            format!("no handler registered for task type {task_type}"),
+            false,
+        )));
+    };
+
+    let mut handler_handle = tokio::spawn(handler(context));
+    let timeout = tokio::time::sleep(Duration::from_millis(timeout_ms));
+    tokio::pin!(timeout);
+    tokio::select! {
+        joined = &mut handler_handle => HandlerResolution::Finished(handler_join_result(joined)),
+        _ = cancellation.cancelled() => {
+            handler_handle.abort();
+            let _ = handler_handle.await;
+            HandlerResolution::LeaseLost
+        }
+        _ = &mut timeout => {
+            handler_handle.abort();
+            let _ = handler_handle.await;
+            HandlerResolution::TimedOut
+        }
+    }
+}
+
+fn handler_join_result(
+    joined: Result<Result<JsonObject, WorkerFailure>, JoinError>,
+) -> Result<JsonObject, WorkerFailure> {
+    match joined {
+        Ok(result) => result,
+        Err(error) if error.is_panic() => Err(WorkerFailure::new(
+            "handler_panic",
+            format!("handler task panicked: {error}"),
+            false,
+        )),
+        Err(error) => Err(WorkerFailure::new(
+            "handler_cancelled",
+            format!("handler task ended before returning a result: {error}"),
+            true,
+        )),
+    }
+}
+
+async fn report_failure(
+    api: &dyn WorkerApi,
+    step_id: &str,
+    lease: Lease,
+    failure: WorkerFailure,
+) -> TaskOutcome {
+    match api
+        .fail_step(
+            step_id,
+            StepFailure {
+                lease,
+                code: failure.code,
+                message: failure.message,
+                retryable: failure.retryable,
+            },
+        )
+        .await
+    {
+        Ok(()) => TaskOutcome::Failed,
+        Err(error) if error.is_lease_lost() => TaskOutcome::LeaseLost,
+        Err(_) => TaskOutcome::ProtocolError,
     }
 }
 
@@ -562,19 +691,28 @@ async fn step_heartbeat_loop(
     cancellation: Cancellation,
 ) {
     let interval = Duration::from_millis(interval_ms);
+    let request_timeout = heartbeat_request_timeout(interval);
     loop {
         tokio::select! {
             _ = stop.cancelled() => break,
             _ = tokio::time::sleep(interval) => {
-                if api
-                    .heartbeat_step(&step_id, lease.clone())
-                    .await
-                    .is_err()
-                {
+                let heartbeat = tokio::select! {
+                    biased;
+                    _ = stop.cancelled() => break,
+                    result = tokio::time::timeout(
+                        request_timeout,
+                        api.heartbeat_step(&step_id, lease.clone()),
+                    ) => result,
+                };
+                if !matches!(heartbeat, Ok(Ok(()))) {
                     cancellation.cancel();
                     break;
                 }
             }
         }
     }
+}
+
+fn heartbeat_request_timeout(interval: Duration) -> Duration {
+    std::cmp::min(interval, Duration::from_secs(10))
 }
