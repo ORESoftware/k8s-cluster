@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import runpy
 import unittest
 from pathlib import Path
 
@@ -48,6 +49,21 @@ class ProjectReconciliationWorkflowContractTests(unittest.TestCase):
         self.assertNotIn("--expected-count", validate_block)
         self.assertIn("--validate-only", validate_block)
         self.assertNotIn("continue-on-error", validate_block)
+
+    def test_reconciliation_contract_surface_is_governance_only(self) -> None:
+        module = runpy.run_path("scripts/ci/classify_repo_check_scope.py")
+        result = module["classify"](
+            "pull_request",
+            [
+                ".github/workflows/ops-sync-org-project-docs-rate-aware-once.yml",
+                "scripts/ops/sync_org_project_docs_rate_aware.py",
+                "scripts/ops/test_sync_org_project_docs_rate_aware.py",
+                "scripts/ops/test_project_reconciliation_workflow_contract.py",
+            ],
+        )
+        self.assertTrue(result["governance_only"])
+        self.assertFalse(result["private_contracts_required"])
+        self.assertEqual("governance_only_no_private_gitlinks", result["reason"])
 
     def test_credential_handoff_is_unique_per_run_attempt(self) -> None:
         self.assertIn(
