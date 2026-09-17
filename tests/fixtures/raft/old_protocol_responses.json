@@ -1,0 +1,55 @@
+[
+  {
+    "type": "preVote",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 4,
+    "voteGranted": true
+  },
+  {
+    "type": "requestVote",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 5,
+    "voteGranted": false
+  },
+  {
+    "type": "appendEntries",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 6,
+    "success": true,
+    "matchIndex": 9,
+    "conflictIndex": null,
+    "conflictTerm": null
+  },
+  {
+    "type": "installSnapshot",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 7,
+    "success": true,
+    "lastIncludedIndex": 10
+  },
+  {
+    "type": "proxyResponse",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 8,
+    "response": null,
+    "error": "leader unavailable"
+  },
+  {
+    "type": "error",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 9,
+    "error": "not leader"
+  }
+]

@@ -1,0 +1,61 @@
+# k3d (k3s-in-Docker) cluster for live-mutex-rs (Rust broker, Raft cluster)
+#
+# Coexists with kind without stepping on its toes:
+#   - kind.yaml maps host ports 6970-6975; this maps 7970-7975 (no overlap).
+#   - kind uses kubeconfig context "kind-live-mutex-rs" and the "kind" docker
+#     network; k3d uses "k3d-live-mutex-rs" and its own "k3d-live-mutex-rs"
+#     network. Both API servers bind loopback, so they never clash.
+# => a kind cluster and this k3d cluster can run at the same time.
+#
+# Hardening:
+#   - All published host ports bind 127.0.0.1 only (host IP prefix on each
+#     mapping) so broker listeners are not exposed to the LAN.
+#   - The Kubernetes API binds 127.0.0.1 (kubeAPI.hostIP).
+#   - traefik and klipper servicelb are disabled: brokers are reached via the
+#     explicit per-agent port maps below, not via Ingress/LoadBalancer, so the
+#     load-balancer components only add attack surface and host-port grabs.
+#
+# Usage:
+#   k3d cluster create --config k3d.yaml
+#   kubectl --context k3d-live-mutex-rs get nodes
+#   k3d cluster delete live-mutex-rs
+#
+# 1 server + 3 agents == the documented 3-node Raft quorum. Agents are labelled
+# lmx-node=node-1|node-2|node-3 (same scheme as kind.yaml) so the same
+# nodeSelector manifests work on either runtime. Raft peer traffic (7980) stays
+# pod-to-pod and is not published to the host.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: live-mutex-rs
+servers: 1
+agents: 3
+kubeAPI:
+  hostIP: "127.0.0.1"
+ports:
+  - port: "127.0.0.1:7970:6970"
+    nodeFilters: ["agent:0"]
+  - port: "127.0.0.1:7971:6971"
+    nodeFilters: ["agent:0"]
+  - port: "127.0.0.1:7972:6970"
+    nodeFilters: ["agent:1"]
+  - port: "127.0.0.1:7973:6971"
+    nodeFilters: ["agent:1"]
+  - port: "127.0.0.1:7974:6970"
+    nodeFilters: ["agent:2"]
+  - port: "127.0.0.1:7975:6971"
+    nodeFilters: ["agent:2"]
+options:
+  k3s:
+    extraArgs:
+      - arg: "--disable=traefik"
+        nodeFilters: ["server:*"]
+      - arg: "--disable=servicelb"
+        nodeFilters: ["server:*"]
+    nodeLabels:
+      - label: "lmx-node=node-1"
+        nodeFilters: ["agent:0"]
+      - label: "lmx-node=node-2"
+        nodeFilters: ["agent:1"]
+      - label: "lmx-node=node-3"
+        nodeFilters: ["agent:2"]

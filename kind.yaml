@@ -1,0 +1,69 @@
+# kind cluster for live-mutex-rs (Rust broker, Raft cluster)
+#
+# Topology: 1 control-plane + 3 workers. Matches the documented 3-node Raft
+# quorum (node-1/node-2/node-3 -> commits with 2 votes; see lmx-raft.toml).
+#
+# Hardening:
+#   - All published host ports bind to 127.0.0.1 (listenAddress) so the broker
+#     listeners are reachable only from this machine, never the LAN. Change the
+#     listenAddress to 0.0.0.0 only if you deliberately need off-host access.
+#   - The API server also binds loopback (networking.apiServerAddress).
+#
+# Usage:
+#   kind create cluster --config kind.yaml
+#   kubectl --context kind-live-mutex-rs get nodes
+#   kind delete cluster --name live-mutex-rs
+#
+# Worker nodes are labelled lmx-node=node-1|node-2|node-3 so a StatefulSet or
+# per-node Pod can be pinned to a stable Raft identity with a nodeSelector
+# (e.g. nodeSelector: { lmx-node: node-1 } + advertise_addr=node-1:7980).
+#
+# Per-node host port mappings expose each broker's client listeners on the host.
+# Raft peer traffic (7980) stays pod-to-pod inside the cluster network, so it is
+# intentionally not mapped to the host.
+#   node-1 -> host tcp 6970, http 6971
+#   node-2 -> host tcp 6972, http 6973
+#   node-3 -> host tcp 6974, http 6975
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: live-mutex-rs
+networking:
+  apiServerAddress: "127.0.0.1"
+nodes:
+  - role: control-plane
+  - role: worker
+    labels:
+      lmx-node: node-1
+    extraPortMappings:
+      - containerPort: 6970
+        hostPort: 6970
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      - containerPort: 6971
+        hostPort: 6971
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+  - role: worker
+    labels:
+      lmx-node: node-2
+    extraPortMappings:
+      - containerPort: 6970
+        hostPort: 6972
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      - containerPort: 6971
+        hostPort: 6973
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+  - role: worker
+    labels:
+      lmx-node: node-3
+    extraPortMappings:
+      - containerPort: 6970
+        hostPort: 6974
+        listenAddress: "127.0.0.1"
+        protocol: TCP
+      - containerPort: 6971
+        hostPort: 6975
+        listenAddress: "127.0.0.1"
+        protocol: TCP

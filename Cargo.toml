@@ -1,0 +1,104 @@
+[package]
+name = "dd-rust-network-mutex"
+version = "0.1.127"
+edition = "2021"
+publish = false
+description = "Networked mutex broker + client (Rust port of live-mutex). Synchronizes access to lock state via TCP, Unix domain sockets, and HTTP, with reader-writer locks, fencing tokens, composite (multi-key) locks, and optional TLS."
+authors = ["ORE Software"]
+license = "MIT"
+repository = "https://github.com/ORESoftware/live-mutex-rs"
+homepage = "https://github.com/ORESoftware/live-mutex-rs"
+documentation = "https://github.com/ORESoftware/live-mutex-rs"
+readme = "readme.md"
+keywords = ["mutex", "lock", "distributed", "tcp", "live-mutex"]
+categories = ["concurrency", "network-programming"]
+
+[[bin]]
+name = "dd-rust-network-mutex"
+path = "src/main.rs"
+
+# Library used both by the binary and by external Rust callers that want
+# an in-process Client / RwClient against a live broker.
+[lib]
+name = "dd_rust_network_mutex"
+path = "src/lib.rs"
+
+[features]
+default = ["tls", "otel"]
+tls = ["dep:rustls", "dep:rustls-pemfile", "dep:tokio-rustls"]
+# OpenTelemetry export (OTLP/gRPC). Activates the `tracing-opentelemetry`
+# bridge so every `tracing` span / event flows out through OTel when
+# `OTEL_EXPORTER_OTLP_ENDPOINT` is set. Disabling the feature drops the
+# OTel deps entirely and keeps the binary on the plain `tracing-subscriber`
+# stdout/JSON path — useful for minimal-footprint builds.
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:opentelemetry-semantic-conventions",
+    "dep:tracing-opentelemetry",
+]
+
+[dependencies]
+axum = { version = "0.7", features = ["macros"] }
+base64 = "0.22"
+# Keyed doubly-linked FIFO queue (O(1) push/pop/lookup/middle-removal) used by
+# the broker for pending lock requests. Extracted from this crate and published
+# standalone at github.com/ORESoftware/linked-queue.rs; property- + fuzz-tested
+# against a VecDeque oracle. Pinned by `rev` so the broker build is fully
+# reproducible (the exact commit is also locked in Cargo.lock) and resolves
+# inside the standalone Docker build context, which a sibling `path = "../"`
+# could not. To move to a newer queue, bump this rev and re-run
+# `cargo update -p linked-queue`.
+linked-queue = { git = "https://github.com/ORESoftware/linked-queue.rs", rev = "edb6138101bd579d848f0fe58bd4d77e1a1d6094" }
+futures-util = "0.3"
+# `libc` is used for Linux TCP_QUICKACK and Unix advisory data-dir flocking.
+# Pulling it in unconditionally keeps the Cargo features simple while those
+# call sites stay cfg-gated.
+libc = "0.2"
+# OTel — gated behind the `otel` cargo feature so a minimal build can
+# strip the gRPC/protobuf dependency tree. All four crates must move in
+# lockstep; bumping any one of them needs the others to match.
+opentelemetry = { version = "0.26", optional = true }
+opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.26", features = ["grpc-tonic", "trace", "logs"], optional = true }
+opentelemetry-semantic-conventions = { version = "0.16", optional = true }
+parking_lot = "0.12"
+prometheus = "0.13"
+rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"], optional = true }
+rustls-pemfile = { version = "=2.2.0", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+toml = "0.8"
+# Form-urlencoded decoding for the `/admin/*` POST handlers — HTMX
+# (without the optional `json-enc` extension) submits its `hx-vals`
+# payload as `application/x-www-form-urlencoded`, and we want those
+# handlers to accept either JSON or form bodies. Already present
+# transitively via `axum`, listed explicitly so the version is pinned.
+serde_urlencoded = "0.7"
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "io-util", "net", "sync", "fs"] }
+tokio-rustls = { version = "=0.26.0", default-features = false, features = ["ring"], optional = true }
+tower = "0.5"
+tracing = "0.1"
+tracing-opentelemetry = { version = "0.27", optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "net", "io-util", "process", "sync"] }
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = "none"

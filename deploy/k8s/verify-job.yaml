@@ -1,0 +1,122 @@
+# Correctness gate for the live BrokerRaft cluster. Apply once pods are up:
+#   kubectl -n live-mutex-rs apply -f deploy/k8s/verify-job.yaml
+#
+# Asserts:
+#   * Leader elected: /raft/leaderz returns 200 within the timeout.
+#   * Liveness + follower proxy: many concurrent clients acquire/release a single
+#     hot lock through the round-robin client Service (so writes reach the leader
+#     whether they land on the leader or a follower that proxies).
+#   * Safety: every successful acquire returns a fencing token for the key, and no
+#     token value is ever handed out twice. A duplicate fencing token is a
+#     double-grant = a mutual-exclusion violation. (Raft orders all grants through
+#     the replicated log, so tokens must be unique + strictly increasing.)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lmx-verify
+data:
+  verify.sh: |
+    #!/bin/sh
+    set -u
+    BASE="http://live-mutex-rs-raft:6971"
+    LOCK="hot"
+    WORKERS="${WORKERS:-8}"
+    ITERS="${ITERS:-20}"
+    OUT=/tmp/out; mkdir -p "$OUT"
+
+    echo "# waiting for a fresh Raft leader (/raft/leaderz) ..."
+    i=0
+    until curl -fs "$BASE/raft/leaderz" >/dev/null 2>&1; do
+      i=$((i+1)); [ "$i" -gt 90 ] && { echo "FAIL: no leader elected within timeout"; exit 1; }
+      sleep 1
+    done
+    echo "# leader is fresh; status:"; curl -s "$BASE/raft/leaderz" | head -c 400; echo
+
+    # one worker: keep trying until it has ITERS *successful* acquires; an
+    # acquired:false (lock currently held by a peer) is normal contention -> retry.
+    worker() {
+      w="$1"; got=0; tries=0
+      while [ "$got" -lt "$ITERS" ]; do
+        tries=$((tries+1)); [ "$tries" -gt $((ITERS*200)) ] && { echo "STALL w$w" >>"$OUT/errors"; break; }
+        resp=$(curl -s -X POST "$BASE/v1/lock" -H 'content-type: application/json' \
+               -d "{\"key\":\"$LOCK\",\"ttlMs\":5000}")
+        echo "$resp" | grep -q '"acquired":true' || { sleep 0.05; continue; }
+        fence=$(printf '%s' "$resp" | sed -n 's/.*"'"$LOCK"'":\([0-9][0-9]*\).*/\1/p')
+        uuid=$(printf '%s' "$resp" | sed -n 's/.*"lockUuid":"\([^"]*\)".*/\1/p')
+        [ -n "$fence" ] && echo "$fence" >> "$OUT/fences" || echo "NO_FENCE w$w: $resp" >>"$OUT/errors"
+        got=$((got+1))
+        rel=$(curl -s -X POST "$BASE/v1/unlock" -H 'content-type: application/json' \
+              -d "{\"key\":\"$LOCK\",\"lockUuid\":\"$uuid\"}")
+        echo "$rel" | grep -q '"unlocked":true' && echo 1 >>"$OUT/releases" \
+          || echo "REL_FAIL w$w: $rel" >>"$OUT/errors"
+      done
+    }
+
+    : > "$OUT/fences"; : > "$OUT/releases"; : > "$OUT/errors"
+    w=0; while [ "$w" -lt "$WORKERS" ]; do worker "$w" & w=$((w+1)); done
+    wait
+
+    successes=$(wc -l < "$OUT/fences" | tr -d ' ')
+    unique=$(sort -n "$OUT/fences" | uniq | wc -l | tr -d ' ')
+    releases=$(wc -l < "$OUT/releases" | tr -d ' ')
+    maxf=$(sort -n "$OUT/fences" | tail -1); minf=$(sort -n "$OUT/fences" | head -1)
+    errs=$(wc -l < "$OUT/errors" | tr -d ' ')
+
+    echo "==================== RESULT ===================="
+    echo "successful acquires : $successes"
+    echo "unique fence tokens : $unique"
+    echo "releases ok         : $releases"
+    echo "fence range         : $minf .. $maxf"
+    echo "errors              : $errs"
+    [ "$errs" -gt 0 ] && head -8 "$OUT/errors"
+    echo "==============================================="
+    fail=0
+    [ "$successes" -gt 0 ]        || { echo "FAIL: no acquires (no liveness)"; fail=1; }
+    [ "$successes" = "$unique" ]  || { echo "FAIL: DUPLICATE fencing token -> double-grant -> MUTUAL EXCLUSION VIOLATED"; fail=1; }
+    [ "$successes" = "$releases" ]|| { echo "FAIL: acquires ($successes) != releases ($releases)"; fail=1; }
+    [ "$fail" = 0 ] && echo "PASS: leader elected + mutual exclusion + liveness over Raft"
+    exit "$fail"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lmx-verify
+  labels:
+    app: live-mutex-rs-raft
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: live-mutex-rs-raft
+        role: verify
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100          # curlimages/curl's uid (named "curl"); explicit so
+        runAsGroup: 100         # kubelet can verify non-root (named USER can't be verified)
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: verify
+          image: curlimages/curl:8.11.1   # pinned (not :latest); image runs as uid 100
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          command: ["sh", "/scripts/verify.sh"]
+          env:
+            - name: WORKERS
+              value: "8"
+            - name: ITERS
+              value: "20"
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: lmx-verify

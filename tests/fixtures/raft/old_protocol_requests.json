@@ -1,0 +1,62 @@
+[
+  {
+    "type": "preVote",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 4,
+    "candidateId": "n2",
+    "lastLogIndex": 7,
+    "lastLogTerm": 3
+  },
+  {
+    "type": "requestVote",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 5,
+    "candidateId": "n2",
+    "lastLogIndex": 8,
+    "lastLogTerm": 4
+  },
+  {
+    "type": "appendEntries",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 6,
+    "leaderId": "n1",
+    "prevLogIndex": 8,
+    "prevLogTerm": 4,
+    "entries": [],
+    "leaderCommit": 8
+  },
+  {
+    "type": "installSnapshot",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "term": 7,
+    "leaderId": "n1",
+    "lastIncludedIndex": 10,
+    "lastIncludedTerm": 6,
+    "payloadSha256": null,
+    "offset": 0,
+    "done": true,
+    "data": "e30="
+  },
+  {
+    "type": "proxyRequest",
+    "futureRollingUpgradeField": {
+      "ignored": true
+    },
+    "request": {
+      "type": "version",
+      "uuid": "literal-proxy-version",
+      "value": "0.1.0"
+    },
+    "requestUuid": "literal-proxy-version",
+    "waitMs": 0,
+    "isAcquire": true
+  }
+]

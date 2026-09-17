@@ -1,0 +1,15 @@
+# Declarative bring-up of the BrokerRaft HA cluster.
+#   kubectl apply -k deploy/k8s
+# The verify Job is applied separately once a leader is elected.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: live-mutex-rs
+resources:
+  - namespace.yaml
+  - services.yaml
+  - configmap.yaml
+  - statefulset.yaml
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: live-mutex-rs-raft

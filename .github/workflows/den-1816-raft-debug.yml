@@ -1,0 +1,56 @@
+name: Inspect DEN-1816 Raft retry state machine
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/den-1816-raft-debug.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.head_ref == 'agent/den-1816-trusted-flags-policy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: false
+      - name: Print bounded retry implementation context
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/broker_raft.rs')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          patterns = [
+              'async fn run_ephemeral',
+              'fn run_ephemeral',
+              'proxy_retry_budget',
+              'proxy_request_retries_total',
+              'RaftRpcResponse::ProxyResponse',
+              'BrokerRaftError::NotLeader',
+              'follower_proxy_rpc_timeout_is_bounded_by_retry_budget',
+          ]
+          ranges = []
+          for pattern in patterns:
+              matches = [i for i, line in enumerate(lines) if pattern in line]
+              print(f'=== {pattern!r}: {len(matches)} match(es) ===')
+              for index in matches:
+                  ranges.append((max(0, index - 80), min(len(lines), index + 130)))
+          merged = []
+          for start, end in sorted(ranges):
+              if merged and start <= merged[-1][1]:
+                  merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+              else:
+                  merged.append((start, end))
+          for start, end in merged:
+              print(f'--- lines {start + 1}-{end} ---')
+              for number in range(start, end):
+                  print(f'{number + 1:06d}: {lines[number]}')
+          PY

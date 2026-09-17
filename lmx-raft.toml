@@ -1,0 +1,103 @@
+# Default BrokerRaft configuration for container and Kubernetes deployments.
+#
+# This file is intentionally separate from lmx.toml so the regular Broker image
+# can keep Raft disabled while Dockerfile.raft has cluster-ready defaults.
+# Environment variables still override these values.
+
+[server]
+bind_host = "0.0.0.0"
+tcp_port = 6970
+http_port = 6971
+disable_tcp = true
+disable_http = false
+tcp_nodelay = true
+tcp_quickack = true
+
+[broker]
+default_ttl_ms = 4000
+max_lock_holders = 1
+max_concurrency_cap = 1000
+ttl_sweep_interval_ms = 10
+idle_key_grace_ms = 60000
+
+[raft]
+enabled = true
+# raft.peers is the active voter set. node_id normally appears there, but a
+# new node may start outside the voter set as a learner until /raft/learners and
+# /raft/membership promote it through consensus.
+# Peer addrs must be directly reachable pod-to-pod: Raft replication,
+# InstallSnapshot, and follower-to-leader client proxying dial these addresses
+# instead of going back through the public load balancer.
+node_id = "node-1"
+bind_addr = "0.0.0.0:7980"
+advertise_addr = "node-1:7980"
+data_dir = "/var/lib/dd-rust-network-mutex/raft"
+# Keep true so only one live BrokerRaft process can own this durable state.
+data_dir_lock = true
+# Optional shared secret for Raft peer RPC frames. Prefer setting
+# LMX_RAFT_PEER_TOKEN from a Kubernetes Secret instead of committing a value.
+# peer_token = "replace-with-a-secret"
+# Bound concurrent inbound peer RPC streams so a peer/socket flood cannot spawn
+# unbounded Raft stream tasks or frame buffers on this node.
+max_inbound_rpc_connections = 1024
+# Close inbound peer RPC streams that sit idle without a complete frame, so an
+# admitted socket cannot hold a connection slot forever.
+inbound_rpc_idle_timeout_ms = 30000
+
+# A 3-node cluster commits with 2 votes. For 5 nodes, add node-4/node-5 and
+# the derived quorum becomes 3.
+heartbeat_interval_ms = 50
+election_timeout_min_ms = 150
+election_timeout_max_ms = 300
+
+# Snapshot every 30 minutes by default; the interval must be greater than 0.
+# Old log entries are compacted only after a durable snapshot includes their
+# log index. Entry/byte thresholds can be set to 0 to disable that trigger.
+# Retained trailing entries let near-lagging followers catch up with
+# AppendEntries before InstallSnapshot.
+snapshot_interval_ms = 1800000
+snapshot_max_log_entries = 100000
+snapshot_max_log_bytes = 67108864
+# Also snapshot/compact committed retained-log prefixes older than 30 minutes.
+# Set to 0 to disable the age trigger.
+snapshot_max_log_age_ms = 1800000
+trailing_log_entries = 10000
+
+# Bound AppendEntries catch-up so lagging followers receive incremental JSON
+# frames, with a capped number of sequential per-peer batches before yielding.
+append_entries_max_entries = 256
+append_entries_max_bytes = 1048576
+append_entries_max_inline_batches = 64
+# Keep foreground writes quorum-minimal by default. Raise this to hedge with
+# extra ready followers when tail latency matters more than extra peer traffic.
+target_quorum_extra_fanout = 0
+install_snapshot_chunk_bytes = 1048576
+install_snapshot_max_staged_bytes = 134217728
+install_snapshot_max_staged_transfers = 4
+install_snapshot_stale_transfer_ms = 1800000
+client_batch_max_entries = 32
+client_pipeline_max_batches = 4
+client_batch_max_pending = 8192
+client_batch_max_delay_ms = 1
+client_response_cache_max_entries = 8192
+proxy_retry_budget_ms = 2000
+# Keep true for crash-safe Raft durability. Set false only for explicit
+# benchmark/throughput experiments where losing the last unsynced log writes
+# after a process or host crash is acceptable.
+sync_log = true
+# Keep true for crash-safe commitIndex durability. Set false only for explicit
+# benchmark/throughput experiments where committed entries may replay only
+# through the last synced commit slot after a process or host crash.
+sync_commit = true
+
+[[raft.peers]]
+id = "node-1"
+addr = "node-1:7980"
+
+[[raft.peers]]
+id = "node-2"
+addr = "node-2:7980"
+
+[[raft.peers]]
+id = "node-3"
+addr = "node-3:7980"
