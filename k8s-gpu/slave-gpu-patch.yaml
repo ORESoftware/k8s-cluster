@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-in-house-mip-solver-node-slave
+  namespace: ai-ml
+spec:
+  template:
+    spec:
+      containers:
+        - name: solver
+          env:
+            - name: MIP_SOLVER_GPU_MODE
+              value: require
+          resources:
+            requests:
+              nvidia.com/gpu: '1'
+            limits:
+              nvidia.com/gpu: '1'

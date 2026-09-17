@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out k8s-cluster sibling dependency
+        run: |
+          mkdir -p ../../submodules
+          git clone --depth 1 https://github.com/ORESoftware/discrete-event-system.rs \
+            ../../submodules/discrete-event-system.rs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked

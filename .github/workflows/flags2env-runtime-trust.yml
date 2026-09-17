@@ -1,0 +1,76 @@
+name: flags2env runtime trust
+
+on:
+  pull_request:
+    paths:
+      - .cli-flags.toml
+      - Dockerfile
+      - build.rs
+      - third_party/flags2env/**
+      - src/runtime_config.rs
+      - .github/scripts/flags2env-runtime-smoke.sh
+      - .github/workflows/flags2env-runtime-trust.yml
+  push:
+    branches: [main]
+    paths:
+      - .cli-flags.toml
+      - Dockerfile
+      - build.rs
+      - third_party/flags2env/**
+      - src/runtime_config.rs
+      - .github/scripts/flags2env-runtime-smoke.sh
+      - .github/workflows/flags2env-runtime-trust.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact consumer head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.90.0 --profile minimal
+          rustup default 1.90.0
+
+      - name: Materialize exact solver dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          dependency_dir="$(cd ../.. && pwd)/submodules/discrete-event-system.rs"
+          mkdir -p "$(dirname "$dependency_dir")"
+          git init "$dependency_dir"
+          git -C "$dependency_dir" remote add origin \
+            https://github.com/ORESoftware/discrete-event-system.rs
+          git -C "$dependency_dir" fetch --depth 1 origin \
+            894e86fb188b88b0e2c734b5cf7caa27c6b18e00
+          git -C "$dependency_dir" checkout --detach FETCH_HEAD
+          test "$(git -C "$dependency_dir" rev-parse HEAD)" \
+            = "894e86fb188b88b0e2c734b5cf7caa27c6b18e00"
+
+      - name: Check out immutable flags2env audit tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/flags-2-env
+          ref: 39e1b554520c736db406ce074f05acaee6111d75
+          path: flags2env-tooling
+          persist-credentials: false
+
+      - name: Audit reviewed flags contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -C flags2env-tooling cli
+          flags2env-tooling/build/flags2env audit .cli-flags.toml
+
+      - name: Exercise linked parser and runtime trust boundary
+        shell: bash
+        run: bash .github/scripts/flags2env-runtime-smoke.sh
