@@ -1,0 +1,103 @@
+name: Formal methods procedure
+
+on:
+  pull_request:
+    paths: ['formal/**', 'src/service.rs', 'src/database.rs', 'src/supabase_auth.rs', '.github/workflows/formal-methods-procedure.yml']
+  push:
+    branches: [main]
+    paths: ['formal/**', 'src/service.rs', 'src/database.rs', 'src/supabase_auth.rs', '.github/workflows/formal-methods-procedure.yml']
+  schedule:
+    - cron: '17 5 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-procedure-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Validate formal-methods inventory
+        env:
+          EXPECTED_REPOSITORY: sonus-auris/sonus-auris-backend.rs
+        run: |
+          python3 - <<'PY'
+          import os, sys, tomllib
+          from pathlib import Path
+
+          errors = []
+          manifest = Path('formal/procedure.toml')
+          procedure = Path('formal/PROCEDURE.md')
+          try:
+              data = tomllib.loads(manifest.read_text(encoding='utf-8'))
+          except Exception as exc:
+              print(f'could not parse {manifest}: {exc}', file=sys.stderr)
+              raise SystemExit(1)
+
+          for key, expected in {'schema_version': 1, 'procedure_version': 1, 'repository': os.environ['EXPECTED_REPOSITORY']}.items():
+              if data.get(key) != expected:
+                  errors.append(f'{key} must equal {expected!r}')
+
+          policy = data.get('policy', {})
+          for key in ('claim_classes', 'required_evidence'):
+              value = policy.get(key)
+              if not isinstance(value, list) or not value or not all(isinstance(item, str) and item.strip() for item in value):
+                  errors.append(f'policy.{key} must be a non-empty string list')
+          for key in ('counterexample', 'change_trigger'):
+              if not isinstance(policy.get(key), str) or not policy[key].strip():
+                  errors.append(f'policy.{key} must be a non-empty string')
+
+          machines = data.get('machine', [])
+          if not isinstance(machines, list) or not machines:
+              errors.append('at least one [[machine]] is required')
+              machines = []
+          ids = set()
+          for index, machine in enumerate(machines, 1):
+              prefix = f'machine[{index}]'
+              machine_id = machine.get('id')
+              if not isinstance(machine_id, str) or not machine_id.strip() or machine_id in ids:
+                  errors.append(f'{prefix}.id must be non-empty and unique')
+              else:
+                  ids.add(machine_id)
+              if machine.get('risk') not in {'critical', 'high', 'medium', 'low'}:
+                  errors.append(f'{prefix}.risk is invalid')
+              if machine.get('status') not in {'planned', 'modeling', 'active', 'deferred'}:
+                  errors.append(f'{prefix}.status is invalid')
+              for key in ('backend', 'owner'):
+                  if not isinstance(machine.get(key), str) or not machine[key].strip():
+                      errors.append(f'{prefix}.{key} must be non-empty')
+              for key in ('source_paths', 'safety', 'liveness', 'faults', 'bounds', 'review_triggers'):
+                  value = machine.get(key)
+                  if not isinstance(value, list) or not value or not all(isinstance(item, str) and item.strip() for item in value):
+                      errors.append(f'{prefix}.{key} must be a non-empty string list')
+              for source in machine.get('source_paths', []):
+                  if isinstance(source, str) and not Path(source).exists():
+                      errors.append(f'{prefix} source path does not exist: {source}')
+              if machine.get('status') in {'modeling', 'active'}:
+                  for model in machine.get('model_paths', []):
+                      if not Path(model).exists():
+                          errors.append(f'{prefix} model path does not exist: {model}')
+                  if not machine.get('model_paths'):
+                      errors.append(f'{prefix}.model_paths is required for modeling/active status')
+
+          text = procedure.read_text(encoding='utf-8') if procedure.exists() else ''
+          for heading in ('## Change procedure', '## Claim language', '## Counterexamples', '## Required review triggers'):
+              if heading not in text:
+                  errors.append(f'{procedure} is missing {heading!r}')
+
+          if errors:
+              print('\n'.join(f'error: {error}' for error in errors), file=sys.stderr)
+              raise SystemExit(1)
+          summary = f'Validated {len(machines)} machine inventories for {data["repository"]}.'
+          print(summary)
+          if os.environ.get('GITHUB_STEP_SUMMARY'):
+              Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(f'## Formal-methods procedure\n\n{summary}\n', encoding='utf-8')
+          PY
