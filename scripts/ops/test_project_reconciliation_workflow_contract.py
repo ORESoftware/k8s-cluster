@@ -12,9 +12,9 @@ class ProjectReconciliationWorkflowContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
-    def test_exact_project_reconciliation_precedes_private_fleet_audit(self) -> None:
+    def test_project_reconciliation_precedes_private_fleet_audit(self) -> None:
         reconcile = self.text.index("- name: Reconcile all registered organization Projects and docs")
-        validate = self.text.index("- name: Revalidate exact 64-organization Project evidence")
+        validate = self.text.index("- name: Revalidate registered-fleet Project evidence")
         private_audit = self.text.index(
             "- name: Audit sealed private repository gaps without blocking Project reconciliation"
         )
@@ -32,15 +32,22 @@ class ProjectReconciliationWorkflowContractTests(unittest.TestCase):
         self.assertIn('"blocking": False', self.text)
         self.assertIn('"project_reconciliation_independent": True', self.text)
 
-    def test_exact_64_organization_validation_remains_blocking(self) -> None:
-        start = self.text.index("- name: Revalidate exact 64-organization Project evidence")
-        end = self.text.index(
+    def test_current_registry_cardinality_is_derived_and_validation_is_blocking(self) -> None:
+        reconcile_start = self.text.index(
+            "- name: Reconcile all registered organization Projects and docs"
+        )
+        validate_start = self.text.index(
+            "- name: Revalidate registered-fleet Project evidence"
+        )
+        private_audit = self.text.index(
             "- name: Audit sealed private repository gaps without blocking Project reconciliation"
         )
-        block = self.text[start:end]
-        self.assertIn("--expected-count 64", block)
-        self.assertIn("--validate-only", block)
-        self.assertNotIn("continue-on-error", block)
+        reconcile_block = self.text[reconcile_start:validate_start]
+        validate_block = self.text[validate_start:private_audit]
+        self.assertNotIn("--expected-count", reconcile_block)
+        self.assertNotIn("--expected-count", validate_block)
+        self.assertIn("--validate-only", validate_block)
+        self.assertNotIn("continue-on-error", validate_block)
 
     def test_credential_handoff_is_unique_per_run_attempt(self) -> None:
         self.assertIn(
