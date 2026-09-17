@@ -1,0 +1,188 @@
+name: t2v executable OpenAPI contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/openapi-contract.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/api/**'
+      - 'docs/openapi-rollout.md'
+      - 'e2e/playwright.api.config.ts'
+      - 'e2e/tests/api-docs*.spec.ts'
+      - 'generated/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/openapi-contract.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/api/**'
+      - 'docs/openapi-rollout.md'
+      - 'e2e/playwright.api.config.ts'
+      - 'e2e/tests/api-docs*.spec.ts'
+      - 'generated/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: t2v-openapi-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.90.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Check, lint, and test the API contract
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked -p t2v-api --all-targets
+          cargo clippy --locked -p t2v-api --all-targets -- -D warnings
+          cargo test --locked -p t2v-api --all-targets
+
+      - name: Prove deterministic committed exports
+        run: |
+          set -euo pipefail
+          for scope in public internal; do
+            cargo run --locked --quiet -p t2v-api -- \
+              "--export-openapi=${scope}" > "${RUNNER_TEMP}/${scope}.1.json"
+            cargo run --locked --quiet -p t2v-api -- \
+              "--export-openapi=${scope}" > "${RUNNER_TEMP}/${scope}.2.json"
+            cmp "${RUNNER_TEMP}/${scope}.1.json" "${RUNNER_TEMP}/${scope}.2.json"
+            cmp "${RUNNER_TEMP}/${scope}.1.json" "generated/openapi.${scope}.json"
+            python3 -m json.tool "generated/openapi.${scope}.json" >/dev/null
+          done
+
+      - name: Verify exact route, scope, and security contracts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          public_paths = {
+              '/', '/healthz', '/readyz', '/openapi.json', '/api/docs.json',
+              '/api/docs', '/docs/api', '/v1/stt', '/v1/analyze',
+              '/v1/speech-to-speech', '/v1/tts', '/v1/translate',
+          }
+          internal_only = {
+              '/metrics', '/vapi/webhook', '/v1/history/transcriptions',
+              '/v1/history/translations', '/v1/history/syntheses',
+              '/v1/history/vapi-calls', '/vapi/call', '/vapi/call/{id}',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert public['openapi'] == '3.1.0'
+          assert internal['openapi'] == '3.1.0'
+          assert public['x-dd-contract-scope'] == 'public'
+          assert internal['x-dd-contract-scope'] == 'internal'
+          assert set(public['paths']) == public_paths
+          assert set(internal['paths']) == public_paths | internal_only
+          assert 'securitySchemes' not in public.get('components', {})
+          schemes = internal['components']['securitySchemes']
+          assert schemes['server_auth']['scheme'] == 'bearer'
+          assert schemes['vapi_secret']['name'] == 'x-vapi-secret'
+          assert internal['paths']['/v1/history/transcriptions']['get']['security'] == [
+              {'server_auth': []}
+          ]
+          assert internal['paths']['/vapi/webhook']['post']['security'] == [
+              {'vapi_secret': []}
+          ]
+
+          ids = []
+          for document in [public, internal]:
+              for path_item in document['paths'].values():
+                  for method, operation in path_item.items():
+                      if method.lower() not in {'get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'}:
+                          continue
+                      operation_id = operation.get('operationId')
+                      assert isinstance(operation_id, str) and operation_id
+                      ids.append((document['x-dd-contract-scope'], operation_id))
+          public_ids = [operation_id for scope, operation_id in ids if scope == 'public']
+          internal_ids = [operation_id for scope, operation_id in ids if scope == 'internal']
+          assert len(public_ids) == len(set(public_ids))
+          assert len(internal_ids) == len(set(internal_ids))
+          PY
+
+      - name: Reject conflict markers and whitespace errors
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            Cargo.toml Cargo.lock crates/api docs e2e generated; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+
+  chromium:
+    needs: rust-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.90.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.90.0'
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install pinned browser dependencies
+        working-directory: e2e
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Build the isolated API fixture before Playwright starts its timeout
+        run: cargo build --locked -p t2v-api --example openapi_fixture
+
+      - name: Run Chromium docs, projection, and auth parity tests
+        working-directory: e2e
+        env:
+          T2V_OPENAPI_PORT: '18130'
+          T2V_OPENAPI_FIXTURE_COMMAND: ../target/debug/examples/openapi_fixture
+          PLAYWRIGHT_HTML_OPEN: never
+        run: >-
+          npx playwright test
+          --config playwright.api.config.ts
+          --reporter=line,html
+
+      - name: Upload browser evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: t2v-openapi-browser-evidence-${{ github.sha }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7

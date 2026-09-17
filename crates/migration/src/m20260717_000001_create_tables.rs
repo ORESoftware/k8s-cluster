@@ -1,0 +1,298 @@
+//! Initial schema: transcriptions, syntheses, translations, vapi_calls,
+//! vapi_events.
+
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .create_table(
+                Table::create()
+                    .table(Transcriptions::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Transcriptions::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Transcriptions::Source).string().not_null())
+                    .col(ColumnDef::new(Transcriptions::Provider).string().not_null())
+                    .col(ColumnDef::new(Transcriptions::Model).string().not_null())
+                    .col(ColumnDef::new(Transcriptions::Text).text().not_null())
+                    .col(ColumnDef::new(Transcriptions::Language).string())
+                    .col(ColumnDef::new(Transcriptions::SampleRate).integer())
+                    .col(ColumnDef::new(Transcriptions::DurationMs).big_integer())
+                    .col(
+                        ColumnDef::new(Transcriptions::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_transcriptions_created_at")
+                    .table(Transcriptions::Table)
+                    .col(Transcriptions::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Syntheses::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Syntheses::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Syntheses::Text).text().not_null())
+                    .col(ColumnDef::new(Syntheses::Voice).string().not_null())
+                    .col(ColumnDef::new(Syntheses::Provider).string().not_null())
+                    .col(ColumnDef::new(Syntheses::Model).string().not_null())
+                    .col(ColumnDef::new(Syntheses::Format).string().not_null())
+                    .col(
+                        ColumnDef::new(Syntheses::AudioBytes)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Syntheses::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_syntheses_created_at")
+                    .table(Syntheses::Table)
+                    .col(Syntheses::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(Translations::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(Translations::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(Translations::SourceText).text().not_null())
+                    .col(
+                        ColumnDef::new(Translations::TranslatedText)
+                            .text()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Translations::SourceLang).string())
+                    .col(ColumnDef::new(Translations::TargetLang).string().not_null())
+                    .col(ColumnDef::new(Translations::Provider).string().not_null())
+                    .col(ColumnDef::new(Translations::Model).string().not_null())
+                    .col(
+                        ColumnDef::new(Translations::LatencyMs)
+                            .big_integer()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(Translations::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_translations_created_at")
+                    .table(Translations::Table)
+                    .col(Translations::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(VapiCalls::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(VapiCalls::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(VapiCalls::VapiCallId)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(ColumnDef::new(VapiCalls::Status).string().not_null())
+                    .col(ColumnDef::new(VapiCalls::EndedReason).string())
+                    .col(ColumnDef::new(VapiCalls::Transcript).text())
+                    .col(ColumnDef::new(VapiCalls::Summary).text())
+                    .col(
+                        ColumnDef::new(VapiCalls::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(VapiCalls::UpdatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        manager
+            .create_table(
+                Table::create()
+                    .table(VapiEvents::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(VapiEvents::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(VapiEvents::VapiCallId).string())
+                    .col(ColumnDef::new(VapiEvents::EventType).string().not_null())
+                    .col(ColumnDef::new(VapiEvents::Payload).json_binary().not_null())
+                    .col(
+                        ColumnDef::new(VapiEvents::CreatedAt)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_vapi_events_created_at")
+                    .table(VapiEvents::Table)
+                    .col(VapiEvents::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(VapiEvents::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(VapiCalls::Table).if_exists().to_owned())
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(Translations::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Syntheses::Table).if_exists().to_owned())
+            .await?;
+        manager
+            .drop_table(
+                Table::drop()
+                    .table(Transcriptions::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+#[derive(DeriveIden)]
+enum Transcriptions {
+    Table,
+    Id,
+    Source,
+    Provider,
+    Model,
+    Text,
+    Language,
+    SampleRate,
+    DurationMs,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Syntheses {
+    Table,
+    Id,
+    Text,
+    Voice,
+    Provider,
+    Model,
+    Format,
+    AudioBytes,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Translations {
+    Table,
+    Id,
+    SourceText,
+    TranslatedText,
+    SourceLang,
+    TargetLang,
+    Provider,
+    Model,
+    LatencyMs,
+    CreatedAt,
+}
+
+#[derive(DeriveIden)]
+enum VapiCalls {
+    Table,
+    Id,
+    VapiCallId,
+    Status,
+    EndedReason,
+    Transcript,
+    Summary,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum VapiEvents {
+    Table,
+    Id,
+    VapiCallId,
+    EventType,
+    Payload,
+    CreatedAt,
+}

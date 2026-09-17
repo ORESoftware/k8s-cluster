@@ -1,0 +1,600 @@
+{
+  "components": {},
+  "info": {
+    "description": "Public speech-to-text, text-to-speech, translation, audio-analysis, and deterministic API-reference contract.",
+    "title": "t2v-v2t API (public)",
+    "version": "0.1.0"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "getT2vServiceBanner",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable service and route summary"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "service"
+        ]
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "getT2vPublicApiReference",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Interactive Scalar reference for the public contract"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "getT2vPublicOpenApiCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {}
+              }
+            },
+            "description": "Compatibility alias for the public OpenAPI document"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "getT2vPublicApiReferenceCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Compatibility alias for the public Scalar reference"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getT2vHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Process liveness"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getT2vPublicOpenApi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {}
+              }
+            },
+            "description": "Fail-closed public OpenAPI 3.1 document"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getT2vReadiness",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Database reachable and service ready"
+          },
+          "503": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Database unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/v1/analyze": {
+      "post": {
+        "operationId": "analyzeAudioSpectrum",
+        "parameters": [
+          {
+            "description": "wav (default) or mulaw/ulaw/g711",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sample rate for raw mulaw input; defaults to 8000",
+            "in": "query",
+            "name": "rate",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "description": "WAV or raw G.711 mu-law audio bytes",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "FFT, spectral centroid, DTMF, RMS, and voiced-duration analysis"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid audio or parameters"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/v1/speech-to-speech": {
+      "post": {
+        "operationId": "translateSpeechToSpeech",
+        "parameters": [
+          {
+            "description": "wav (default) or mulaw/ulaw/g711",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sample rate for raw mulaw input; defaults to 8000",
+            "in": "query",
+            "name": "rate",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required translation target language",
+            "in": "query",
+            "name": "target_lang",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional source-language hint",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "openai, gemini, or anthropic",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional synthesis voice",
+            "in": "query",
+            "name": "voice",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "wav (default) or mp3",
+            "in": "query",
+            "name": "out_format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "audio (default) or json with base64 audio",
+            "in": "query",
+            "name": "respond",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "description": "Source speech audio bytes",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Translated audio bytes or JSON pipeline result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid audio, provider, language, or output format"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "No transcribable speech"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech or translation provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/v1/stt": {
+      "post": {
+        "operationId": "transcribeAudio",
+        "parameters": [
+          {
+            "description": "wav (default) or mulaw/ulaw/g711",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sample rate for raw mulaw input; defaults to 8000",
+            "in": "query",
+            "name": "rate",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional ISO-639-1 language hint",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Trim leading and trailing silence; defaults true",
+            "in": "query",
+            "name": "trim",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "description": "WAV or raw G.711 mu-law audio bytes",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Persisted transcription result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid audio or parameters"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "No signal above the silence threshold"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/v1/translate": {
+      "post": {
+        "operationId": "translateText",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "Text, target_lang, optional source_lang, and optional provider",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Persisted translation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid text, language, or provider"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Translation provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Translation provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "translation"
+        ]
+      }
+    },
+    "/v1/tts": {
+      "post": {
+        "operationId": "synthesizeSpeech",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "Object with text plus optional voice and wav/mp3 format",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Synthesized audio with X-Synthesis-Id response header"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid text, voice, or format"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    }
+  },
+  "x-dd-contract-scope": "public",
+  "x-dd-language": "rust"
+}

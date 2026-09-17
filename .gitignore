@@ -139,3 +139,11 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-8caaa07504a5-merge-remote-agent-den-1263-executable-o ---
+*.sqlite
+*.sqlite-*
+**/*.rs.bk
+/target
+temp/worktrees
+tmp/worktrees
