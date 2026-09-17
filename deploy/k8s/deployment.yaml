@@ -1,0 +1,84 @@
+# dd-shared-auth-nats-bridge — the shared-auth event plane (HTTP<->NATS).
+#
+# Layer-2 (app-owned) manifest: namespace-scoped ONLY. The `shared-auth`
+# Namespace/quota/limits/default-deny are Layer-1 in ORESoftware/k8s-cluster;
+# the `shared-auth` AppProject enforces clusterResourceWhitelist: [].
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-shared-auth-nats-bridge
+  namespace: shared-auth
+  labels:
+    app: dd-shared-auth-nats-bridge
+    app.kubernetes.io/name: dd-shared-auth-nats-bridge
+    app.kubernetes.io/part-of: shared-auth
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: dd-shared-auth-nats-bridge
+  template:
+    metadata:
+      labels:
+        app: dd-shared-auth-nats-bridge
+        app.kubernetes.io/name: dd-shared-auth-nats-bridge
+        app.kubernetes.io/part-of: shared-auth
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8121"
+        prometheus.io/path: /metrics
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app: dd-shared-auth-nats-bridge }
+      containers:
+        - name: nats-bridge
+          image: ghcr.io/shared-auth/shared-auth-nats-bridge:main
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8121
+          env:
+            - { name: BRIDGE_BIND_ADDR, value: "0.0.0.0:8121" }
+            - { name: BRIDGE_NATS_URL, value: "nats://dd-nats.messaging.svc.cluster.local:4222" }
+            - { name: BRIDGE_SUBJECT_PREFIX, value: "shared-auth." }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4318" }
+            - { name: OTEL_SERVICE_NAME, value: "dd-shared-auth-nats-bridge" }
+            - { name: RUST_LOG, value: "info" }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+          # BRIDGE_INTERNAL_TOKEN (and optional BRIDGE_DELIVERIES overrides)
+          # come from the shared ClusterSecretStore via the ExternalSecret.
+          envFrom:
+            - secretRef:
+                name: dd-shared-auth-nats-bridge-secrets
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { cpu: 250m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }

@@ -1,0 +1,18 @@
+name: repository-policy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify security and hierarchical agent instructions
+        run: scripts/check-repository-policy.sh
