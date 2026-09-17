@@ -1,0 +1,100 @@
+---
+// Layout for legal pages (privacy, account-deletion). Wraps slotted content in
+// a narrow, readable article column with a "back to home" link and legal-body
+// typography, on top of the Base document layout.
+import Base from "./Base.astro";
+
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description } = Astro.props;
+const base = import.meta.env.BASE_URL;
+const home = base.endsWith("/") ? base : `${base}/`;
+---
+
+<Base title={`${title} — Sonus Auris`} description={description}>
+  <main class="legal">
+    <p class="legal-back"><a href={home}>← Sonus Auris</a></p>
+    <article class="legal-body">
+      <slot />
+    </article>
+  </main>
+</Base>
+
+<style>
+  .legal {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 5rem;
+    line-height: 1.65;
+  }
+  .legal-back {
+    margin-bottom: 1.5rem;
+  }
+  .legal-back a {
+    color: #1faa6c;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .legal-body :global(h1) {
+    font-size: 2rem;
+    line-height: 1.2;
+    margin: 0 0 0.5rem;
+  }
+  .legal-body :global(h2) {
+    font-size: 1.3rem;
+    margin: 2rem 0 0.5rem;
+  }
+  .legal-body :global(h3) {
+    font-size: 1.05rem;
+    margin: 1.5rem 0 0.4rem;
+  }
+  .legal-body :global(p),
+  .legal-body :global(li) {
+    color: #2b3a33;
+  }
+  .legal-body :global(a) {
+    color: #1faa6c;
+  }
+  .legal-body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.95rem;
+  }
+  .legal-body :global(th),
+  .legal-body :global(td) {
+    border: 1px solid #d7e3dc;
+    padding: 0.5rem 0.65rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  .legal-body :global(.updated) {
+    color: #5c6b63;
+    font-size: 0.9rem;
+  }
+  .legal-body :global(.todo) {
+    background: #fff6e0;
+    border: 1px solid #f0d38a;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 0.9rem;
+    margin: 1rem 0;
+  }
+  @media (prefers-color-scheme: dark) {
+    .legal-body :global(p),
+    .legal-body :global(li) {
+      color: #d3e0d8;
+    }
+    .legal-body :global(th),
+    .legal-body :global(td) {
+      border-color: #2c3a33;
+    }
+    .legal-body :global(.todo) {
+      background: #2e2713;
+      border-color: #6b5a25;
+    }
+  }
+</style>

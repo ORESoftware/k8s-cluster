@@ -1,0 +1,170 @@
+---
+// "Who it's for" section (#why). Renders a grid of audience cards from the
+// `audiences` data array — musicians, peace-of-mind/evidence, music lovers,
+// students & pros, language learners, birders & naturalists — each with a
+// title, blurb, and bullet points.
+const audiences = [
+  {
+    emoji: "🎶",
+    tag: "For musicians & creators",
+    title: "Never lose the riff again",
+    body: "Inspiration doesn't schedule itself. That hook you hummed in the shower, the jam that happened by accident, the melody you nailed once and never again — Sonus Auris has been rolling the whole time. Scrub back, clip it, and keep it forever.",
+    points: ["Rolling 100-hour buffer", "Tap to bookmark a moment", "Export clean clips to your DAW"],
+    accent: "green",
+  },
+  {
+    emoji: "🛡️",
+    tag: "For peace of mind",
+    title: "Preserve context you control",
+    body: "If a dispute or other important event occurs while you are lawfully recording, you can keep the surrounding clip instead of relying on memory alone. Saved audio includes tamper-evident app metadata, a capture time, and — when you explicitly enable it — location metadata. Sonus Auris does not decide whether a recording is lawful or admissible; those rules depend on where and how it was made.",
+    points: [
+      "Tamper-evident clip and capture metadata",
+      "Optional location tagging, off by default",
+      "Private export when you choose to share",
+    ],
+    accent: "orange",
+  },
+  {
+    emoji: "🎧",
+    tag: "For music lovers",
+    title: "Name every song you hear",
+    body: "That track in the café, the support act you never caught, the song a friend swears you'll love — Sonus Auris recognises music playing around you and quietly logs each one. Link Spotify and it quietly builds a private playlist of everything you heard.",
+    points: [
+      "Automatic song ID, on-device",
+      "Auto-builds a private Spotify playlist",
+      "No duplicates — each song logged once",
+    ],
+    accent: "green",
+  },
+  {
+    emoji: "🎓",
+    tag: "For students & pros",
+    title: "Lectures and meetings, summarised",
+    body: "Stop frantically scribbling. Sonus Auris transcribes classes, meetings, and interviews, then hands you a clean summary with the key points and action items — while the full audio stays in your timeline whenever you need the exact words.",
+    points: ["Automatic transcription", "Key-point & action-item summaries", "Jump from a note to the exact moment"],
+    accent: "orange",
+  },
+  {
+    emoji: "🗣️",
+    tag: "For language learners",
+    title: "Replay the conversation you only half-caught",
+    body: "Living the language is the best teacher — if only it slowed down. Sonus Auris keeps every real-world exchange, so you can scrub back to the sentence that lost you, read the transcript beside the audio, and mine the phrases people actually said to you. Then go further: pronunciation feedback, dictation practice, and synonym and phrasing suggestions turn your own conversations into your study material.",
+    points: [
+      "Transcript & audio side-by-side",
+      "Pronunciation feedback & dictation practice",
+      "Synonym & phrasing suggestions from real speech",
+    ],
+    accent: "green",
+  },
+  {
+    emoji: "🐦",
+    tag: "For birders, biologists & naturalists",
+    title: "Heard a call? Scrub back and ID it",
+    body: "The warbler never sings twice on request. With Sonus Auris rolling, that call you caught out of the corner of your ear is already recorded — scrub back, identify it, and clip it for your field notes. The same listening engine that names songs points itself at birdsong, with every clip timestamped and GPS-tagged for the record.",
+    points: [
+      "Rolling capture — the call is already saved",
+      "Bird call ID from your timeline",
+      "Timestamped, GPS-tagged clips for field notes",
+    ],
+    accent: "orange",
+  },
+];
+---
+
+<section class="section audience" id="why">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">🚗 Like a dashcam, for sound</span>
+      <h2>Six reasons people keep it running</h2>
+      <p>
+        A dashcam doesn't decide which moments matter — it just never stops
+        watching the road. Sonus Auris does the same for the audio of your life.
+      </p>
+    </div>
+
+    <div class="aud-grid">
+      {audiences.map((a) => (
+        <article class={`card aud-card ${a.accent}`}>
+          <div class="aud-emoji">{a.emoji}</div>
+          <span class="aud-tag">{a.tag}</span>
+          <h3>{a.title}</h3>
+          <p>{a.body}</p>
+          <ul>
+            {a.points.map((p) => (
+              <li>
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4 10-11"></path>
+                </svg>
+                {p}
+              </li>
+            ))}
+          </ul>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>
+
+<style>
+  .audience {
+    background: var(--paper-2);
+  }
+  .aud-grid {
+    display: grid;
+    gap: 26px;
+    grid-template-columns: 1fr;
+  }
+  .aud-card {
+    padding: 34px 32px 36px;
+    position: relative;
+    overflow: hidden;
+  }
+  .aud-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 6px;
+  }
+  .aud-card.green::before { background: linear-gradient(90deg, var(--green-400), var(--green-700)); }
+  .aud-card.orange::before { background: linear-gradient(90deg, var(--orange-400), var(--orange-600)); }
+  .aud-emoji {
+    font-size: 2.6rem;
+    margin-bottom: 12px;
+  }
+  .aud-tag {
+    display: inline-block;
+    font-weight: 800;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  .green .aud-tag { color: var(--green-700); }
+  .orange .aud-tag { color: var(--orange-600); }
+  .aud-card h3 {
+    font-size: 1.5rem;
+  }
+  .aud-card p {
+    color: var(--ink-soft);
+  }
+  .aud-card ul {
+    list-style: none;
+    padding: 0;
+    margin: 18px 0 0;
+    display: grid;
+    gap: 10px;
+  }
+  .aud-card li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+  }
+  .green li svg { color: var(--green-500); }
+  .orange li svg { color: var(--orange-500); }
+  @media (min-width: 820px) {
+    .aud-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+</style>

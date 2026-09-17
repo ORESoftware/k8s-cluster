@@ -1,0 +1,193 @@
+/* Self-hosted brand font — no third-party (Google Fonts) request, so no user
+   IP is shared with Google and the CSP needs no external font/style origins.
+   Baloo 2 is a variable font; one file covers weights 500–800. */
+@font-face {
+  font-family: "Baloo 2";
+  font-style: normal;
+  font-weight: 500 800;
+  font-display: swap;
+  /* Vite prefixes root-relative public assets with Astro's configured base. */
+  src: url("/fonts/baloo2.woff2") format("woff2");
+}
+
+:root {
+  /* Brand palette — green + orange, fun but professional */
+  --green-900: #0c3b2e;
+  --green-700: #136f4f;
+  --green-500: #1faa6c;
+  --green-400: #34c585;
+  --green-200: #b7f0d2;
+  --green-50: #eafaf1;
+
+  --orange-600: #e8590c;
+  --orange-500: #fd7e14;
+  --orange-400: #ff9f43;
+  --orange-200: #ffe0bd;
+
+  --ink: #0c2a22;
+  --ink-soft: #355a4f;
+  --paper: #fffdf8;
+  --paper-2: #f4fbf6;
+
+  --shadow-sm: 0 2px 8px rgba(12, 59, 46, 0.08);
+  --shadow-md: 0 12px 30px rgba(12, 59, 46, 0.14);
+  --shadow-lg: 0 24px 60px rgba(12, 59, 46, 0.20);
+
+  --radius: 18px;
+  --radius-lg: 28px;
+
+  --font-sans: "Baloo 2", "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --maxw: 1120px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.1;
+  margin: 0 0 0.4em;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0 0 1em;
+}
+
+a {
+  color: var(--green-700);
+  text-decoration: none;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+.container {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: 22px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--green-700);
+  background: var(--green-50);
+  border: 1px solid var(--green-200);
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+
+.section {
+  padding-block: clamp(56px, 8vw, 110px);
+}
+
+.section-head {
+  max-width: 680px;
+  margin-inline: auto;
+  text-align: center;
+  margin-bottom: 54px;
+}
+
+.section-head h2 {
+  font-size: clamp(1.9rem, 4vw, 2.9rem);
+}
+
+.section-head p {
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 1rem;
+  padding: 14px 26px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--orange-500), var(--orange-600));
+  color: #fff;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+  background: #fff;
+  color: var(--green-900);
+  border-color: var(--green-200);
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--green-900);
+}
+
+/* Generic card */
+.card {
+  background: #fff;
+  border: 1px solid rgba(12, 59, 46, 0.08);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.wave-divider {
+  display: block;
+  width: 100%;
+  height: auto;
+  line-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
