@@ -22,6 +22,17 @@ class RegistryTests(unittest.TestCase):
                 target.load_registry(str(path), 1),
             )
 
+    def test_load_registry_accepts_dynamic_cardinality(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "registry.tsv"
+            path.write_text(
+                "organization\tlinear_url\n"
+                "alpha\thttps://linear.app/example/project/alpha\n"
+                "beta\thttps://linear.app/example/project/beta\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(2, len(target.load_registry(str(path))))
+
     def test_load_registry_rejects_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "registry.tsv"
