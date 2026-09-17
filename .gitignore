@@ -139,3 +139,24 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-cee4150a3106-merge-remote-agent-pr-lock-safety-contra ---
+!dist/README.md
+.idea
+.nyc_output
+.vscode
+@target
+*.DS_Store
+*.log
+*.tgz
+clients/rust/target/
+coverage
+dist
+node_modules
+src/*.d.ts
+src/*.js
+src/**/*.js
+temp/worktrees
+test/.suman/.meta
+tmp/worktrees
+yarn.lock
