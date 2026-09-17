@@ -1,0 +1,30 @@
+# DEN-606 — customer account and organization web tier.
+#
+# INERT BY DEFAULT: this Application has no automated sync policy. Activate only
+# after shared-auth/shared-auth-web-server.rs publishes a green `k8s` path with
+# an immutable image digest, ExternalSecret references, probes, NetworkPolicy,
+# and the Cloudflare-origin authentication contract. The legacy dd-shared-auth
+# application remains the rollback authority during migration.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-shared-auth-web
+  namespace: argocd
+  annotations:
+    oresoftware.com/activation-state: inert
+    oresoftware.com/linear-issue: DEN-606
+    oresoftware.com/realm: customer
+spec:
+  project: shared-auth
+  source:
+    repoURL: git@github.com:shared-auth/shared-auth-web-server.rs.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shared-auth
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+      - PruneLast=true
