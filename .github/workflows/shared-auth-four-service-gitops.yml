@@ -1,0 +1,49 @@
+name: shared-auth-four-service-gitops
+
+on:
+  pull_request:
+    paths:
+      - "remote/argocd/apps/shared-auth*.yaml"
+      - "remote/argocd/projects/shared-auth*.yaml"
+      - "scripts/validate-shared-auth-argocd*.mjs"
+      - ".github/workflows/shared-auth-four-service-gitops.yml"
+  push:
+    branches: [dev, main]
+    paths:
+      - "remote/argocd/apps/shared-auth*.yaml"
+      - "remote/argocd/projects/shared-auth*.yaml"
+      - "scripts/validate-shared-auth-argocd*.mjs"
+      - ".github/workflows/shared-auth-four-service-gitops.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-auth-four-service-gitops-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+      - name: Parse ArgoCD YAML
+        run: |
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_stream(File.read(path)); puts "parsed #{path}" }' \
+            remote/argocd/projects/shared-auth.tenant.yaml \
+            remote/argocd/projects/shared-auth.appproject.yaml \
+            remote/argocd/apps/shared-auth.application.yaml \
+            remote/argocd/apps/shared-auth-web.application.yaml \
+            remote/argocd/apps/shared-auth-api.application.yaml \
+            remote/argocd/apps/shared-auth-admin-web.application.yaml \
+            remote/argocd/apps/shared-auth-admin-api.application.yaml
+      - name: Test Shared Auth ArgoCD policy
+        run: node --test scripts/validate-shared-auth-argocd.test.mjs
+      - name: Validate checked-in Shared Auth applications
+        run: node scripts/validate-shared-auth-argocd.mjs
