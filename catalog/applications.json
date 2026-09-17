@@ -3912,6 +3912,117 @@
             "server": "https://kubernetes.default.svc"
           },
           "document_index": 0,
+          "manifest_path": "remote/argocd/apps/shared-auth-admin-api.application.yaml",
+          "project": "shared-auth",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s",
+              "repo_url": "git@github.com:shared-auth/shared-auth-admin-api-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": false,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=false",
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-shared-auth-admin-api"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "shared-auth",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/shared-auth-admin-web.application.yaml",
+          "project": "shared-auth",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s",
+              "repo_url": "git@github.com:shared-auth/shared-auth-admin-web-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": false,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=false",
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-shared-auth-admin-web"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "shared-auth",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/shared-auth-api.application.yaml",
+          "project": "shared-auth",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s",
+              "repo_url": "git@github.com:shared-auth/shared-auth-api-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": false,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=false",
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-shared-auth-api"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "shared-auth",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
           "manifest_path": "remote/argocd/apps/shared-auth-nats-bridge.application.yaml",
           "project": "shared-auth",
           "sources": [
@@ -3935,6 +4046,43 @@
       ],
       "duplicate_name": false,
       "name": "dd-shared-auth-nats-bridge"
+    },
+    {
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "shared-auth",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/shared-auth-web.application.yaml",
+          "project": "shared-auth",
+          "sources": [
+            {
+              "chart": "",
+              "path": "k8s",
+              "repo_url": "git@github.com:shared-auth/shared-auth-web-server.rs.git",
+              "target_revision": "main"
+            }
+          ],
+          "sync_policy": {
+            "automated": false,
+            "create_namespace": false,
+            "prune": false,
+            "self_heal": false,
+            "sync_options": [
+              "CreateNamespace=false",
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": false,
+      "name": "dd-shared-auth-web"
     },
     {
       "declaration_count": 2,
@@ -5918,8 +6066,8 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 175,
-    "applications": 129,
+    "application_documents": 179,
+    "applications": 133,
     "default_destination_namespace_declarations": 60,
     "default_project_declarations": 135,
     "duplicate_names": 25,
