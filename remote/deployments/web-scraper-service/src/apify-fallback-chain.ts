@@ -170,7 +170,7 @@ export async function runApifyFallbackChain(
   let lastError: Error | null = null;
 
   for (let index = 0; index < actors.length; index += 1) {
-    const actorId = actors[index];
+    const actorId = actors[index]!;
     const elapsedMs = Date.now() - chainStartedAt;
     const remainingWindowMs = providerWindowMs - elapsedMs;
     const remainingAttempts = actors.length - index;
