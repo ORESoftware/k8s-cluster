@@ -99,3 +99,85 @@ test('retry timeout shares the total budget and preserves a provider reserve', (
     0,
   );
 });
+
+
+test('integrated retry policy preserves safety invariants across a broad state matrix', () => {
+  const failures = [
+    'network timeout',
+    'fetch failed: ECONNRESET',
+    'playwright page crashed',
+    'parser worker exited unexpectedly',
+    'SSRF private network blocked by policy',
+    'captcha challenge detected',
+    'unclassified application invariant',
+  ];
+  const requested = ['auto', 'native-fetch', 'playwright', 'puppeteer', 'browserless'];
+  const initial = ['native-fetch', 'cheerio', 'playwright', 'puppeteer', 'browserless'];
+  const attemptedSets = [
+    [],
+    ['native-fetch'],
+    ['native-fetch', 'playwright'],
+    ['native-fetch', 'playwright', 'puppeteer'],
+    ['playwright', 'puppeteer'],
+  ];
+  let cases = 0;
+
+  for (const localErrorMessage of failures) {
+    for (const requestedStrategy of requested) {
+      for (const initialStrategy of initial) {
+        for (const attemptedStrategies of attemptedSets) {
+          for (const elapsedMs of [0, 30_000, 119_000]) {
+            for (const reserveMs of [0, 1_000]) {
+              for (const requestedTimeoutMs of [30_000, 60_000]) {
+                const plan = buildLocalBrowserRetryPlan({
+                  requestedStrategy,
+                  initialStrategy,
+                  attemptedStrategies,
+                  localErrorMessage,
+                });
+                const timeoutMs = remainingRetryTimeoutMs({
+                  maxTotalTimeoutMs: 120_000,
+                  elapsedMs,
+                  requestedTimeoutMs,
+                  reserveMs,
+                  minimumAttemptMs: 500,
+                });
+                cases += 1;
+
+                if (requestedStrategy !== 'auto') {
+                  assert.equal(plan.eligible, false);
+                  assert.equal(plan.reason, 'explicit-strategy');
+                  continue;
+                }
+
+                if (/SSRF|private network|captcha|policy/i.test(localErrorMessage)) {
+                  assert.equal(plan.eligible, false);
+                  assert.equal(plan.reason, 'policy-or-access-error');
+                  continue;
+                }
+
+                if (/unclassified/i.test(localErrorMessage)) {
+                  assert.equal(plan.eligible, false);
+                  assert.equal(plan.reason, 'non-retriable-error');
+                  continue;
+                }
+
+                for (const strategy of plan.strategies) {
+                  assert.ok(strategy === 'playwright' || strategy === 'puppeteer');
+                  assert.equal(attemptedStrategies.includes(strategy), false);
+                  assert.notEqual(initialStrategy, strategy);
+                }
+                if (timeoutMs > 0) {
+                  assert.ok(timeoutMs <= requestedTimeoutMs);
+                  assert.ok(timeoutMs <= 120_000 - elapsedMs - reserveMs);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  assert.ok(cases >= 10_000, `expected a broad invariant matrix, got ${cases}`);
+});
