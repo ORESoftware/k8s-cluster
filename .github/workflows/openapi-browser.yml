@@ -1,0 +1,141 @@
+name: OpenAPI dashboard browser smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/openapi-browser.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/main.rs'
+      - 'src/web.rs'
+      - 'src/web/openapi.rs'
+      - 'tests/browser/openapi-dashboard.spec.mjs'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/openapi-browser.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/main.rs'
+      - 'src/web.rs'
+      - 'src/web/openapi.rs'
+      - 'tests/browser/openapi-dashboard.spec.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tor-openapi-browser-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Install pinned Playwright, WebSocket client, and Chromium
+        run: |
+          set -euo pipefail
+          npm install --no-save --ignore-scripts --no-audit --no-fund \
+            @playwright/test@1.55.0 \
+            ws@8.18.3
+          npx playwright install --with-deps chromium
+
+      - name: Create an offline dashboard fixture directory
+        run: |
+          set -euo pipefail
+          cat > /tmp/tor-browser-directory.toml <<'TOML'
+          [[relays]]
+          name = "browser-fixture"
+          addr = "127.0.0.1:65530"
+          pubkey = "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          TOML
+
+      - name: Start the authenticated loopback dashboard
+        env:
+          TOR_ROLE: client
+          TOR_BACKEND: overlay
+          TOR_DIRECTORY: /tmp/tor-browser-directory.toml
+          TOR_HOPS: '1'
+          TOR_SOCKS_LISTEN: 127.0.0.1:19050
+          TOR_UI_LISTEN: 127.0.0.1:19060
+          TOR_UI_TOKEN: browser+smoke/token:0123456789abcdef
+          TOR_MAX_SOCKS_CONNECTIONS: '8'
+          RUST_LOG: tor_server=info
+        run: |
+          set -euo pipefail
+          cargo run --locked > /tmp/tor-server.log 2>&1 &
+          echo $! > /tmp/tor-server.pid
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:19060/healthz >/dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/tor-server.pid)" 2>/dev/null; then
+              cat /tmp/tor-server.log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/tor-server.log >&2
+          exit 1
+
+      - name: Exercise dashboard, Scalar, OpenAPI, aliases, WebSocket, and auth
+        env:
+          TOR_DOCS_BASE_URL: http://127.0.0.1:19060
+          TOR_DOCS_TOKEN: browser+smoke/token:0123456789abcdef
+        run: npx playwright test tests/browser/openapi-dashboard.spec.mjs --browser=chromium --workers=1 --reporter=line
+
+      - name: Assert dashboard logs do not expose the UI token
+        if: always()
+        env:
+          TOR_DOCS_TOKEN: browser+smoke/token:0123456789abcdef
+        run: |
+          set -euo pipefail
+          if test -f /tmp/tor-server.log && grep --fixed-strings --quiet -- "$TOR_DOCS_TOKEN" /tmp/tor-server.log; then
+            echo 'dashboard log leaked TOR_UI_TOKEN' >&2
+            exit 1
+          fi
+
+      - name: Upload browser evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tor-openapi-browser-evidence-${{ github.sha }}
+          path: |
+            /tmp/tor-server.log
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop server
+        if: always()
+        run: |
+          if test -f /tmp/tor-server.pid; then
+            kill "$(cat /tmp/tor-server.pid)" 2>/dev/null || true
+          fi
