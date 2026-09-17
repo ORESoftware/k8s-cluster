@@ -51,6 +51,7 @@ GOVERNANCE_FILES = {
     "scripts/ops/sync_org_project_docs_rate_aware.py",
     "scripts/ops/test-org-expansion-20260808.json.gz.b64",
     "scripts/ops/test_build_org_project_docs_retry_registry.py",
+    "scripts/ops/test_project_reconciliation_workflow_contract.py",
     "scripts/ops/test_sync_org_project_docs_rate_aware.py",
     "scripts/ops/test_upsert_managed_markdown_block.py",
     "scripts/ops/upsert_managed_markdown_block.py",

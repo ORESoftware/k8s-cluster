@@ -99,7 +99,7 @@ class RateAwareSyncContractTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.ReconcileError, "duplicate"):
             MODULE.validate_results(duplicate, [rows[0]])
 
-    def test_registry_rejects_duplicates_and_wrong_count(self):
+    def test_registry_rejects_duplicates_and_explicit_wrong_count(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "registry.tsv"
             path.write_text(
@@ -110,8 +110,15 @@ class RateAwareSyncContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(MODULE.ReconcileError, "duplicate"):
                 MODULE.load_registry(path)
-            with self.assertRaisesRegex(MODULE.ReconcileError, "expected 64"):
-                MODULE.load_registry(path, expected_count=64)
+            with self.assertRaisesRegex(MODULE.ReconcileError, "expected 3"):
+                MODULE.load_registry(path, expected_count=3)
+
+    def test_expected_count_is_optional_snapshot_guard(self):
+        self.assertIsNone(MODULE.build_parser().parse_args([]).expected_count)
+        self.assertEqual(
+            MODULE.build_parser().parse_args(["--expected-count", "7"]).expected_count,
+            7,
+        )
 
     def test_failure_evidence_cannot_validate_as_completion(self):
         rows = [

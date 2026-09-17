@@ -647,7 +647,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence-dir",
         default="ops/evidence/org-project-docs-rate-aware",
     )
-    parser.add_argument("--expected-count", type=int, default=64)
+    parser.add_argument(
+        "--expected-count",
+        type=int,
+        default=None,
+        help="Optional immutable snapshot cardinality; omitted uses the validated registry length.",
+    )
     parser.add_argument("--min-core-start", type=int, default=1800)
     parser.add_argument("--min-graphql-start", type=int, default=400)
     parser.add_argument("--max-wait-seconds", type=int, default=10800)
