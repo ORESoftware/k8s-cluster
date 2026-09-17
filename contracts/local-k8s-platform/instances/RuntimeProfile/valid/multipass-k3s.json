@@ -1,0 +1,12 @@
+{
+  "schema": "ores.local-k8s-runtime-profile/v1",
+  "name": "mac-vm-a",
+  "runtime": "multipass-k3s",
+  "architecture": "arm64",
+  "resourceClass": "standard",
+  "topology": "single-node",
+  "kubernetesVersion": "v1.32.8+k3s1",
+  "runtimeArtifact": "v1.32.8+k3s1",
+  "cloudMutationPolicy": "denied",
+  "cloudWrites": false
+}

@@ -1,0 +1,244 @@
+name: DEN-1032 local Kubernetes contract
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/den-1032-local-k8s-contract.yml'
+      - 'contracts/local-k8s-platform/**'
+      - 'scripts/local-k8s/**'
+      - 'docs/operations/local-k8s-macbook.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-1032-local-k8s-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  contract:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TJSV_SHA: 8bf7ebda4e35c0d11b5b5e5f865867bee4fc3085
+      KIND_VERSION: v0.30.0
+      KIND_LINUX_AMD64_SHA256: 517ab7fc89ddeed5fa65abf71530d90648d9638ef0c4cde22c2c11f8097b8889
+    steps:
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source-ref.outputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify exact source
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          git diff --check
+
+      - name: Set up Node 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Install exact TypeSpec JSON Schema validator
+        run: |
+          set -euo pipefail
+          npm install \
+            --no-save \
+            --package-lock=false \
+            --no-audit \
+            --no-fund \
+            "https://github.com/ORESoftware/typespec-json-schema-validator/archive/${TJSV_SHA}.tar.gz"
+          ./node_modules/.bin/tjsv doctor
+
+      - name: Prove TypeSpec and JSON Schema convergence
+        id: tjsv
+        run: |
+          set -euo pipefail
+          evidence_dir="$RUNNER_TEMP/den-1032-contract-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$evidence_dir"
+          printf 'path=%s\n' "$evidence_dir" >> "$GITHUB_OUTPUT"
+          ./node_modules/.bin/tjsv check \
+            --typespec=contracts/local-k8s-platform/main.tsp \
+            --schema=contracts/local-k8s-platform/authored.schema.json \
+            --instances=contracts/local-k8s-platform/instances \
+            --report="$evidence_dir/tjsv-report.json" \
+            --quiet
+
+      - name: Stress TJSV deterministic and fail-closed behavior
+        env:
+          TJSV_EVIDENCE_DIR: ${{ steps.tjsv.outputs.path }}
+        run: |
+          set -euo pipefail
+          node scripts/local-k8s/test_tjsv_failclosed.mjs
+
+      - name: Enforce five runtime boundaries against current inputs
+        env:
+          TJSV_EVIDENCE_DIR: ${{ steps.tjsv.outputs.path }}
+        run: |
+          set -euo pipefail
+          node scripts/local-k8s/test_language_boundaries.mjs
+
+      - name: Attack current-input boundary provenance and identity binding
+        env:
+          TJSV_EVIDENCE_DIR: ${{ steps.tjsv.outputs.path }}
+        run: |
+          set -euo pipefail
+          node scripts/local-k8s/test_language_boundaries_current_tjsv.mjs
+
+      - name: Run semantic profile and evidence regression tests
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/local-k8s/verify_profile.py \
+            scripts/local-k8s/test_verify_profile.py \
+            scripts/local-k8s/verify_evidence.py \
+            scripts/local-k8s/test_verify_evidence.py \
+            scripts/local-k8s/live_kind_evidence.py
+          python3 scripts/local-k8s/test_verify_profile.py
+          python3 scripts/local-k8s/test_verify_evidence.py
+
+      - name: Verify positive and negative profile admission receipts
+        run: |
+          set -euo pipefail
+          for profile in \
+            contracts/local-k8s-platform/instances/RuntimeProfile/valid/ci-kind.json \
+            contracts/local-k8s-platform/instances/RuntimeProfile/valid/colima-kind.json \
+            contracts/local-k8s-platform/instances/RuntimeProfile/valid/multipass-k3s.json; do
+            LOCAL_K8S_PROFILE="$profile" python3 scripts/local-k8s/verify_profile.py
+          done
+          LOCAL_K8S_PROFILE=contracts/local-k8s-platform/instances/RuntimeProfile/valid/ci-kind.json \
+            LOCAL_K8S_EVIDENCE=contracts/local-k8s-platform/instances/RuntimeEvidence/valid/ci-kind.json \
+            python3 scripts/local-k8s/verify_evidence.py
+          set +e
+          LOCAL_K8S_PROFILE=contracts/local-k8s-platform/instances/RuntimeProfile/invalid/docker-only.json \
+            python3 scripts/local-k8s/verify_profile.py
+          status=$?
+          set -e
+          test "$status" -eq 2
+
+      - name: Set up pinned kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v4.0.1
+        with:
+          version: v1.32.8
+
+      - name: Install pinned kind
+        run: |
+          set -euo pipefail
+          install -d "$RUNNER_TEMP/kind-bin"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "$RUNNER_TEMP/kind-bin/kind" \
+            "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          printf '%s  %s\n' \
+            "$KIND_LINUX_AMD64_SHA256" \
+            "$RUNNER_TEMP/kind-bin/kind" \
+            | sha256sum --check --strict -
+          chmod +x "$RUNNER_TEMP/kind-bin/kind"
+          printf '%s\n' "$RUNNER_TEMP/kind-bin" >> "$GITHUB_PATH"
+
+      - name: Produce exact-head live kind RuntimeEvidence
+        id: live-kind
+        env:
+          LOCAL_K8S_PROFILE: contracts/local-k8s-platform/instances/RuntimeProfile/valid/ci-kind.json
+          LOCAL_K8S_EVIDENCE_DIR: ${{ steps.tjsv.outputs.path }}/live-kind
+          LOCAL_K8S_CLUSTER_NAME: ores-den1032-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          python3 scripts/local-k8s/live_kind_evidence.py
+          LOCAL_K8S_EVIDENCE="$LOCAL_K8S_EVIDENCE_DIR/runtime-evidence.json" \
+            python3 scripts/local-k8s/verify_evidence.py
+          printf 'evidence=%s\n' "$LOCAL_K8S_EVIDENCE_DIR/runtime-evidence.json" >> "$GITHUB_OUTPUT"
+
+      - name: Admit live RuntimeEvidence through both peer authorities
+        env:
+          LIVE_EVIDENCE: ${{ steps.live-kind.outputs.evidence }}
+        run: |
+          set -euo pipefail
+          runtime_instances="$RUNNER_TEMP/den-1032-live-instances-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          export runtime_instances LIVE_EVIDENCE
+          python3 - <<'PY'
+          import os
+          import shutil
+          from pathlib import Path
+
+          source = Path('contracts/local-k8s-platform/instances')
+          target = Path(os.environ['runtime_instances'])
+          shutil.copytree(source, target)
+          live_target = target / 'RuntimeEvidence' / 'valid' / 'exact-head-live-kind.json'
+          live_target.parent.mkdir(parents=True, exist_ok=True)
+          live_target.write_bytes(Path(os.environ['LIVE_EVIDENCE']).read_bytes())
+          PY
+          ./node_modules/.bin/tjsv check \
+            --typespec=contracts/local-k8s-platform/main.tsp \
+            --schema=contracts/local-k8s-platform/authored.schema.json \
+            --instances="$runtime_instances" \
+            --report="${{ steps.tjsv.outputs.path }}/live-kind-tjsv-report.json" \
+            --quiet
+
+      - name: Verify bootstrap syntax and repository hygiene
+        run: |
+          set -euo pipefail
+          node --check scripts/local-k8s/test_tjsv_failclosed.mjs
+          node --check scripts/local-k8s/test_language_boundaries.mjs
+          node --check scripts/local-k8s/test_language_boundaries_current_tjsv.mjs
+          bash -n scripts/local-k8s/bootstrap-colima-kind.sh
+          bash -n scripts/local-k8s/bootstrap-multipass-k3s.sh
+          test ! -e package-lock.json
+          git diff --check
+
+      - name: Upload contract evidence
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: den-1032-local-k8s-contract-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.tjsv.outputs.path }}
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Record verification summary
+        if: success()
+        run: |
+          {
+            echo '## DEN-1032 exact-head contract'
+            echo
+            echo "- TJSV exact revision: \`${TJSV_SHA}\`"
+            echo '- independent TypeSpec and Draft 2020-12 JSON Schema authorities: converged'
+            echo '- differential RuntimeProfile + RuntimeEvidence corpus: passed'
+            echo '- deterministic TJSV receipt replay: passed'
+            echo '- authored-schema and TypeSpec drift mutations: both stopped for evaluation as expected'
+            echo '- five-runtime current-input boundary admission (Rust/TS/Dart/Go/Gleam): passed'
+            echo '- missing/stale/ingress/egress language-boundary mutations: stopped fail-closed'
+            echo '- current-input provenance, receipt/IR identity, and duplicate-target mutations: stopped fail-closed'
+            echo '- exact-head docker-kind cluster/API/server-admission evidence: passed'
+            echo '- least-privilege RBAC: list pods=yes, get secrets=no'
+            echo '- live RuntimeEvidence re-admitted by both peer authorities: passed'
+            echo '- Docker-only runtime admission: rejected as expected'
+            echo '- Colima/kind and Multipass/K3s bootstrap syntax: passed'
+            echo '- cloud writes, provider writes, and secret inputs: denied'
+          } >> "$GITHUB_STEP_SUMMARY"
