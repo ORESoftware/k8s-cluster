@@ -453,15 +453,15 @@ async fn acknowledged_failure_preserves_lease_identity_and_terminal_semantics() 
     let summary = run_one(api.clone(), Some(failure_handler(false))).await;
     assert_eq!(summary.failed, 1);
     assert_eq!(summary.protocol_errors, 0);
-    let failure = api.failure.lock().expect("failure lock");
-    let failure = failure.as_ref().expect("failure");
+    let failure_guard = api.failure.lock().expect("failure lock");
+    let failure = failure_guard.as_ref().expect("failure");
     assert_eq!(failure.lease.worker_id, "rust-worker-adversarial");
     assert_eq!(failure.lease.lease_token, "lease-token-adversarial");
     assert_eq!(failure.lease.lease_generation, 11);
     assert_eq!(failure.code, "handler_failed");
     assert_eq!(failure.message, "handler returned an expected failure");
     assert!(!failure.retryable);
-    drop(failure);
+    drop(failure_guard);
     assert_eq!(api.drain_count.load(Ordering::Acquire), 1);
     assert_eq!(
         api.operations().last().map(String::as_str),
