@@ -35,6 +35,42 @@
       "required": ["url"],
       "unevaluatedProperties": false
     },
+    "FallbackAttemptOutcome": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "FallbackAttemptOutcome",
+      "type": "string",
+      "enum": ["success", "error"]
+    },
+    "FallbackAttemptErrorClass": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "FallbackAttemptErrorClass",
+      "type": "string",
+      "enum": [
+        "timeout",
+        "rate-limit",
+        "provider-server-error",
+        "network",
+        "empty-result",
+        "invalid-response",
+        "response-too-large",
+        "provider-auth",
+        "invalid-request",
+        "unknown"
+      ]
+    },
+    "FallbackAttempt": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "FallbackAttempt",
+      "type": "object",
+      "properties": {
+        "actorId": { "type": "string" },
+        "outcome": { "$ref": "FallbackAttemptOutcome" },
+        "durationMs": { "type": "integer" },
+        "errorClass": { "$ref": "FallbackAttemptErrorClass" }
+      },
+      "required": ["actorId", "outcome", "durationMs"],
+      "unevaluatedProperties": false
+    },
     "FallbackProvenance": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "$id": "FallbackProvenance",
@@ -47,7 +83,14 @@
         "localStrategy": { "type": "string" },
         "durationMs": { "type": "integer" },
         "localDurationMs": { "type": "integer" },
-        "totalDurationMs": { "type": "integer" }
+        "totalDurationMs": { "type": "integer" },
+        "route": { "type": "string" },
+        "attempts": {
+          "type": "array",
+          "items": { "$ref": "FallbackAttempt" }
+        },
+        "maxChainAttempts": { "type": "integer" },
+        "maxChainChargeUsd": { "type": "number" }
       },
       "required": ["provider", "actorId", "trigger", "localStatusCode", "durationMs"],
       "unevaluatedProperties": false
