@@ -71,11 +71,8 @@ async fn create_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(
-        bc,
-        bc.config().multisig_enabled,
-        "BLOCKCHAIN_MULTISIG_ENABLED",
-    ) {
+    if let Err(resp) = require_enabled(bc, bc.config().multisig_enabled, "BLOCKCHAIN_MULTISIG_ENABLED")
+    {
         return resp;
     }
     let chain = match parse_chain(&body.chain) {
@@ -86,17 +83,11 @@ async fn create_http(
         return json_err(StatusCode::BAD_REQUEST, "signers must be 1..=32 entries");
     }
     if body.threshold == 0 || body.threshold > body.signers.len() {
-        return json_err(
-            StatusCode::BAD_REQUEST,
-            "threshold must be 1..=signers.len()",
-        );
+        return json_err(StatusCode::BAD_REQUEST, "threshold must be 1..=signers.len()");
     }
     let digest = body.payload_digest.trim();
     if digest.is_empty() || digest.len() > MAX_DIGEST_LEN {
-        return json_err(
-            StatusCode::BAD_REQUEST,
-            "payloadDigest must be 1..=256 characters",
-        );
+        return json_err(StatusCode::BAD_REQUEST, "payloadDigest must be 1..=256 characters");
     }
     // Validate + canonicalize each signer address; reject duplicates.
     let mut signers: Vec<String> = Vec::with_capacity(body.signers.len());
@@ -153,19 +144,13 @@ async fn approve_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(
-        bc,
-        bc.config().multisig_enabled,
-        "BLOCKCHAIN_MULTISIG_ENABLED",
-    ) {
+    if let Err(resp) = require_enabled(bc, bc.config().multisig_enabled, "BLOCKCHAIN_MULTISIG_ENABLED")
+    {
         return resp;
     }
     let signature = body.signature.trim();
     if signature.is_empty() || signature.len() > MAX_SIGNATURE_LEN {
-        return json_err(
-            StatusCode::BAD_REQUEST,
-            "signature must be 1..=256 characters",
-        );
+        return json_err(StatusCode::BAD_REQUEST, "signature must be 1..=256 characters");
     }
 
     let mut proposals = match bc.inner().proposals.lock() {
@@ -182,9 +167,7 @@ async fn approve_http(
     if !proposal.signers.contains(&signer) {
         return json_err(StatusCode::FORBIDDEN, "signer is not part of this proposal");
     }
-    let already = proposal
-        .signatures
-        .insert(signer.clone(), signature.to_string());
+    let already = proposal.signatures.insert(signer.clone(), signature.to_string());
     if already.is_none() {
         bc.metrics()
             .multisig_approvals_total
@@ -207,11 +190,8 @@ async fn status_http(
 ) -> axum::response::Response {
     let bc = &state.blockchain;
     record_request(bc);
-    if let Err(resp) = require_enabled(
-        bc,
-        bc.config().multisig_enabled,
-        "BLOCKCHAIN_MULTISIG_ENABLED",
-    ) {
+    if let Err(resp) = require_enabled(bc, bc.config().multisig_enabled, "BLOCKCHAIN_MULTISIG_ENABLED")
+    {
         return resp;
     }
     let proposals = match bc.inner().proposals.lock() {

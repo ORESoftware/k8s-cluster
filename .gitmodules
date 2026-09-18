@@ -1,6 +1,3 @@
-# These submodules are SECONDARY checkouts. The source of truth for each is its
-# own upstream repo (the `url` below). Develop in the upstream repo / its
-# standalone ~/codes clone and bump the pointer here. See SUBMODULES.md.
 [submodule "remote/deployments/gcs/chat-vibe"]
 	path = remote/deployments/gcs/chat-vibe
 	url = git@github.com:ORESoftware/chat.vibe.git
@@ -8,15 +5,12 @@
 [submodule "remote/modules/github/oresoftware/json-logging"]
 	path = remote/modules/github/oresoftware/json-logging
 	url = https://github.com/oresoftware/json-logging.git
-	branch = master
 [submodule "remote/modules/github/oresoftware/cmd-line-parser"]
 	path = remote/modules/github/oresoftware/cmd-line-parser
 	url = https://github.com/oresoftware/cmd-line-parser.git
-	branch = main
 [submodule "remote/modules/github/oresoftware/go-iterators"]
 	path = remote/modules/github/oresoftware/go-iterators
 	url = https://github.com/oresoftware/go-iterators.git
-	branch = main
 [submodule "remote/submodules/live-mutex"]
 	path = remote/submodules/live-mutex
 	url = git@github.com:ORESoftware/live-mutex.git
@@ -36,7 +30,6 @@
 [submodule "remote/deployments/mip-solver-node.rs"]
 	path = remote/deployments/mip-solver-node.rs
 	url = git@github.com:ORESoftware/mip-solver-node.rs.git
-	branch = main
 [submodule "remote/submodules/live-mutex-mills.rs"]
 	path = remote/submodules/live-mutex-mills.rs
 	url = git@github.com:ORESoftware/live-mutex-mills.rs.git
@@ -47,141 +40,17 @@
 	branch = main
 [submodule "remote/submodules/soccer-sim-game-engine.rs"]
 	path = remote/submodules/soccer-sim-game-engine.rs
-	url = https://github.com/akrion-sim/akrion-soccer-engine-rs.git
+	url = https://github.com/ORESoftware/soccer-sim-game-engine.rs.git
 	branch = main
 [submodule "remote/deployments/dd-sound-recorder-rs"]
 	path = remote/deployments/dd-sound-recorder-rs
-	url = git@github.com:sonus-auris/sonus-auris-api-server.rs.git
+	url = git@github.com:sonus-auris/sonus-auris-backend.rs.git
 	branch = main
 [submodule "remote/deployments/3fa-backend"]
 	path = remote/deployments/3fa-backend
-	url = git@github.com:3FA-app/3fa-backend.rs.git
+	url = git@github.com:ORESoftware/3fa-backend.rs.git
 	branch = main
 [submodule "remote/libs"]
 	path = remote/libs
 	url = git@github.com:ORESoftware/k8s-libs-and-shared-defs.git
-	branch = main
-[submodule "remote/deployments/benefactor-backend-rs"]
-	path = remote/deployments/benefactor-backend-rs
-	url = git@github.com:benefactor-cc/backend.rs.git
-	branch = main
-[submodule "remote/submodules/sonus-auris-site.web"]
-	path = remote/submodules/sonus-auris-site.web
-	url = https://github.com/sonus-auris/sonus-auris-site.web
-	branch = main
-[submodule "remote/submodules/sonus-auris.infra"]
-	path = remote/submodules/sonus-auris.infra
-	url = git@github.com:sonus-auris/sonus-auris.infra.git
-	branch = main
-[submodule "remote/deployments/soccer-rs"]
-	path = remote/deployments/soccer-rs
-	url = git@github.com:akrion-sim/akrion-backend.rs.git
-	branch = main
-[submodule "remote/deployments/canonical-cloud"]
-	path = remote/deployments/canonical-cloud
-	url = https://github.com/canonical-cloud/canonical.cloud.git
-	branch = main
-[submodule "remote/deployments/fiducia-customer.rs"]
-	path = remote/deployments/fiducia-customer.rs
-	url = https://github.com/fiducia-cloud/fiducia-customer.rs.git
-	branch = main
-[submodule "remote/deployments/fiducia-marketing.web"]
-	path = remote/deployments/fiducia-marketing.web
-	url = https://github.com/fiducia-cloud/fiducia-marketing.web.git
-	branch = main
-[submodule "remote/deployments/fiducia-monorepo"]
-	path = remote/deployments/fiducia-monorepo
-	url = https://github.com/fiducia-cloud/fiducia-monorepo.git
-	branch = main
-[submodule "remote/deployments/akrion-web-server-rs"]
-	path = remote/deployments/akrion-web-server-rs
-	url = git@github.com:akrion-sim/akrion-web-server.rs.git
-	branch = main
-[submodule "remote/deployments/tor-server.rs"]
-	path = remote/deployments/tor-server.rs
-	url = git@github.com:ORESoftware/tor-server.rs.git
-	branch = main
-[submodule "remote/deployments/ai-agent-bridge"]
-	path = remote/deployments/ai-agent-bridge
-	url = git@github.com:ORESoftware/ai-agent-bridge.rs.git
-	branch = main
-[submodule "remote/deployments/fabrication-server-rs"]
-	path = remote/deployments/fabrication-server-rs
-	url = git@github.com:daedalus-fab/fabrication-server.rs.git
-	branch = main
-[submodule "remote/deployments/gleam-lambda-runner"]
-	path = remote/deployments/gleam-lambda-runner
-	url = git@github.com:scintilla-run/gleam-lambda-runner.git
-	branch = main
-[submodule "remote/deployments/billing-server-rs"]
-	path = remote/deployments/billing-server-rs
-	url = git@github.com:quaestor-ledger/billing-server.rs.git
-	branch = main
-[submodule "remote/deployments/dart-server"]
-	path = remote/deployments/dart-server
-	url = git@github.com:sagitta-stack/dart-server.git
-	branch = main
-[submodule "remote/deployments/dd-data-viz-rs"]
-	path = remote/deployments/dd-data-viz-rs
-	url = git@github.com:claritas-viz/data-viz-server.rs.git
-	branch = main
-[submodule "remote/deployments/athleto-backend-rs"]
-	path = remote/deployments/athleto-backend-rs
-	url = git@github.com:athlet-o/athleto-backend.rs.git
-	branch = main
-[submodule "remote/deployments/usacc-rest-api-backend-rs"]
-	path = remote/deployments/usacc-rest-api-backend-rs
-	url = git@github.com:usa-acc/rest-api-backend.rs.git
-	branch = main
-[submodule "remote/deployments/3fa-web-server-rs"]
-	path = remote/deployments/3fa-web-server-rs
-	url = git@github.com:3FA-app/3fa-web-server.rs.git
-	branch = main
-[submodule "remote/deployments/athleto-app-rs"]
-	path = remote/deployments/athleto-app-rs
-	url = git@github.com:athlet-o/athleto-app-rs.git
-	branch = main
-[submodule "remote/deployments/t2v-v2t.rs"]
-	path = remote/deployments/t2v-v2t.rs
-	url = git@github.com:ORESoftware/t2v-v2t.rs.git
-	branch = main
-[submodule "remote/deployments/sonus-auris-monorepo"]
-	path = remote/deployments/sonus-auris-monorepo
-	url = git@github.com:sonus-auris/sonus-auris-monorepo.git
-	branch = main
-[submodule "remote/deployments/daedalus-monorepo"]
-	path = remote/deployments/daedalus-monorepo
-	url = https://github.com/daedalus-fab/daedalus-monorepo.git
-	branch = main
-[submodule "remote/submodules/shared-auth-server.rs"]
-	path = remote/submodules/shared-auth-server.rs
-	url = git@github.com:shared-auth/shared-auth-server.rs.git
-	branch = main
-[submodule "remote/deployments/shared-auth-monorepo"]
-	path = remote/deployments/shared-auth-monorepo
-	url = git@github.com:shared-auth/shared-auth-monorepo.git
-	branch = main
-[submodule "remote/deployments/drone-mngr-monorepo"]
-	path = remote/deployments/drone-mngr-monorepo
-	url = https://github.com/drone-mngr/drone-mngr-monorepo.git
-	branch = main
-[submodule "remote/deployments/scintilla-run-monorepo"]
-	path = remote/deployments/scintilla-run-monorepo
-	url = git@github.com:scintilla-run/scintilla-run-monorepo.git
-	branch = main
-[submodule "remote/deployments/zed-monorepo"]
-	path = remote/deployments/zed-monorepo
-	url = https://github.com/zed-pkg/zed-monorepo.git
-	branch = main
-[submodule "remote/submodules/shared-auth-nats-bridge.rs"]
-	path = remote/submodules/shared-auth-nats-bridge.rs
-	url = git@github.com:shared-auth/shared-auth-nats-bridge.rs.git
-	branch = main
-[submodule "remote/deployments/cliptown-monorepo"]
-	path = remote/deployments/cliptown-monorepo
-	url = https://github.com/cliptown/cliptown-monorepo.git
-	branch = main
-[submodule "remote/deployments/push-notification-server.rs"]
-	path = remote/deployments/push-notification-server.rs
-	url = git@github.com:ORESoftware/push-notification-server.rs.git
 	branch = main

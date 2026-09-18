@@ -27,10 +27,7 @@ struct Inner {
 impl EmbeddingCache {
     pub fn new(max_entries: usize, max_item_bytes: usize) -> Self {
         Self {
-            inner: Mutex::new(Inner {
-                map: HashMap::new(),
-                order: VecDeque::new(),
-            }),
+            inner: Mutex::new(Inner { map: HashMap::new(), order: VecDeque::new() }),
             max_entries,
             max_item_bytes,
             // A zero budget disables the cache entirely.
@@ -54,13 +51,7 @@ impl EmbeddingCache {
     }
 
     /// Look up the vector for one text, if present.
-    pub fn get(
-        &self,
-        provider: &str,
-        req: &EmbedRequest,
-        model: &str,
-        text: &str,
-    ) -> Option<Vec<f32>> {
+    pub fn get(&self, provider: &str, req: &EmbedRequest, model: &str, text: &str) -> Option<Vec<f32>> {
         if !self.cacheable(text) {
             return None;
         }

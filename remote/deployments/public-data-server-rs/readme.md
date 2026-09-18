@@ -88,5 +88,3 @@ publication while the big-data platform owns durable batch execution.
 - `PUBLIC_DATA_*_SUBJECT` - optional overrides for generated NATS subjects.
 
 Secrets belong in AWS Secrets Manager / Kubernetes secrets, not Git.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

@@ -1,5 +1,4 @@
 import dd_cli_config_client
-import dd_otel_client
 import dd_runtime_config_client
 import gleam/erlang/process
 import gleam/int
@@ -17,8 +16,6 @@ fn env_get(name: String) -> String
 
 pub fn main() -> Nil {
   let _ = dd_cli_config_client.load_once()
-  // Start the OpenTelemetry SDK + OTLP exporter before the HTTP supervisor.
-  let _ = dd_otel_client.init("dd-gleam-mcp-server")
   let metrics_name = process.new_name(prefix: "dd_gleam_mcp_metrics")
   let nats_name = process.new_name(prefix: "dd_gleam_mcp_nats")
 

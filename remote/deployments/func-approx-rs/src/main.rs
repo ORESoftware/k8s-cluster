@@ -19,7 +19,6 @@
 // Sits beside the other compute servers (monte-carlo, evolution, economics).
 // Pure-Rust math with a seeded PRNG, so every fit is reproducible from a seed.
 
-mod algebra;
 mod data;
 mod evo;
 mod fit;
@@ -42,7 +41,7 @@ use std::{
 use axum::{
     extract::{DefaultBodyLimit, State},
     http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse, Response},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -176,12 +175,12 @@ async fn publish_result(state: &AppState, response: &FitResponse) {
     })) {
         Ok(payload) => payload,
         Err(error) => {
-            tracing::error!("failed to encode func-approx result: {error}");
+            eprintln!("failed to encode func-approx result: {error}");
             return;
         }
     };
     if payload.len() > MAX_PUBLISH_BYTES {
-        tracing::error!(
+        eprintln!(
             "func-approx result too large to publish: bytes={} max={MAX_PUBLISH_BYTES}",
             payload.len()
         );
@@ -192,7 +191,7 @@ async fn publish_result(state: &AppState, response: &FitResponse) {
         .publish(state.result_subject.clone(), payload.into())
         .await
     {
-        tracing::error!("failed to publish func-approx result: {error}");
+        eprintln!("failed to publish func-approx result: {error}");
         return;
     }
     let _ = nats
@@ -221,25 +220,6 @@ async fn healthz() -> impl IntoResponse {
         "mode": "function-approximator",
         "methods": ["symbolic", "neural", "evolution", "hybrid", "linear", "auto"],
         "atMs": now_ms(),
-    }))
-}
-
-/// The interactive browser playground (served at `/` and `/ui`). Self-contained:
-/// inline HTML/CSS/JS, no build step and no external assets. It fits over
-/// same-origin `/approximate` and can optionally offload chart rendering to the
-/// dd-data-viz `/render` endpoint.
-async fn ui() -> Html<&'static str> {
-    Html(include_str!("../ui.html"))
-}
-
-/// Bootstrap config the UI fetches on load. Reports the optional dd-data-viz base
-/// URL the browser may post render specs to, and whether this server requires an
-/// auth token on `/approximate` (so the UI can prompt for it). No secret is ever
-/// handed to the browser.
-async fn ui_config(State(state): State<AppState>) -> Json<serde_json::Value> {
-    Json(json!({
-        "dataVizUrl": env_value("FUNC_APPROX_DATA_VIZ_URL", ""),
-        "authRequired": state.auth_secret.is_some(),
     }))
 }
 
@@ -320,10 +300,10 @@ async fn approximate_http(
 
 async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
     let Some(nats) = state.nats.clone() else {
-        tracing::info!("func-approx nats loop disabled: NATS_URL is not configured");
+        println!("func-approx nats loop disabled: NATS_URL is not configured");
         return;
     };
-    tracing::info!(
+    println!(
         "func-approx nats loop starting: subject={subject} queue_group={queue_group} resultSubject={}",
         state.result_subject
     );
@@ -331,7 +311,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
         let mut subscription = match nats.queue_subscribe(subject.clone(), queue_group.clone()).await {
             Ok(subscription) => subscription,
             Err(error) => {
-                tracing::error!("func-approx subscribe failed: {error}; retrying in 5s");
+                eprintln!("func-approx subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -344,7 +324,7 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
             let payload = message.payload.to_vec();
             if payload.len() > MAX_NATS_PAYLOAD_BYTES {
                 state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                tracing::error!(
+                eprintln!(
                     "func-approx rejected oversize nats request: bytes={} max={MAX_NATS_PAYLOAD_BYTES}",
                     payload.len()
                 );
@@ -366,25 +346,23 @@ async fn run_nats_loop(state: AppState, subject: String, queue_group: String) {
                         }
                         Err(error) => {
                             task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                            tracing::error!("func-approx failed nats fit: {error}");
+                            eprintln!("func-approx failed nats fit: {error}");
                         }
                     },
                     Err(error) => {
                         task_state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                        tracing::error!("func-approx invalid nats request: {error}");
+                        eprintln!("func-approx invalid nats request: {error}");
                     }
                 }
             });
         }
-        tracing::error!("func-approx subscription ended; re-subscribing in 5s");
+        eprintln!("func-approx subscription ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let _otel = dd_telemetry::init("dd-func-approx-rs");
-
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8139").parse::<u16>()?;
     let nats = match env::var("NATS_URL")
@@ -394,7 +372,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         Some(url) => match async_nats::connect(&url).await {
             Ok(client) => Some(client),
             Err(error) => {
-                tracing::error!("func-approx-rs NATS connect failed ({url}): {error}");
+                eprintln!("func-approx-rs NATS connect failed ({url}): {error}");
                 None
             }
         },
@@ -414,9 +392,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(run_nats_loop(state.clone(), subject, queue_group));
 
     let app = Router::new()
-        .route("/", get(ui))
-        .route("/ui", get(ui))
-        .route("/ui/config.json", get(ui_config))
+        .route("/", get(healthz))
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/approximate", post(approximate_http))
@@ -428,9 +404,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
-    tracing::info!("dd-func-approx-rs listening on http://{addr}");
+    println!("dd-func-approx-rs listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;
         })

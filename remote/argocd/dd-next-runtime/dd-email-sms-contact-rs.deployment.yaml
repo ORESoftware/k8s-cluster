@@ -207,7 +207,7 @@ spec:
               containerPort: 8120
           resources:
             requests:
-              cpu: 25m
+              cpu: 100m
               memory: 1Gi
             limits:
               cpu: '2'

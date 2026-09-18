@@ -14,17 +14,15 @@
     {
       "service": "agent-worker-broker-rs",
       "language": "rust",
-      "routeCount": 10,
+      "routeCount": 9,
       "routeTypeCounts": {
         "user-generated": 1,
-        "service": 6,
+        "service": 5,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/agent-worker-broker-rs/generated/api-docs.json",
-        "remote/deployments/agent-worker-broker-rs/generated/api-docs.html",
-        "remote/deployments/agent-worker-broker-rs/generated/api-docs.internal.json",
-        "remote/deployments/agent-worker-broker-rs/generated/api-docs.metadata.json"
+        "remote/deployments/agent-worker-broker-rs/generated/api-docs.html"
       ]
     },
     {
@@ -38,40 +36,34 @@
       },
       "generated": [
         "remote/deployments/ai-ml-pipeline/generated/api-docs.json",
-        "remote/deployments/ai-ml-pipeline/generated/api-docs.html",
-        "remote/deployments/ai-ml-pipeline/generated/api-docs.internal.json",
-        "remote/deployments/ai-ml-pipeline/generated/api-docs.metadata.json"
+        "remote/deployments/ai-ml-pipeline/generated/api-docs.html"
       ]
     },
     {
       "service": "apostille-services-server-rs",
       "language": "rust",
-      "routeCount": 24,
+      "routeCount": 23,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 17
+        "user-generated": 16
       },
       "generated": [
         "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
-        "remote/deployments/apostille-services-server-rs/generated/api-docs.html",
-        "remote/deployments/apostille-services-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/apostille-services-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "auth-server-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 11,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 5,
+        "user-generated": 3,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/auth-server-rs/generated/api-docs.json",
-        "remote/deployments/auth-server-rs/generated/api-docs.html",
-        "remote/deployments/auth-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/auth-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/auth-server-rs/generated/api-docs.html"
       ]
     },
     {
@@ -85,9 +77,7 @@
       },
       "generated": [
         "remote/deployments/bastion-rs/generated/api-docs.json",
-        "remote/deployments/bastion-rs/generated/api-docs.html",
-        "remote/deployments/bastion-rs/generated/api-docs.internal.json",
-        "remote/deployments/bastion-rs/generated/api-docs.metadata.json"
+        "remote/deployments/bastion-rs/generated/api-docs.html"
       ]
     },
     {
@@ -100,88 +90,76 @@
       },
       "generated": [
         "remote/deployments/billing-server-rs/generated/api-docs.json",
-        "remote/deployments/billing-server-rs/generated/api-docs.html",
-        "remote/deployments/billing-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/billing-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/billing-server-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "browser-test-server",
       "language": "node",
-      "routeCount": 17,
+      "routeCount": 14,
       "routeTypeCounts": {
-        "service": 12,
-        "user-generated": 5
+        "service": 8,
+        "user-generated": 6
       },
       "generated": [
         "remote/deployments/browser-test-server/generated/api-docs.json",
-        "remote/deployments/browser-test-server/generated/api-docs.html",
-        "remote/deployments/browser-test-server/generated/api-docs.internal.json",
-        "remote/deployments/browser-test-server/generated/api-docs.metadata.json"
+        "remote/deployments/browser-test-server/generated/api-docs.html"
       ]
     },
     {
       "service": "build-server-rs",
       "language": "rust",
-      "routeCount": 19,
+      "routeCount": 12,
       "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 9,
+        "service": 6,
+        "user-generated": 3,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/build-server-rs/generated/api-docs.json",
-        "remote/deployments/build-server-rs/generated/api-docs.html",
-        "remote/deployments/build-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/build-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/build-server-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "cluster-mcp-rs",
       "language": "rust",
-      "routeCount": 15,
+      "routeCount": 13,
       "routeTypeCounts": {
-        "service": 8,
-        "user-generated": 4,
+        "service": 7,
+        "user-generated": 3,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/cluster-mcp-rs/generated/api-docs.json",
-        "remote/deployments/cluster-mcp-rs/generated/api-docs.html",
-        "remote/deployments/cluster-mcp-rs/generated/api-docs.internal.json",
-        "remote/deployments/cluster-mcp-rs/generated/api-docs.metadata.json"
+        "remote/deployments/cluster-mcp-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "container-pool-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 12,
       "routeTypeCounts": {
-        "service": 6,
+        "service": 5,
         "runtime-config": 3,
         "user-generated": 4
       },
       "generated": [
         "remote/deployments/container-pool-rs/generated/api-docs.json",
-        "remote/deployments/container-pool-rs/generated/api-docs.html",
-        "remote/deployments/container-pool-rs/generated/api-docs.internal.json",
-        "remote/deployments/container-pool-rs/generated/api-docs.metadata.json"
+        "remote/deployments/container-pool-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "contract-service-rs",
       "language": "rust",
-      "routeCount": 59,
+      "routeCount": 52,
       "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 49,
+        "service": 6,
+        "user-generated": 43,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/contract-service-rs/generated/api-docs.json",
-        "remote/deployments/contract-service-rs/generated/api-docs.html",
-        "remote/deployments/contract-service-rs/generated/api-docs.internal.json",
-        "remote/deployments/contract-service-rs/generated/api-docs.metadata.json"
+        "remote/deployments/contract-service-rs/generated/api-docs.html"
       ]
     },
     {
@@ -194,55 +172,47 @@
       },
       "generated": [
         "remote/deployments/dart-server/generated/api-docs.json",
-        "remote/deployments/dart-server/generated/api-docs.html",
-        "remote/deployments/dart-server/generated/api-docs.internal.json",
-        "remote/deployments/dart-server/generated/api-docs.metadata.json"
+        "remote/deployments/dart-server/generated/api-docs.html"
       ]
     },
     {
       "service": "dataset-labeling-rs",
       "language": "rust",
-      "routeCount": 18,
+      "routeCount": 17,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 11
+        "user-generated": 10
       },
       "generated": [
         "remote/deployments/dataset-labeling-rs/generated/api-docs.json",
-        "remote/deployments/dataset-labeling-rs/generated/api-docs.html",
-        "remote/deployments/dataset-labeling-rs/generated/api-docs.internal.json",
-        "remote/deployments/dataset-labeling-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dataset-labeling-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "dd-benefactor-marketing-rs",
       "language": "rust",
-      "routeCount": 76,
+      "routeCount": 64,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 69
+        "user-generated": 57
       },
       "generated": [
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
-        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.html",
-        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "dd-compliance-rs",
       "language": "rust",
-      "routeCount": 37,
+      "routeCount": 36,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 27,
+        "user-generated": 26,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/dd-compliance-rs/generated/api-docs.json",
-        "remote/deployments/dd-compliance-rs/generated/api-docs.html",
-        "remote/deployments/dd-compliance-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-compliance-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dd-compliance-rs/generated/api-docs.html"
       ]
     },
     {
@@ -256,24 +226,7 @@
       },
       "generated": [
         "remote/deployments/dd-document-rs/generated/api-docs.json",
-        "remote/deployments/dd-document-rs/generated/api-docs.html",
-        "remote/deployments/dd-document-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-document-rs/generated/api-docs.metadata.json"
-      ]
-    },
-    {
-      "service": "dd-embeddings-rs",
-      "language": "rust",
-      "routeCount": 23,
-      "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 16
-      },
-      "generated": [
-        "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
-        "remote/deployments/dd-embeddings-rs/generated/api-docs.html",
-        "remote/deployments/dd-embeddings-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-embeddings-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dd-document-rs/generated/api-docs.html"
       ]
     },
     {
@@ -287,39 +240,33 @@
       },
       "generated": [
         "remote/deployments/dd-escrow-rs/generated/api-docs.json",
-        "remote/deployments/dd-escrow-rs/generated/api-docs.html",
-        "remote/deployments/dd-escrow-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-escrow-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dd-escrow-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "dd-git-rs",
       "language": "rust",
-      "routeCount": 17,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 10
+        "user-generated": 8
       },
       "generated": [
         "remote/deployments/dd-git-rs/generated/api-docs.json",
-        "remote/deployments/dd-git-rs/generated/api-docs.html",
-        "remote/deployments/dd-git-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-git-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dd-git-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "dd-music-rs",
       "language": "rust",
-      "routeCount": 14,
+      "routeCount": 13,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 7
+        "user-generated": 6
       },
       "generated": [
         "remote/deployments/dd-music-rs/generated/api-docs.json",
-        "remote/deployments/dd-music-rs/generated/api-docs.html",
-        "remote/deployments/dd-music-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-music-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dd-music-rs/generated/api-docs.html"
       ]
     },
     {
@@ -333,9 +280,20 @@
       },
       "generated": [
         "remote/deployments/dd-ocr-rs/generated/api-docs.json",
-        "remote/deployments/dd-ocr-rs/generated/api-docs.html",
-        "remote/deployments/dd-ocr-rs/generated/api-docs.internal.json",
-        "remote/deployments/dd-ocr-rs/generated/api-docs.metadata.json"
+        "remote/deployments/dd-ocr-rs/generated/api-docs.html"
+      ]
+    },
+    {
+      "service": "dd-sound-recorder-rs",
+      "language": "rust",
+      "routeCount": 29,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 22
+      },
+      "generated": [
+        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.json",
+        "remote/deployments/dd-sound-recorder-rs/generated/api-docs.html"
       ]
     },
     {
@@ -349,25 +307,21 @@
       },
       "generated": [
         "remote/deployments/des-simulator-rs/generated/api-docs.json",
-        "remote/deployments/des-simulator-rs/generated/api-docs.html",
-        "remote/deployments/des-simulator-rs/generated/api-docs.internal.json",
-        "remote/deployments/des-simulator-rs/generated/api-docs.metadata.json"
+        "remote/deployments/des-simulator-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "dev-server",
       "language": "node",
-      "routeCount": 20,
+      "routeCount": 19,
       "routeTypeCounts": {
-        "user-generated": 11,
+        "user-generated": 10,
         "service": 6,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/dev-server/generated/api-docs.json",
-        "remote/deployments/dev-server/generated/api-docs.html",
-        "remote/deployments/dev-server/generated/api-docs.internal.json",
-        "remote/deployments/dev-server/generated/api-docs.metadata.json"
+        "remote/deployments/dev-server/generated/api-docs.html"
       ]
     },
     {
@@ -381,56 +335,49 @@
       },
       "generated": [
         "remote/deployments/economics-server-rs/generated/api-docs.json",
-        "remote/deployments/economics-server-rs/generated/api-docs.html",
-        "remote/deployments/economics-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/economics-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/economics-server-rs/generated/api-docs.html"
       ]
     },
     {
-      "service": "fiducia-customer.rs",
+      "service": "fabrication-server-rs",
       "language": "rust",
-      "routeCount": 59,
+      "routeCount": 511,
       "routeTypeCounts": {
-        "service": 5,
-        "user-generated": 54
+        "service": 7,
+        "user-generated": 501,
+        "runtime-config": 3
       },
       "generated": [
-        "remote/deployments/fiducia-customer.rs/generated/api-docs.json",
-        "remote/deployments/fiducia-customer.rs/generated/api-docs.html",
-        "remote/deployments/fiducia-customer.rs/generated/api-docs.internal.json",
-        "remote/deployments/fiducia-customer.rs/generated/api-docs.metadata.json"
+        "remote/deployments/fabrication-server-rs/generated/api-docs.json",
+        "remote/deployments/fabrication-server-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "formal-methods-server-rs",
       "language": "rust",
-      "routeCount": 16,
+      "routeCount": 15,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 7,
+        "user-generated": 6,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/formal-methods-server-rs/generated/api-docs.json",
-        "remote/deployments/formal-methods-server-rs/generated/api-docs.html",
-        "remote/deployments/formal-methods-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/formal-methods-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/formal-methods-server-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "formal-methods-service-rs",
       "language": "rust",
-      "routeCount": 11,
+      "routeCount": 10,
       "routeTypeCounts": {
-        "service": 5,
+        "service": 4,
         "user-generated": 3,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
-        "remote/deployments/formal-methods-service-rs/generated/api-docs.html",
-        "remote/deployments/formal-methods-service-rs/generated/api-docs.internal.json",
-        "remote/deployments/formal-methods-service-rs/generated/api-docs.metadata.json"
+        "remote/deployments/formal-methods-service-rs/generated/api-docs.html"
       ]
     },
     {
@@ -443,9 +390,7 @@
       },
       "generated": [
         "remote/deployments/fsharp-ws-server/generated/api-docs.json",
-        "remote/deployments/fsharp-ws-server/generated/api-docs.html",
-        "remote/deployments/fsharp-ws-server/generated/api-docs.internal.json",
-        "remote/deployments/fsharp-ws-server/generated/api-docs.metadata.json"
+        "remote/deployments/fsharp-ws-server/generated/api-docs.html"
       ]
     },
     {
@@ -459,25 +404,21 @@
       },
       "generated": [
         "remote/deployments/gleam-lambda-runner/generated/api-docs.json",
-        "remote/deployments/gleam-lambda-runner/generated/api-docs.html",
-        "remote/deployments/gleam-lambda-runner/generated/api-docs.internal.json",
-        "remote/deployments/gleam-lambda-runner/generated/api-docs.metadata.json"
+        "remote/deployments/gleam-lambda-runner/generated/api-docs.html"
       ]
     },
     {
       "service": "gleam-mcp-server",
       "language": "gleam",
-      "routeCount": 14,
+      "routeCount": 12,
       "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 4,
+        "service": 6,
+        "user-generated": 3,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleam-mcp-server/generated/api-docs.json",
-        "remote/deployments/gleam-mcp-server/generated/api-docs.html",
-        "remote/deployments/gleam-mcp-server/generated/api-docs.internal.json",
-        "remote/deployments/gleam-mcp-server/generated/api-docs.metadata.json"
+        "remote/deployments/gleam-mcp-server/generated/api-docs.html"
       ]
     },
     {
@@ -485,15 +426,13 @@
       "language": "gleam",
       "routeCount": 17,
       "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 7,
+        "service": 5,
+        "user-generated": 9,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
-        "remote/deployments/gleamlang-presence-server/generated/api-docs.html",
-        "remote/deployments/gleamlang-presence-server/generated/api-docs.internal.json",
-        "remote/deployments/gleamlang-presence-server/generated/api-docs.metadata.json"
+        "remote/deployments/gleamlang-presence-server/generated/api-docs.html"
       ]
     },
     {
@@ -507,9 +446,7 @@
       },
       "generated": [
         "remote/deployments/gleamlang-server/generated/api-docs.json",
-        "remote/deployments/gleamlang-server/generated/api-docs.html",
-        "remote/deployments/gleamlang-server/generated/api-docs.internal.json",
-        "remote/deployments/gleamlang-server/generated/api-docs.metadata.json"
+        "remote/deployments/gleamlang-server/generated/api-docs.html"
       ]
     },
     {
@@ -522,25 +459,21 @@
       },
       "generated": [
         "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.json",
-        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.html",
-        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.internal.json",
-        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.metadata.json"
+        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.html"
       ]
     },
     {
       "service": "gleamlang-ws-server",
       "language": "gleam",
-      "routeCount": 22,
+      "routeCount": 21,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 13,
+        "user-generated": 12,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/gleamlang-ws-server/generated/api-docs.json",
-        "remote/deployments/gleamlang-ws-server/generated/api-docs.html",
-        "remote/deployments/gleamlang-ws-server/generated/api-docs.internal.json",
-        "remote/deployments/gleamlang-ws-server/generated/api-docs.metadata.json"
+        "remote/deployments/gleamlang-ws-server/generated/api-docs.html"
       ]
     },
     {
@@ -553,9 +486,7 @@
       },
       "generated": [
         "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.json",
-        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.html",
-        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.internal.json",
-        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.metadata.json"
+        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.html"
       ]
     },
     {
@@ -569,9 +500,7 @@
       },
       "generated": [
         "remote/deployments/mdp-optimizer-rs/generated/api-docs.json",
-        "remote/deployments/mdp-optimizer-rs/generated/api-docs.html",
-        "remote/deployments/mdp-optimizer-rs/generated/api-docs.internal.json",
-        "remote/deployments/mdp-optimizer-rs/generated/api-docs.metadata.json"
+        "remote/deployments/mdp-optimizer-rs/generated/api-docs.html"
       ]
     },
     {
@@ -585,9 +514,7 @@
       },
       "generated": [
         "remote/deployments/patent-filing-rs/generated/api-docs.json",
-        "remote/deployments/patent-filing-rs/generated/api-docs.html",
-        "remote/deployments/patent-filing-rs/generated/api-docs.internal.json",
-        "remote/deployments/patent-filing-rs/generated/api-docs.metadata.json"
+        "remote/deployments/patent-filing-rs/generated/api-docs.html"
       ]
     },
     {
@@ -600,41 +527,35 @@
       },
       "generated": [
         "remote/deployments/public-data-server-rs/generated/api-docs.json",
-        "remote/deployments/public-data-server-rs/generated/api-docs.html",
-        "remote/deployments/public-data-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/public-data-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/public-data-server-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "rest-api-rs",
       "language": "rust",
-      "routeCount": 58,
+      "routeCount": 45,
       "routeTypeCounts": {
-        "user-generated": 31,
-        "service": 8,
-        "internal-db": 16,
+        "user-generated": 25,
+        "service": 7,
+        "internal-db": 10,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/rest-api-rs/generated/api-docs.json",
-        "remote/deployments/rest-api-rs/generated/api-docs.html",
-        "remote/deployments/rest-api-rs/generated/api-docs.internal.json",
-        "remote/deployments/rest-api-rs/generated/api-docs.metadata.json"
+        "remote/deployments/rest-api-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "runtime-config-rs",
       "language": "rust",
-      "routeCount": 21,
+      "routeCount": 18,
       "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 14
+        "service": 6,
+        "user-generated": 12
       },
       "generated": [
         "remote/deployments/runtime-config-rs/generated/api-docs.json",
-        "remote/deployments/runtime-config-rs/generated/api-docs.html",
-        "remote/deployments/runtime-config-rs/generated/api-docs.internal.json",
-        "remote/deployments/runtime-config-rs/generated/api-docs.metadata.json"
+        "remote/deployments/runtime-config-rs/generated/api-docs.html"
       ]
     },
     {
@@ -648,24 +569,20 @@
       },
       "generated": [
         "remote/deployments/rust-vapi-phone-rs/generated/api-docs.json",
-        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.html",
-        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.internal.json",
-        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.metadata.json"
+        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "spark-pipeline-server",
       "language": "java",
-      "routeCount": 10,
+      "routeCount": 9,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 4
+        "user-generated": 3
       },
       "generated": [
         "remote/deployments/spark-pipeline-server/generated/api-docs.json",
-        "remote/deployments/spark-pipeline-server/generated/api-docs.html",
-        "remote/deployments/spark-pipeline-server/generated/api-docs.internal.json",
-        "remote/deployments/spark-pipeline-server/generated/api-docs.metadata.json"
+        "remote/deployments/spark-pipeline-server/generated/api-docs.html"
       ]
     },
     {
@@ -679,9 +596,7 @@
       },
       "generated": [
         "remote/deployments/trading-server-rs/generated/api-docs.json",
-        "remote/deployments/trading-server-rs/generated/api-docs.html",
-        "remote/deployments/trading-server-rs/generated/api-docs.internal.json",
-        "remote/deployments/trading-server-rs/generated/api-docs.metadata.json"
+        "remote/deployments/trading-server-rs/generated/api-docs.html"
       ]
     },
     {
@@ -694,24 +609,20 @@
       },
       "generated": [
         "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.json",
-        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.html",
-        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.internal.json",
-        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.metadata.json"
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "wal-gateway-rs",
       "language": "rust",
-      "routeCount": 11,
+      "routeCount": 10,
       "routeTypeCounts": {
-        "service": 8,
+        "service": 7,
         "runtime-config": 3
       },
       "generated": [
         "remote/deployments/wal-gateway-rs/generated/api-docs.json",
-        "remote/deployments/wal-gateway-rs/generated/api-docs.html",
-        "remote/deployments/wal-gateway-rs/generated/api-docs.internal.json",
-        "remote/deployments/wal-gateway-rs/generated/api-docs.metadata.json"
+        "remote/deployments/wal-gateway-rs/generated/api-docs.html"
       ]
     },
     {
@@ -725,24 +636,20 @@
       },
       "generated": [
         "remote/deployments/web-home-rs/generated/api-docs.json",
-        "remote/deployments/web-home-rs/generated/api-docs.html",
-        "remote/deployments/web-home-rs/generated/api-docs.internal.json",
-        "remote/deployments/web-home-rs/generated/api-docs.metadata.json"
+        "remote/deployments/web-home-rs/generated/api-docs.html"
       ]
     },
     {
       "service": "web-scraper-service",
       "language": "node",
-      "routeCount": 14,
+      "routeCount": 13,
       "routeTypeCounts": {
         "service": 8,
-        "user-generated": 6
+        "user-generated": 5
       },
       "generated": [
         "remote/deployments/web-scraper-service/generated/api-docs.json",
-        "remote/deployments/web-scraper-service/generated/api-docs.html",
-        "remote/deployments/web-scraper-service/generated/api-docs.internal.json",
-        "remote/deployments/web-scraper-service/generated/api-docs.metadata.json"
+        "remote/deployments/web-scraper-service/generated/api-docs.html"
       ]
     },
     {
@@ -756,9 +663,7 @@
       },
       "generated": [
         "remote/deployments/webrtc-media-rs/generated/api-docs.json",
-        "remote/deployments/webrtc-media-rs/generated/api-docs.html",
-        "remote/deployments/webrtc-media-rs/generated/api-docs.internal.json",
-        "remote/deployments/webrtc-media-rs/generated/api-docs.metadata.json"
+        "remote/deployments/webrtc-media-rs/generated/api-docs.html"
       ]
     },
     {
@@ -772,9 +677,7 @@
       },
       "generated": [
         "remote/deployments/webrtc-signaling-rs/generated/api-docs.json",
-        "remote/deployments/webrtc-signaling-rs/generated/api-docs.html",
-        "remote/deployments/webrtc-signaling-rs/generated/api-docs.internal.json",
-        "remote/deployments/webrtc-signaling-rs/generated/api-docs.metadata.json"
+        "remote/deployments/webrtc-signaling-rs/generated/api-docs.html"
       ]
     }
   ]

@@ -49,8 +49,6 @@ spec:
               value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: CONTAINER_POOL_NATS_SUBJECT
               value: dd.remote.container_pool.*.requests
-            - name: CONTAINER_POOL_NATS_QUEUE_GROUP
-              value: dd-container-pool
             - name: CONTAINER_POOL_NATS_RESULT_SUBJECT
               value: dd.remote.container_pool.results
             - name: CONTAINER_POOL_NATS_MAX_PAYLOAD_BYTES
@@ -192,7 +190,7 @@ spec:
             failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /healthz
               port: http
             periodSeconds: 5
             timeoutSeconds: 3

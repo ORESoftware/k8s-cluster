@@ -130,5 +130,3 @@ node ../../tools/generate-api-docs.mjs
 ```
 
 Secrets belong in AWS Secrets Manager / Kubernetes secrets, not Git.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

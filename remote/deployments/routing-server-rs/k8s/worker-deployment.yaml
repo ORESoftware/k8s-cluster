@@ -24,7 +24,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: routing
-          image: 710156900967.dkr.ecr.us-east-1.amazonaws.com/dd-routing-server:latest
+          image: REPLACE_ME_ECR_URI/dd-routing-server:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

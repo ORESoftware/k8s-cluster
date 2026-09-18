@@ -17,7 +17,7 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: '2026-06-04-rust-network-mutex-broker-client'
-        dd.dev/live-mutex-rs-revision: '55e7009c462b8c4c0a27e29db35101c4ac3ad2bc'
+        dd.dev/live-mutex-rs-revision: '7f104183811170694b0e55fa6771b035fb09ea83'
       labels:
         app: dd-rust-network-mutex
     spec:
@@ -82,7 +82,7 @@ spec:
             - name: LMX_RS_GIT_URL
               value: https://github.com/ORESoftware/live-mutex-rs.git
             - name: LMX_RS_GIT_REF
-              value: 55e7009c462b8c4c0a27e29db35101c4ac3ad2bc
+              value: dev
             - name: HOME
               value: /tmp
             - name: CARGO_HOME
@@ -138,7 +138,7 @@ spec:
               containerPort: 6971
           resources:
             requests:
-              cpu: 25m
+              cpu: 50m
               memory: 1Gi
             limits:
               cpu: '2'

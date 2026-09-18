@@ -13,40 +13,6 @@ Both expose the same read-only `dd_cluster` tool surface (cluster inventory,
 service directory, observability health), reached **through the
 `dd-remote-gateway`**, never directly.
 
-## Tool surface additions (Rust server only)
-
-The Rust server (`dd-cluster-mcp-rs`) additionally exposes these zero-argument
-read-only tools. **They are Rust-server-only for now** — Gleam server parity is
-pending consolidation.
-
-| Tool                           | What it reads                                                                                       |
-| ------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `kubernetes_ingress_endpoints` | Ingress hosts/rules + LoadBalancer Service external IPs/hostnames and ports.                        |
-| `deployment_rollout_status`    | Per-deployment ready/updated/available replica counts + Available/Progressing conditions.           |
-| `kubernetes_events_warnings`   | Recent non-Normal (`type!=Normal`) events, bounded and message-redacted.                            |
-| `cloudflare_zones`             | Cloudflare zone list (name, id, status, paused, plan, nameservers) — bounded pagination.            |
-| `cloudflare_dns_records`       | DNS records per zone (type, name, redacted content, proxied, ttl) — capped zones/records.           |
-| `domain_registration`          | RDAP registration data per configured domain: registrar, status, expiry + `daysUntilExpiry`, NS.    |
-| `domain_dns_wiring`            | DNS-over-HTTPS A/AAAA/CNAME/NS resolution per domain, correlated against expected cluster ingress.  |
-
-> **Squarespace-registered domains.** Squarespace has **no public domains
-> API**, so those domains are covered honestly via registrar-neutral **RDAP**
-> (registration/registrar/expiry — surfaces registrar strings like
-> "Squarespace Domains") plus **DNS-over-HTTPS** (live wiring checks). No
-> Squarespace credentials exist or are needed.
-
-Environment knobs (all optional; set on the `dd-cluster-mcp-rs` Deployment):
-
-| Env var                          | Purpose                                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`           | Read-only Cloudflare token (optional `secretKeyRef` into `dd-cluster-mcp-rs-secrets`). When absent the Cloudflare tools return a "not configured" hint instead of erroring. |
-| `DD_MCP_DOMAINS`                 | Comma-separated domains for RDAP/DoH tools. Default: `fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud` (derived from the gateway vhosts). |
-| `DD_MCP_EXPECTED_INGRESS_IPS`    | Comma-separated expected ingress IPs/hostnames (default in-manifest: the gateway EIP `98.90.186.114`); live LB/Ingress endpoints are unioned in automatically. |
-| `DD_MCP_DOH_URL`                 | DNS-over-HTTPS endpoint (default `https://cloudflare-dns.com/dns-query`).                    |
-| `DD_MCP_RDAP_URL`                | RDAP bootstrap base (default `https://rdap.org`).                                            |
-| `DD_MCP_EXTERNAL_TIMEOUT_MS`     | Per-call timeout for Cloudflare/RDAP/DoH reads (default 2500, clamped ≤5000).                |
-| `DD_MCP_EXTERNAL_BODY_LIMIT_BYTES` | Parse guard for external response bodies (default 65536, clamped ≤262144).                 |
-
 > **Gateway IP.** The gateway is the EC2 Elastic IP `98.90.186.114`. If the
 > instance is rebuilt and the EIP changes, update the URLs in `.cursor/mcp.json`,
 > `.vscode/mcp.json`, this file, and `codex-config.example.toml`. Discover the
@@ -60,33 +26,6 @@ Environment knobs (all optional; set on the `dd-cluster-mcp-rs` Deployment):
 >
 > When the IP changes you must also **reissue the TLS cert for the new IP** (see
 > "TLS" below) or clients will fail certificate validation.
-
-## Keeping the four configs in sync (`mcp-config.sh`)
-
-The gateway host is duplicated across four per-tool files: `.mcp.json` (Claude Code),
-`.cursor/mcp.json` (Cursor), `.vscode/mcp.json` (VS Code), and
-[`codex-config.example.toml`](./codex-config.example.toml) (Codex).
-
-**Why not one symlinked file?** The formats are deliberately not shared. Claude Code
-expands `${DD_MCP_TOKEN}`, Cursor requires `${env:DD_MCP_TOKEN}` (and does not read a
-root `.mcp.json`), VS Code uses a different `servers` + `inputs` schema with a prompted
-token, and Claude Code ignores an `mcp.json` placed inside `.claude/`. A single
-symlinked file cannot carry a working token reference for all of them, so each tool
-keeps its own file and the **gateway host** is treated as the shared value.
-
-[`mcp-config.sh`](./mcp-config.sh) manages that shared value non-destructively:
-
-```sh
-mcp/mcp-config.sh check           # read-only: assert all four configs use the same host
-mcp/mcp-config.sh check --live    # also compare against the live EC2 EIP (needs awscli)
-mcp/mcp-config.sh set-ip <NEW_IP> # surgically swap the host across all files + this README
-mcp/mcp-config.sh set-ip <NEW_IP> --dry-run
-```
-
-`check` never writes; `set-ip` only replaces the host substring (all other formatting and
-comments are preserved) and prints a diff to review before committing. The Nix dev shell
-runs `check` on entry and warns if the configs have drifted. So when the EIP changes, run
-`set-ip` instead of hand-editing the four files listed above (then reissue the TLS cert).
 
 ## Auth model
 

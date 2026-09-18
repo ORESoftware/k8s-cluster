@@ -282,9 +282,9 @@ fn log_to(stderr: bool, severity: &str, event_name: &str, body: &str, attributes
         )
     });
     if stderr {
-        tracing::error!("{line}");
+        eprintln!("{line}");
     } else {
-        tracing::info!("{line}");
+        println!("{line}");
     }
 }
 
@@ -1915,8 +1915,6 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let _otel = dd_telemetry::init("dd-document-rs");
-
     let host = env_value("HOST", "0.0.0.0");
     let port = env_value("PORT", "8122");
     let max_input_bytes = env_usize("DOCUMENT_MAX_INPUT_BYTES", DEFAULT_MAX_INPUT_BYTES);
@@ -2088,7 +2086,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         "Document service HTTP listener is ready.",
         json!({ "address": address.to_string() }),
     );
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())

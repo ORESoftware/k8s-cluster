@@ -12,8 +12,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-rust-vapi-phone
@@ -115,13 +115,6 @@ spec:
               value: dd:vapi-phone
             - name: VAPI_REDIS_CACHE_TTL_SECONDS
               value: '2592000'
-            # JetStream work queue: enables the dd.vapi.tasks.> worker, which
-            # provisions stream DD_VAPI_TASKS + durable consumer
-            # dd-vapi-phone-worker at startup. The KEDA ScaledObject
-            # (dd-rust-vapi-phone.scaledobject.yaml) scales this deployment by
-            # that consumer's lag; tasks arrive via dd-nats-bridge (messaging ns).
-            - name: VAPI_NATS_URL
-              value: nats://dd-nats.messaging.svc.cluster.local:4222
             - name: AGENT_TASKS_RDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -210,7 +203,7 @@ spec:
               containerPort: 8113
           resources:
             requests:
-              cpu: 25m
+              cpu: 50m
               memory: 128Mi
             limits:
               cpu: '1'

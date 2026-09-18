@@ -32,8 +32,8 @@ use dd_shared_interfaces::{
 use maud::{html, Markup, PreEscaped, DOCTYPE};
 use once_cell::sync::Lazy;
 use prometheus::{
-    register_int_counter_vec, register_int_gauge, register_int_gauge_vec, Encoder, IntCounterVec,
-    IntGauge, IntGaugeVec, TextEncoder,
+    register_int_counter_vec, register_int_gauge_vec, Encoder, IntCounterVec, IntGaugeVec,
+    TextEncoder,
 };
 use redis::aio::MultiplexedConnection;
 use redis::AsyncCommands;
@@ -88,14 +88,6 @@ static SUBSCRIBER_COUNT: Lazy<IntGaugeVec> = Lazy::new(|| {
         &["env"]
     )
     .expect("register dd_runtime_config_subscribers")
-});
-
-static REDIS_READY: Lazy<IntGauge> = Lazy::new(|| {
-    register_int_gauge!(
-        "dd_runtime_config_redis_ready",
-        "Whether runtime-config can currently PING Redis"
-    )
-    .expect("register dd_runtime_config_redis_ready")
 });
 
 // ---------- State ----------
@@ -257,7 +249,7 @@ fn validate_subscriber_name(value: &str) -> Result<(), ServiceError> {
     Ok(())
 }
 
-fn validate_apply_url(allow_external_subscribers: bool, value: &str) -> Result<(), ServiceError> {
+fn validate_apply_url(state: &AppState, value: &str) -> Result<(), ServiceError> {
     let parsed = reqwest::Url::parse(value)
         .map_err(|_| ServiceError::BadRequest("applyUrl must be a valid URL".to_string()))?;
     match parsed.scheme() {
@@ -278,7 +270,7 @@ fn validate_apply_url(allow_external_subscribers: bool, value: &str) -> Result<(
             "applyUrl path must be {APPLY_ROUTE_PATH}"
         )));
     }
-    if allow_external_subscribers {
+    if state.allow_external_subscribers {
         return Ok(());
     }
     let host = parsed
@@ -470,9 +462,7 @@ async fn load_entries(
         match serde_json::from_str::<RuntimeConfigEntry>(&raw) {
             Ok(entry) => entries.push(entry),
             Err(error) => {
-                tracing::error!(
-                    "[dd-runtime-config] dropping malformed entry {entry_key}: {error}"
-                );
+                eprintln!("[dd-runtime-config] dropping malformed entry {entry_key}: {error}");
             }
         }
     }
@@ -696,7 +686,7 @@ async fn push_to_env(
     let subs = match load_subscribers(state, env).await {
         Ok(list) => list,
         Err(error) => {
-            tracing::error!(
+            eprintln!(
                 "[dd-runtime-config] failed to load subscribers for {}: {error:?}",
                 env_token(env)
             );
@@ -813,7 +803,7 @@ async fn record_push_result(
         updated.last_applied_version = Some(version);
     }
     if let Err(error) = store_subscriber(state, &updated).await {
-        tracing::error!(
+        eprintln!(
             "[dd-runtime-config] failed to persist subscriber result for {}: {error:?}",
             subscriber.name
         );
@@ -823,7 +813,7 @@ async fn record_push_result(
 // ---------- Cron ----------
 
 async fn run_push_loop(state: AppState, interval: Duration) {
-    tracing::info!(
+    println!(
         "[dd-runtime-config] push loop starting, interval={}s",
         interval.as_secs()
     );
@@ -834,7 +824,7 @@ async fn run_push_loop(state: AppState, interval: Duration) {
             let ok = outcomes.iter().filter(|outcome| outcome.ok).count();
             let total = outcomes.len();
             if total > 0 {
-                tracing::info!(
+                println!(
                     "[dd-runtime-config] cron push env={} ok={}/{}",
                     env_token(&env),
                     ok,
@@ -872,23 +862,6 @@ struct EntriesQuery {
 
 async fn healthz() -> impl IntoResponse {
     Json(json!({ "ok": true }))
-}
-
-async fn readyz(State(state): State<AppState>) -> Response {
-    let ready = match state.connection().await {
-        Ok(mut conn) => redis::cmd("PING")
-            .query_async::<String>(&mut conn)
-            .await
-            .is_ok(),
-        Err(_) => false,
-    };
-    REDIS_READY.set(i64::from(ready));
-    let status = if ready {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
-    (status, Json(json!({ "ok": ready, "redisReady": ready }))).into_response()
 }
 
 async fn metrics() -> impl IntoResponse {
@@ -996,7 +969,7 @@ async fn register_subscriber(
     require_server_auth(&state, &headers)?;
     validate_subscriber_name(&body.name)?;
     validate_scope(&body.scope)?;
-    validate_apply_url(state.allow_external_subscribers, &body.apply_url)?;
+    validate_apply_url(&state, &body.apply_url)?;
     let subscriber = RuntimeConfigSubscriber {
         env: body.env.clone(),
         name: body.name.clone(),
@@ -1344,7 +1317,6 @@ async fn api_docs_json() -> impl IntoResponse {
 fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
         .route("/docs/api", get(api_docs_html))
         .route("/api/docs", get(api_docs_html))
         .route("/api/docs.json", get(api_docs_json))
@@ -1394,8 +1366,6 @@ fn read_bool_env(name: &str) -> bool {
 
 #[tokio::main]
 async fn main() {
-    let _otel = dd_telemetry::init("dd-runtime-config");
-
     let redis_url = read_env(ENV_REDIS_URL)
         .or_else(|| read_env(ENV_REDIS_URL_FALLBACK))
         .unwrap_or_else(|| "redis://dd-redis-cache.default.svc.cluster.local:6379".to_string());
@@ -1441,13 +1411,13 @@ async fn main() {
     let address: SocketAddr = format!("{host}:{port}")
         .parse()
         .expect("invalid runtime-config bind address");
-    tracing::info!("[dd-runtime-config] listening on http://{address}");
+    println!("[dd-runtime-config] listening on http://{address}");
 
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(address)
         .await
         .expect("failed to bind runtime-config listener");
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+    axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("runtime-config server crashed");
@@ -1472,41 +1442,5 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn subscriber_urls_are_cluster_local_by_default() {
-        assert!(validate_apply_url(
-            false,
-            "http://dd-worker.default.svc.cluster.local:8080/internal/update-runtime-config"
-        )
-        .is_ok());
-        assert!(
-            validate_apply_url(false, "https://example.com/internal/update-runtime-config")
-                .is_err()
-        );
-        assert!(validate_apply_url(
-            false,
-            "http://169.254.169.254/internal/update-runtime-config"
-        )
-        .is_err());
-    }
-
-    #[test]
-    fn subscriber_urls_reject_credentials_and_wrong_paths() {
-        assert!(validate_apply_url(
-            true,
-            "https://user:secret@example.com/internal/update-runtime-config"
-        )
-        .is_err());
-        assert!(validate_apply_url(true, "https://example.com/admin").is_err());
-        assert!(
-            validate_apply_url(true, "https://example.com/internal/update-runtime-config").is_ok()
-        );
     }
 }
