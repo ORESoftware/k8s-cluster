@@ -150,7 +150,7 @@ Fiducia ownership epochs, partitioned streams, failover, chaos testing, and disa
 | Python execution SDK | DEN-2218 | PR #971 | merged |
 | Go execution SDK and shared TypeScript/Python/Go conformance | DEN-2289 | PR #999 | merged; source artifact published |
 | Rust execution SDK | DEN-2392 | PR #1037 | merged; source and lock artifacts published |
-| Dart execution SDK | DEN-2464 | issue #1163 / draft PR #1169 | in review |
+| Dart execution SDK | DEN-2464 | issue #1163 / successor PR #1586 | merged; reviewed lock artifact retained; trusted source publication pending |
 | Gleam execution SDK | DEN-2480 | issue #1164 | ready; separate implementation lane |
 | Erlang and Elixir interoperability | DEN-2482 | issue #1165 | blocked by DEN-2480 |
 
@@ -161,7 +161,7 @@ Every M3 item in [`ORESoftware-project`](https://github.com/orgs/ORESoftware/pro
 | Work | Status | Milestone | Component | Risk | Target | Linear | Repository | PR |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Rust SDK | Done | M3 SDK fleet | Worker SDK | Medium | Current | DEN-2392 | `ORESoftware/k8s-cluster` | `https://github.com/ORESoftware/k8s-cluster/pull/1037` |
-| Dart SDK | In review | M3 SDK fleet | Worker SDK | Medium | Current | DEN-2464 | `ORESoftware/k8s-cluster` | `https://github.com/ORESoftware/k8s-cluster/pull/1169` |
+| Dart SDK | Done | M3 SDK fleet | Worker SDK | Medium | Current | DEN-2464 | `ORESoftware/k8s-cluster` | `https://github.com/ORESoftware/k8s-cluster/pull/1586` |
 | Gleam SDK | Ready | M3 SDK fleet | Worker SDK | Medium | Next | DEN-2480 | `ORESoftware/k8s-cluster` | pending |
 | Erlang/Elixir interop | Blocked | M3 SDK fleet | Worker SDK | Medium | Next | DEN-2482 | `ORESoftware/k8s-cluster` | pending |
 
