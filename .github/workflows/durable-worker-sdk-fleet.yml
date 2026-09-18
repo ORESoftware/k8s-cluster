@@ -1,0 +1,243 @@
+name: durable-worker-sdk-fleet
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-sdk-fleet.yml'
+      - 'docs/durable-worker-sdk-fleet.md'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/fleet-v1.json'
+      - 'remote/worker-sdks/fixtures/**'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
+      - 'remote/worker-sdks/python/durable-worker/**'
+      - 'remote/worker-sdks/go/durable-worker/**'
+      - 'remote/worker-sdks/rust/durable-worker/**'
+      - 'remote/worker-sdks/dart/durable_worker/**'
+      - 'remote/tests/general/durable-worker-sdk-fleet.test.mjs'
+      - 'remote/tests/general/durable-worker-sdk-protocol-fixture.test.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/durable-worker-sdk-fleet.yml'
+      - 'docs/durable-worker-sdk-fleet.md'
+      - 'remote/worker-sdks/README.md'
+      - 'remote/worker-sdks/fleet-v1.json'
+      - 'remote/worker-sdks/fixtures/**'
+      - 'remote/worker-sdks/typescript/durable-worker/**'
+      - 'remote/worker-sdks/python/durable-worker/**'
+      - 'remote/worker-sdks/go/durable-worker/**'
+      - 'remote/worker-sdks/rust/durable-worker/**'
+      - 'remote/worker-sdks/dart/durable_worker/**'
+      - 'remote/tests/general/durable-worker-sdk-fleet.test.mjs'
+      - 'remote/tests/general/durable-worker-sdk-protocol-fixture.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-sdk-fleet-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fleet:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Set up Node.js
+        id: node_setup
+        continue-on-error: true
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Set up Python
+        id: python_setup
+        continue-on-error: true
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+
+      - name: Set up Go
+        id: go_setup
+        continue-on-error: true
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.23.x'
+          cache: false
+
+      - name: Set up Rust
+        id: rust_setup
+        continue-on-error: true
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: '1.85.0'
+
+      - name: Set up Dart
+        id: dart_setup
+        continue-on-error: true
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Validate fleet and shared protocol contracts
+        id: contract
+        if: always()
+        continue-on-error: true
+        run: |
+          node --test             remote/tests/general/durable-worker-sdk-fleet.test.mjs             remote/tests/general/durable-worker-sdk-protocol-fixture.test.mjs
+
+      - name: Run TypeScript lifecycle SDK
+        id: typescript
+        if: always()
+        continue-on-error: true
+        run: |
+          npm --prefix remote/worker-sdks/typescript/durable-worker run check
+          npm --prefix remote/worker-sdks/typescript/durable-worker test
+
+      - name: Run Python lifecycle SDK
+        id: python
+        if: always()
+        continue-on-error: true
+        env:
+          PYTHONPATH: ${{ github.workspace }}/remote/worker-sdks/python/durable-worker/src
+        run: python3 -m unittest discover -s remote/worker-sdks/python/durable-worker/tests -v
+
+      - name: Run Go lifecycle SDK
+        id: go
+        if: always()
+        continue-on-error: true
+        working-directory: remote/worker-sdks/go/durable-worker
+        run: go test ./... -race -count=1
+
+      - name: Run Rust lifecycle SDK
+        id: rust
+        if: always()
+        continue-on-error: true
+        run: cargo test --locked --manifest-path remote/worker-sdks/rust/durable-worker/Cargo.toml --all-targets --all-features -- --nocapture
+
+      - name: Run Dart lifecycle SDK
+        id: dart
+        if: always()
+        continue-on-error: true
+        working-directory: remote/worker-sdks/dart/durable_worker
+        run: |
+          dart pub get --enforce-lockfile
+          git diff --exit-code -- pubspec.lock
+          dart analyze --fatal-infos --fatal-warnings
+          dart run tool/test.dart
+
+      - name: Reject credential-shaped SDK source
+        id: credential_scan
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -E -n             --exclude-dir=.git             'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----'             remote/worker-sdks/typescript/durable-worker             remote/worker-sdks/python/durable-worker             remote/worker-sdks/go/durable-worker             remote/worker-sdks/rust/durable-worker             remote/worker-sdks/dart/durable_worker             remote/worker-sdks/fleet-v1.json             remote/tests/general/durable-worker-sdk-fleet.test.mjs             docs/durable-worker-sdk-fleet.md; then
+            echo 'credential-shaped material found in durable-worker fleet source' >&2
+            exit 1
+          fi
+
+      - name: Build deterministic fleet report
+        id: report
+        if: always()
+        env:
+          NODE_SETUP: ${{ steps.node_setup.outcome }}
+          PYTHON_SETUP: ${{ steps.python_setup.outcome }}
+          GO_SETUP: ${{ steps.go_setup.outcome }}
+          RUST_SETUP: ${{ steps.rust_setup.outcome }}
+          DART_SETUP: ${{ steps.dart_setup.outcome }}
+          CONTRACT: ${{ steps.contract.outcome }}
+          TYPESCRIPT: ${{ steps.typescript.outcome }}
+          PYTHON: ${{ steps.python.outcome }}
+          GO: ${{ steps.go.outcome }}
+          RUST: ${{ steps.rust.outcome }}
+          DART: ${{ steps.dart.outcome }}
+          CREDENTIAL_SCAN: ${{ steps.credential_scan.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          def digest(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          checks = {
+              "contract": os.environ["CONTRACT"],
+              "credential_scan": os.environ["CREDENTIAL_SCAN"],
+              "dart": os.environ["DART"],
+              "dart_setup": os.environ["DART_SETUP"],
+              "go": os.environ["GO"],
+              "go_setup": os.environ["GO_SETUP"],
+              "node_setup": os.environ["NODE_SETUP"],
+              "python": os.environ["PYTHON"],
+              "python_setup": os.environ["PYTHON_SETUP"],
+              "rust": os.environ["RUST"],
+              "rust_setup": os.environ["RUST_SETUP"],
+              "typescript": os.environ["TYPESCRIPT"],
+          }
+          report = {
+              "schema": "ores.durable-worker-sdk-fleet-report/v1",
+              "source_sha": os.environ["GITHUB_SHA"],
+              "fleet_manifest_sha256": digest("remote/worker-sdks/fleet-v1.json"),
+              "protocol_fixture_sha256": digest("remote/worker-sdks/fixtures/durable-worker-protocol-v1.json"),
+              "checks": checks,
+          }
+          payload = json.dumps(report, sort_keys=True, separators=(',', ':')) + "\n"
+          Path("sdk-fleet-report.json").write_text(payload, encoding="utf-8")
+          report_digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+          Path("sdk-fleet-report.sha256").write_text(
+              f"{report_digest}  sdk-fleet-report.json\n",
+              encoding="utf-8",
+          )
+          print(payload, end="")
+          print(f"report_sha256={report_digest}")
+          PY
+
+      - name: Upload fleet report evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: durable-worker-sdk-fleet-${{ github.sha }}
+          path: |
+            sdk-fleet-report.json
+            sdk-fleet-report.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Enforce aggregate fleet result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s sdk-fleet-report.json
+          test -s sdk-fleet-report.sha256
+          sha256sum --check sdk-fleet-report.sha256
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("sdk-fleet-report.json").read_text(encoding="utf-8"))
+          failed = {
+              name: outcome
+              for name, outcome in report["checks"].items()
+              if outcome != "success"
+          }
+          if failed:
+              raise SystemExit(f"aggregate durable-worker SDK fleet failed: {failed}")
+          print("aggregate durable-worker SDK fleet passed")
+          PY
