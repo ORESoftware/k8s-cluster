@@ -1,0 +1,16 @@
+{
+  "provider": "apify",
+  "actorId": "apify/playwright-scraper",
+  "trigger": "local-retriable-5xx",
+  "localStatusCode": 502,
+  "durationMs": 1000,
+  "route": "*.example.com",
+  "attempts": [
+    {
+      "actorId": "apify/web-scraper",
+      "outcome": "skipped",
+      "durationMs": 100,
+      "errorClass": "provider-server-error"
+    }
+  ]
+}
