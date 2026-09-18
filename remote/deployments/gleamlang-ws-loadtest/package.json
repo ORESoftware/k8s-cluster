@@ -1,8 +1,0 @@
-{
-  "name": "dd-gleamlang-ws-loadtest",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "ws": "^8.20.1"
-  }
-}

@@ -1,0 +1,13 @@
+{
+  "name": "akrion-backend-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Playwright + Puppeteer browser e2e for akrion-backend (both runners, node --test).",
+  "scripts": {
+    "test": "node --test --test-concurrency=1 --test-timeout=300000 soccer-playwright.test.mjs soccer-puppeteer.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1",
+    "puppeteer": "^25.4.0"
+  }
+}
