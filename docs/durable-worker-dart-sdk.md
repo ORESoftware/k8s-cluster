@@ -1,10 +1,10 @@
 # Durable Worker Runtime — Dart SDK Delivery
 
-Status: in review  
+Status: delivered  
 Milestone: M3 SDK fleet  
 Linear: [DEN-2464](https://linear.app/denman/issue/DEN-2464/add-dart-sdk-and-conformance-for-durable-worker-runtime)  
 GitHub issue: [#1163](https://github.com/ORESoftware/k8s-cluster/issues/1163)  
-Delivery PR: [#1169](https://github.com/ORESoftware/k8s-cluster/pull/1169)
+Delivery PR: [#1586](https://github.com/ORESoftware/k8s-cluster/pull/1586) (successor to stale #1169)
 
 ## Purpose
 
@@ -54,9 +54,20 @@ The first real analyzer pass then identified one nullable throw and two closure
 wrappers. A second one-run repair was constrained to `lib/src/worker.dart`; it
 had to pass canonical formatting, the fatal analyzer, and the complete client,
 fixture, worker, and fencing harness before publishing. That workflow was also
-removed immediately. The current branch contains only the permanent
-`contents: read`, non-persistent workflow; readiness requires a clean-head
-matrix after both removals.
+removed immediately. The permanent workflow is `contents: read` with non-persistent checkout. The
+successor delivery head `9df684208898e862fe4ac746b2b04495a4ab46e8`
+passed the clean-head Dart 3.4.0 and 3.12.2 matrix, fatal analyzer, runtime and
+repository-contract tests, fifty repeated fencing passes, credential scan, and
+clean-tree checks. PR #1586 merged that reviewed content as
+`81bf0548fb68ada82fd3d01d4456219cd4e71387`.
+
+The reviewed lock artifact is
+`durable-worker-dart-lock-b66a6a6bc69d4794d287f6fb5af94a509f7e12bf`
+with GitHub artifact digest
+`sha256:a49f6e81d8f80783f507d1dba47f1cf96bb290ccb0d9e29651ee0a86442f72a6`.
+It is lock-review evidence, not a package-registry or source release. The
+deterministic source archive remains pending the first trusted `dev` push that
+can execute the push-only publication job introduced by #1586.
 
 ## Organization project record
 
@@ -69,10 +80,11 @@ matrix after both removals.
 | Milestone | M3 SDK fleet |
 | Linear issue | DEN-2464 |
 | GitHub issue | #1163 |
-| Pull request | #1169 |
+| Pull request | #1586 (successor to #1169) |
 | Risk | Medium |
-| Status | In review |
+| Status | Done |
 
-This record must still be updated with the reviewed exact head, merge commit,
-trusted push workflow, artifact name, and artifact digest before DEN-2464 and
-#1163 are closed.
+Reviewed exact head and merge evidence are recorded above. The trusted source
+archive identity and digest must still be added after the first qualifying
+`dev` push publication; do not represent the reviewed lock artifact as that
+source release.

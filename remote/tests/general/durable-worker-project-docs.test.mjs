@@ -52,7 +52,12 @@ test('roadmap records landed SDK artifacts and separated remaining M3 lanes', ()
     roadmap,
     /sha256:fc52f3d5318a13c3881b6adb8bbea41397e1dcc5ae2a5a221e7eb57e0aa948bb/,
   );
-  assert.match(roadmap, /Dart worker SDK — issue #1163 \/ DEN-2464/);
+  assert.match(roadmap, /Dart worker SDK — successor PR #1586 \/ DEN-2464/);
+  assert.match(roadmap, /81bf0548fb68ada82fd3d01d4456219cd4e71387/);
+  assert.match(
+    roadmap,
+    /sha256:a49f6e81d8f80783f507d1dba47f1cf96bb290ccb0d9e29651ee0a86442f72a6/,
+  );
   assert.match(roadmap, /Gleam SDK: GitHub issue #1164 \/ Linear DEN-2480/);
   assert.match(
     roadmap,
@@ -85,6 +90,8 @@ test('project operating model maps GitHub, Linear, artifacts, and exact-head del
   assert.match(operatingModel, /DEN-2289/);
   assert.match(operatingModel, /PR #999/);
   assert.match(operatingModel, /source artifact published/);
+  assert.match(operatingModel, /successor PR #1586/);
+  assert.match(operatingModel, /Dart SDK \| Done/);
   assert.match(operatingModel, /expected-head/i);
   assert.match(operatingModel, /semantic merge/i);
   assert.match(operatingModel, /Status \| single select/);
