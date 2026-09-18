@@ -6,7 +6,7 @@
     "entryCount": 1367,
     "generatedBy": "tools/namespace_manifest.py",
     "inventory": "artifacts/namespace-inventory.json",
-    "inventorySha256": "b24e31e4311b118a97e57a278aae8bf43a2f501f345ad8c8818690fe4fd04bfa",
+    "inventorySha256": "1b0ee643aab0d4f9137700b5c8842040a05ee4f9db4d745b3078f123b02ac4b8",
     "name": "den-2786-phase-0",
     "phase": "phase-0",
     "registry": "catalog/namespaces/owners.json",
