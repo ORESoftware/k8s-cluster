@@ -18,7 +18,9 @@
   },
   "scripts": {
     "check": "node --check index.mjs && node --check test/client.test.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "lint:ores": "if [ -f ../../../../.ores-lint/lint.sh ]; then sh ../../../../.ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores"
   },
   "engines": {
     "node": ">=22.18.0"
@@ -28,5 +30,13 @@
     "type": "git",
     "url": "https://github.com/ORESoftware/k8s-cluster.git",
     "directory": "remote/worker-sdks/typescript/durable-worker"
+  },
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
   }
 }
