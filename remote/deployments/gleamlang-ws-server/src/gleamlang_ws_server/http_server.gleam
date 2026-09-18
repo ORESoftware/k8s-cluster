@@ -24,7 +24,6 @@
 ////   GET    /worker-ws/<secret>                          Secret-gated worker ws on the broadcaster
 ////                                                       tick stream; can also publish frames.
 
-import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
@@ -88,7 +87,7 @@ pub fn supervised(
   port port: Int,
   deps deps: Deps,
 ) -> ChildSpecification(Supervisor) {
-  mist.new(dd_otel_client.trace(fn(req) { with_cors(route(deps, req)) }))
+  mist.new(fn(req) { with_cors(route(deps, req)) })
   |> mist.port(port)
   |> mist.bind("0.0.0.0")
   |> mist.supervised

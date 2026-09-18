@@ -75,5 +75,3 @@ worker can subscribe to `dd.remote.dataset_labeling.pipeline.jobs` and map each 
   NATS subjects.
 
 Secrets belong in AWS Secrets Manager / Kubernetes secrets, not Git.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

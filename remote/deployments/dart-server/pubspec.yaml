@@ -1,0 +1,61 @@
+name: dd_dart_server
+description: >-
+  Full-stack Dart deployment for dd-next: traditional HTTP server, WSS server
+  rooted at /dart/wss, Phoenix-style per-connection isolate sessions, Jaspr SSR
+  public pages at /dart/pages, and a Flutter web SPA shell driven by HTMX.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  # Reactive primitives. Used pervasively on both the server (per-isolate
+  # session pipelines, scheduler ticks, broadcast hubs) and forwarded into
+  # the shared/ messages so wire types match the Flutter client.
+  rxdart: ^0.28.0
+
+  # Jaspr SSR for /dart/pages/*. The server-side renderer is invoked from
+  # lib/jaspr/render.dart inside the main isolate.
+  jaspr: ^0.23.1
+
+  # MIME sniffing for /dart/assets/* (Flutter web build output).
+  mime: ^2.0.0
+
+  # Path normalisation for static asset traversal protection.
+  path: ^1.9.0
+
+  # Fast UTF-8 / JSON / hex codecs reused inside isolate sessions.
+  convert: ^3.1.2
+
+  # Hot reload plumbing. `vm_service` talks to our own VM service over its
+  # WebSocket protocol to call reloadSources(); `watcher` watches lib/ + bin/
+  # for .dart changes. Only used when HOT_RELOAD=true (JIT mode); AOT
+  # binaries don't ship a JIT, so they cannot hot reload either way — but
+  # the symbols are still linked, just never invoked.
+  vm_service: ^15.0.0
+  watcher: ^1.1.0
+
+  # Postgres driver. `Pool.withUrl(...)` gives us connection pooling, the
+  # extended (binary) protocol, prepared statement reuse, and LISTEN/NOTIFY
+  # — everything we need to consume the pg-defs contract from this server.
+  postgres: ^3.5.11
+
+  # Generated Dart adapter for the canonical Postgres schema in
+  # remote/libs/pg-defs/schema/schema.sql. Path dependency follows the same
+  # convention used by every other Dart-flavoured service in the cluster
+  # (gleamlang-* uses dd_pg_defs from generated/gleam, rest-api-rs uses
+  # generated/rust). Regenerate with `node remote/libs/pg-defs/src/generate.mjs`.
+  dd_pg_defs:
+    path: ../../libs/pg-defs/generated/dart
+
+dev_dependencies:
+  lints: ^5.1.0
+  test: ^1.25.0
+
+  # Jaspr SSR options codegen. Produces lib/jaspr_options.dart with the
+  # `defaultJasprOptions` value that Jaspr.initializeApp() needs. Even
+  # though we don't use any @client annotated components, jaspr 0.23 still
+  # wants the options object to exist.
+  jaspr_builder: ^0.23.1
+  build_runner: ^2.4.13

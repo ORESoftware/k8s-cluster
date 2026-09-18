@@ -12,8 +12,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-document-rs
@@ -37,8 +37,8 @@ spec:
         # the prebuilt image from deployments/dd-document-rs/Dockerfile because it
         # links the Pandoc Haskell bridge (libdd-pandoc-bridge.so) at build time.
         - name: document-rs
-          image: docker.io/library/dd-document-rs:0.1.0
-          imagePullPolicy: Never
+          image: dd-document-rs:latest
+          imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -94,7 +94,7 @@ spec:
               containerPort: 8122
           resources:
             requests:
-              cpu: 25m
+              cpu: 50m
               memory: 512Mi
             limits:
               cpu: '1'

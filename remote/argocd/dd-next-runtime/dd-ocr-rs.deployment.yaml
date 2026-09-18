@@ -12,8 +12,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-ocr-rs
@@ -37,8 +37,8 @@ spec:
         # prebuilt image from deployments/dd-ocr-rs/Dockerfile because it links
         # the Tesseract + Leptonica C++ OCR bridge at build time.
         - name: ocr-rs
-          image: docker.io/library/dd-ocr-rs:0.1.0
-          imagePullPolicy: Never
+          image: dd-ocr-rs:latest
+          imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -135,7 +135,7 @@ spec:
               containerPort: 8123
           resources:
             requests:
-              cpu: 25m
+              cpu: 50m
               memory: 256Mi
             limits:
               cpu: '1'

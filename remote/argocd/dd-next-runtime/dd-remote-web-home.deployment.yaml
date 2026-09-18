@@ -14,8 +14,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: dd-remote-web-home
@@ -34,7 +34,6 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -72,7 +71,7 @@ spec:
               containerPort: 8080
           resources:
             requests:
-              cpu: 25m
+              cpu: 100m
               memory: 128Mi
             limits:
               cpu: "1"
@@ -97,11 +96,3 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
-          volumeMounts:
-            # Writable scratch for the otherwise read-only root filesystem;
-            # the server may write temp files under /tmp.
-            - name: tmp
-              mountPath: /tmp
-      volumes:
-        - name: tmp
-          emptyDir: {}

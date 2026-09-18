@@ -80,5 +80,3 @@ requests.
 This is still bootstrap auth, but the optional TOTP seed makes the "first human inquiry" unlock a
 real two-factor browser session instead of a static cookie. Long-term, replace it with SSO or
 identity-aware proxy auth and signed service tokens.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

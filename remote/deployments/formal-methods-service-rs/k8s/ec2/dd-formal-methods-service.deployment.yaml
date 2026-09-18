@@ -87,7 +87,7 @@ spec:
             - name: ANALYZER_TIMEOUT_SECS
               value: '900'
             - name: FORMAL_METHODS_ALLOWED_REPOS
-              value: ORESoftware/*
+              value: '*'
             - name: FORMAL_METHODS_PATH_PREFIXES
               value: ''
             - name: DELIVERY_DEDUPE_CAPACITY
@@ -167,7 +167,7 @@ spec:
               containerPort: 8111
           resources:
             requests:
-              cpu: 25m
+              cpu: 200m
               memory: 384Mi
             limits:
               cpu: '2'

@@ -47,13 +47,6 @@ spec:
             - -c
           args:
             - mkdir -p "/raft/${POD_NAME}" && chown -R 1000:1000 "/raft/${POD_NAME}"
-          resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
           env:
             - name: POD_NAME
               valueFrom:
@@ -167,7 +160,7 @@ spec:
               containerPort: 7980
           resources:
             requests:
-              cpu: 25m
+              cpu: 100m
               memory: 1Gi
             limits:
               cpu: '2'

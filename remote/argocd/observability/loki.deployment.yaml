@@ -7,7 +7,7 @@ metadata:
     app: dd-loki
   annotations:
     # Pick up limits/query-config edits without a manual rollout.
-    configmap.reloader.stakater.com/reload: "dd-loki-config,dd-loki-rules"
+    configmap.reloader.stakater.com/reload: "dd-loki-config"
 spec:
   replicas: 1
   selector:
@@ -51,21 +51,11 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/loki
-            - name: rules
-              mountPath: /etc/loki/rules/fake
-              readOnly: true
             - name: data
               mountPath: /loki
       volumes:
         - name: config
           configMap:
             name: dd-loki-config
-        - name: rules
-          configMap:
-            name: dd-loki-rules
         - name: data
-          # Hard backstop: even if retention lags, Loki can never consume more
-          # than this of the node root disk (kubelet evicts the pod if exceeded),
-          # so it can't re-trip node disk-pressure. Pairs with retention_period.
-          emptyDir:
-            sizeLimit: 40Gi
+          emptyDir: {}

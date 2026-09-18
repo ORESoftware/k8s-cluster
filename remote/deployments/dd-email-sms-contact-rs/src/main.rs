@@ -163,7 +163,6 @@ struct EmailReq {
     text: Option<String>,
     from: Option<String>,
     auth: Option<String>,
-    idempotency_key: Option<String>,
 }
 #[derive(Deserialize)]
 struct SmsReq {
@@ -209,8 +208,6 @@ fn default_fcm_token_uri() -> String {
 
 #[tokio::main]
 async fn main() {
-    let _otel = dd_telemetry::init("dd-email-sms-contact-rs");
-
     let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = env::var("PORT").ok().and_then(|v| v.parse().ok()).unwrap_or(8120u16);
     let email_per_min = env::var("EMAIL_RATE_PER_MIN").ok().and_then(|v| v.parse().ok()).unwrap_or(60.0);
@@ -241,11 +238,11 @@ async fn main() {
         let st = state.clone();
         tokio::spawn(async move {
             if let Err(e) = run_nats_consumer(st, url).await {
-                tracing::error!("nats consumer stopped: {e}");
+                eprintln!("nats consumer stopped: {e}");
             }
         });
     } else {
-        tracing::info!("NATS_URL unset — NATS consumer disabled (HTTP send still available)");
+        println!("NATS_URL unset — NATS consumer disabled (HTTP send still available)");
     }
 
     let app = Router::new()
@@ -260,9 +257,9 @@ async fn main() {
         .with_state(state);
 
     let addr: SocketAddr = format!("{host}:{port}").parse().expect("bind addr");
-    tracing::info!("dd-email-sms-contact-rs listening on http://{addr}");
+    println!("dd-email-sms-contact-rs listening on http://{addr}");
     let listener = tokio::net::TcpListener::bind(addr).await.expect("bind");
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer())).with_graceful_shutdown(shutdown_signal()).await.expect("server");
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal()).await.expect("server");
 }
 
 fn non_empty(v: Option<String>) -> Option<String> {
@@ -283,13 +280,13 @@ fn build_fcm_config() -> Option<FcmConfig> {
     let sa: FcmServiceAccount = match serde_json::from_str(&raw) {
         Ok(sa) => sa,
         Err(e) => {
-            tracing::error!("FCM_SERVICE_ACCOUNT_JSON parse failed: {e} — FCM disabled");
+            eprintln!("FCM_SERVICE_ACCOUNT_JSON parse failed: {e} — FCM disabled");
             return None;
         }
     };
     let project_id = non_empty(env::var("FCM_PROJECT_ID").ok()).or(sa.project_id).unwrap_or_default();
     if project_id.is_empty() || sa.client_email.is_empty() || sa.private_key.is_empty() {
-        tracing::error!("FCM_SERVICE_ACCOUNT_JSON missing project_id/client_email/private_key — FCM disabled");
+        eprintln!("FCM_SERVICE_ACCOUNT_JSON missing project_id/client_email/private_key — FCM disabled");
         return None;
     }
     Some(FcmConfig {
@@ -1039,12 +1036,12 @@ async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::
         .retry_on_initial_connect()
         .connect(&url)
         .await?;
-    tracing::info!("nats consumer connected to {url}; subscribing {CONTACT_EMAIL_SEND_SUBJECT} + {CONTACT_SMS_SEND_SUBJECT} + {CONTACT_PUSH_SEND_SUBJECT} (group {CONTACT_EMAIL_SEND_QUEUE_GROUP})");
+    println!("nats consumer connected to {url}; subscribing {CONTACT_EMAIL_SEND_SUBJECT} + {CONTACT_SMS_SEND_SUBJECT} + {CONTACT_PUSH_SEND_SUBJECT} (group {CONTACT_EMAIL_SEND_QUEUE_GROUP})");
     loop {
         let mut email_sub = match client.queue_subscribe(CONTACT_EMAIL_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await {
             Ok(sub) => sub,
             Err(error) => {
-                tracing::error!("nats consumer subscribe failed: {error}; retrying in 5s");
+                eprintln!("nats consumer subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1052,7 +1049,7 @@ async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::
         let mut sms_sub = match client.queue_subscribe(CONTACT_SMS_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await {
             Ok(sub) => sub,
             Err(error) => {
-                tracing::error!("nats consumer subscribe failed: {error}; retrying in 5s");
+                eprintln!("nats consumer subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1060,7 +1057,7 @@ async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::
         let mut push_sub = match client.queue_subscribe(CONTACT_PUSH_SEND_SUBJECT, CONTACT_EMAIL_SEND_QUEUE_GROUP.to_string()).await {
             Ok(sub) => sub,
             Err(error) => {
-                tracing::error!("nats consumer subscribe failed: {error}; retrying in 5s");
+                eprintln!("nats consumer subscribe failed: {error}; retrying in 5s");
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
             }
@@ -1069,7 +1066,7 @@ async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::
             tokio::select! {
                 Some(msg) = email_sub.next() => {
                     let (s2, c2) = (s.clone(), client.clone());
-                    tokio::spawn(async move { handle_email_msg(&s2, &c2, &msg).await; });
+                    tokio::spawn(async move { handle_email_msg(&s2, &c2, &msg.payload).await; });
                 }
                 Some(msg) = sms_sub.next() => {
                     let (s2, c2) = (s.clone(), client.clone());
@@ -1082,23 +1079,14 @@ async fn run_nats_consumer(s: AppState, url: String) -> Result<(), Box<dyn std::
                 else => break,
             }
         }
-        tracing::error!("nats consumer subscriptions ended; re-subscribing in 5s");
+        eprintln!("nats consumer subscriptions ended; re-subscribing in 5s");
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
 
-async fn publish_result(
-    client: &async_nats::Client,
-    reply: Option<&async_nats::Subject>,
-    value: Value,
-) {
+async fn publish_result(client: &async_nats::Client, value: Value) {
     if let Ok(bytes) = serde_json::to_vec(&value) {
-        let _ = client
-            .publish(CONTACT_SEND_RESULTS_SUBJECT, bytes.clone().into())
-            .await;
-        if let Some(reply) = reply {
-            let _ = client.publish(reply.clone(), bytes.into()).await;
-        }
+        let _ = client.publish(CONTACT_SEND_RESULTS_SUBJECT, bytes.into()).await;
     }
 }
 
@@ -1111,68 +1099,55 @@ fn nats_authorized(s: &AppState, auth: Option<&str>) -> bool {
     }
 }
 
-async fn handle_email_msg(s: &AppState, client: &async_nats::Client, message: &async_nats::Message) {
-    let reply = message.reply.as_ref();
-    let Ok(req) = serde_json::from_slice::<EmailReq>(&message.payload) else {
-        publish_result(client, reply, json!({"ok": false, "channel": "email", "error": "invalid payload"})).await;
+async fn handle_email_msg(s: &AppState, client: &async_nats::Client, payload: &[u8]) {
+    let Ok(req) = serde_json::from_slice::<EmailReq>(payload) else {
+        publish_result(client, json!({"ok": false, "channel": "email", "error": "invalid payload"})).await;
         return;
     };
-    let idempotency_key = req
-        .idempotency_key
-        .as_deref()
-        .filter(|value| {
-            (16..=128).contains(&value.len())
-                && value
-                    .chars()
-                    .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-        })
-        .map(str::to_owned);
     if !nats_authorized(s, req.auth.as_deref()) {
-        publish_result(client, reply, json!({"ok": false, "channel": "email", "error": "unauthorized", "idempotency_key": idempotency_key})).await;
+        publish_result(client, json!({"ok": false, "channel": "email", "error": "unauthorized"})).await;
         return;
     }
     if let Some(e) = validate_email(&req.to, &req.subject, &req.html) {
-        publish_result(client, reply, json!({"ok": false, "channel": "email", "to": req.to, "error": e, "idempotency_key": idempotency_key})).await;
+        publish_result(client, json!({"ok": false, "channel": "email", "to": req.to, "error": e})).await;
         return;
     }
     let o = email_send(s, &req.to, &req.subject, &req.html, req.text.as_deref(), req.from.as_deref()).await;
-    let mut result = outcome_json("email", &req.to, &o);
-    result["idempotency_key"] = json!(idempotency_key);
-    publish_result(client, reply, result).await;
+    publish_result(client, outcome_json("email", &req.to, &o)).await;
 }
 
 async fn handle_sms_msg(s: &AppState, client: &async_nats::Client, payload: &[u8]) {
     let Ok(req) = serde_json::from_slice::<SmsReq>(payload) else {
-        publish_result(client, None, json!({"ok": false, "channel": "sms", "error": "invalid payload"})).await;
+        publish_result(client, json!({"ok": false, "channel": "sms", "error": "invalid payload"})).await;
         return;
     };
     if !nats_authorized(s, req.auth.as_deref()) {
-        publish_result(client, None, json!({"ok": false, "channel": "sms", "error": "unauthorized"})).await;
+        publish_result(client, json!({"ok": false, "channel": "sms", "error": "unauthorized"})).await;
         return;
     }
     if let Some(e) = validate_sms(&req.to, &req.body) {
-        publish_result(client, None, json!({"ok": false, "channel": "sms", "to": req.to, "error": e})).await;
+        publish_result(client, json!({"ok": false, "channel": "sms", "to": req.to, "error": e})).await;
         return;
     }
     let o = sms_send(s, &req.to, &req.body).await;
-    publish_result(client, None, outcome_json("sms", &req.to, &o)).await;
+    publish_result(client, outcome_json("sms", &req.to, &o)).await;
 }
 
 async fn handle_push_msg(s: &AppState, client: &async_nats::Client, payload: &[u8]) {
     let Ok(req) = serde_json::from_slice::<PushReq>(payload) else {
-        publish_result(client, None, json!({"ok": false, "channel": "push", "error": "invalid payload"})).await;
+        publish_result(client, json!({"ok": false, "channel": "push", "error": "invalid payload"})).await;
         return;
     };
     if !nats_authorized(s, req.auth.as_deref()) {
-        publish_result(client, None, json!({"ok": false, "channel": "push", "error": "unauthorized"})).await;
+        publish_result(client, json!({"ok": false, "channel": "push", "error": "unauthorized"})).await;
         return;
     }
     if let Some(e) = validate_push(&req, &s.webpush_policy).await {
-        publish_result(client, None, json!({"ok": false, "channel": "push", "to": push_target_label(&req), "error": e})).await;
+        publish_result(client, json!({"ok": false, "channel": "push", "to": push_target_label(&req), "error": e})).await;
         return;
     }
     let o = push_send(s, &req).await;
-    publish_result(client, None, outcome_json("push", &push_target_label(&req), &o)).await;
+    publish_result(client, outcome_json("push", &push_target_label(&req), &o)).await;
 }
 
 async fn shutdown_signal() {

@@ -1,5 +1,4 @@
 import Fastify from 'fastify';
-import { initTelemetry, instrumentFastify, loggerMixin } from '@dd/telemetry';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { lookup as lookupCallback } from 'node:dns';
@@ -11,12 +10,9 @@ import { Worker } from 'node:worker_threads';
 import { z } from 'zod';
 
 import { Agent, ProxyAgent, type Dispatcher } from 'undici';
-import robotsParser from 'robots-parser';
 
 import type { Browser as PlaywrightBrowser, Page as PlaywrightPage } from 'playwright';
 import type { Browser as PuppeteerBrowser, Page as PuppeteerPage } from 'puppeteer';
-
-import type { ContactExtraction } from './contacts.js';
 
 import {
   ProxyPool,
@@ -35,8 +31,6 @@ import {
   type CaptchaDetection,
   type CaptchaType,
 } from './captcha.js';
-import { captchaAutoSolveAllowed } from './scrape-policy.js';
-import { registerBrowserAgentRoutes, closeAllSessions } from './browser-agent.js';
 
 const STRATEGIES = [
   'native-fetch',
@@ -104,17 +98,6 @@ const config = {
   maxHtmlChars: readNumberEnv('SCRAPER_MAX_HTML_CHARS', 1_000_000),
   maxTextChars: readNumberEnv('SCRAPER_MAX_TEXT_CHARS', 40_000),
   maxLinks: readNumberEnv('SCRAPER_MAX_LINKS', 250),
-  maxPhones: readNumberEnv('SCRAPER_MAX_PHONES', 50),
-  maxEmails: readNumberEnv('SCRAPER_MAX_EMAILS', 50),
-  // Region used to normalize local numbers (no country code) to E.164.
-  contactRegion: (process.env.SCRAPER_CONTACT_REGION ?? 'US').toUpperCase(),
-  userAgent:
-    process.env.SCRAPER_USER_AGENT ??
-    'dd-web-scraper/0.1 (+https://github.com/ORESoftware/k8s-cluster)',
-  respectRobots: readBooleanEnv('SCRAPER_RESPECT_ROBOTS', true),
-  allowRobotsOverride: readBooleanEnv('SCRAPER_ALLOW_ROBOTS_OVERRIDE', false),
-  robotsCacheTtlMs: readNumberEnv('SCRAPER_ROBOTS_CACHE_TTL_MS', 3_600_000),
-  minOriginDelayMs: readNumberEnv('SCRAPER_MIN_ORIGIN_DELAY_MS', 1_000),
   browserHeadless: readBooleanEnv('SCRAPER_BROWSER_HEADLESS', true),
   captureFailureScreenshots: readBooleanEnv('SCRAPER_CAPTURE_FAILURE_SCREENSHOTS', true),
   failureScreenshotQuality: clampNumber(
@@ -136,7 +119,6 @@ const config = {
   allowRequestProxy: readBooleanEnv('SCRAPER_ALLOW_REQUEST_PROXY', true),
   detectCaptchas: readBooleanEnv('SCRAPER_DETECT_CAPTCHAS', true),
   captchaAutoSolve: readBooleanEnv('SCRAPER_CAPTCHA_AUTOSOLVE', false),
-  allowCaptchaSolving: readBooleanEnv('SCRAPER_ALLOW_CAPTCHA_SOLVING', false),
   captchaProviderUrl: process.env.SCRAPER_CAPTCHA_PROVIDER_URL ?? 'https://2captcha.com',
   captchaApiKey: process.env.SCRAPER_CAPTCHA_API_KEY ?? null,
   captchaPollIntervalMs: readNumberEnv('SCRAPER_CAPTCHA_POLL_INTERVAL_MS', 5_000),
@@ -162,17 +144,6 @@ const ScrapeRequestSchema = z.object({
   includeHtml: z.boolean().optional(),
   includeText: z.boolean().optional(),
   includeLinks: z.boolean().optional(),
-  // Contact extraction is opt-in: callers ask for PII only when the job needs it.
-  // `includeContacts` turns on both phones and emails; the granular flags win.
-  includeContacts: z.boolean().optional(),
-  includePhones: z.boolean().optional(),
-  includeEmails: z.boolean().optional(),
-  contactRegion: z
-    .string()
-    .regex(/^[A-Za-z]{2}$/, 'contactRegion must be an ISO 3166-1 alpha-2 code')
-    .optional(),
-  maxPhones: z.number().int().min(1).optional(),
-  maxEmails: z.number().int().min(1).optional(),
   captureFailureScreenshot: z.boolean().optional(),
   timeoutMs: z.number().int().min(500).optional(),
   maxHtmlChars: z.number().int().min(1_000).optional(),
@@ -193,7 +164,6 @@ const ScrapeRequestSchema = z.object({
   useProxy: z.boolean().optional(),
   detectCaptcha: z.boolean().optional(),
   solveCaptcha: z.boolean().optional(),
-  respectRobots: z.boolean().optional(),
 });
 
 type ScrapeRequest = z.infer<typeof ScrapeRequestSchema>;
@@ -261,7 +231,6 @@ type ExtractionResult = {
   };
   fields?: Record<string, string>;
   links?: string[];
-  contacts?: ContactExtraction;
 };
 
 type ExtractionWorkerResponse =
@@ -333,10 +302,6 @@ type StatusDescriptor = {
   captchaAutoSolve: boolean;
   captchaSolverConfigured: boolean;
   captchaMaxConcurrent: number;
-  respectRobots: boolean;
-  allowRobotsOverride: boolean;
-  minOriginDelayMs: number;
-  allowCaptchaSolving: boolean;
 };
 
 type HealthDescriptor = {
@@ -399,9 +364,6 @@ const metrics = {
   durationSumMs: new Map<StrategyName, number>(),
   durationCount: new Map<StrategyName, number>(),
   captcha: new Map<string, number>(),
-  robotsChecks: 0,
-  robotsDenials: 0,
-  robotsOverrides: 0,
 };
 
 type CaptchaMetricEvent = 'detected' | 'solved' | 'failed';
@@ -421,8 +383,6 @@ let puppeteerBrowser: PuppeteerBrowser | null = null;
 let puppeteerBrowserPromise: Promise<PuppeteerBrowser> | null = null;
 const parserWorkerSemaphore = new Semaphore(config.parserWorkerConcurrency);
 let activeCaptchaSolves = 0;
-const robotsCache = new Map<string, { body: string; expiresAt: number }>();
-const originNextRequestAt = new Map<string, number>();
 
 /**
  * DNS lookup used at connection time so the address we connect to is the same
@@ -472,14 +432,10 @@ const guardedLookup: LookupFunction = (hostname, options, callback): void => {
 // connect-time-validated addresses.
 const guardedAgent = new Agent({ connect: { lookup: guardedLookup } });
 
-const telemetry = initTelemetry('dd-web-scraper');
-
 const fastify = Fastify({
-  logger: { mixin: loggerMixin },
+  logger: true,
   bodyLimit: 1_048_576,
 });
-
-instrumentFastify(fastify, { service: 'dd-web-scraper' });
 
 fastify.addHook('onRequest', async (request, reply) => {
   const path = request.url.split('?')[0] ?? request.url;
@@ -519,16 +475,6 @@ fastify.get('/metrics', async (_request, reply) => {
 fastify.get('/scrape/metrics', async (_request, reply) => {
   reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return renderMetrics();
-});
-
-// Persistent-session declarative browser-automation surface (/agent/*),
-// driven by the dd-browser-mcp-rs gateway. Registered here so it shares the
-// fastify instance, telemetry, and SERVER_AUTH_SECRET gate.
-registerBrowserAgentRoutes(fastify, {
-  getBrowser: getAgentBrowser,
-  isPrivateIp,
-  isAuthorized,
-  log: fastify.log,
 });
 
 fastify.post('/scrape', async (request, reply) => {
@@ -591,7 +537,6 @@ async function runScrape(
 ): Promise<Omit<ScrapeResponse, 'durationMs'>> {
   const targetUrl = await validateTargetUrl(input.url);
   const ctx = await createScrapeContext(input, targetUrl, strategy);
-  await enforceResponsibleScrapingPolicy(input, targetUrl, ctx);
   let fetched: FetchedDocument;
   try {
     fetched = await fetchByStrategy(input, targetUrl, strategy, ctx);
@@ -717,7 +662,7 @@ async function fetchWithPlaywright(
 ): Promise<FetchedDocument> {
   const browser = await getPlaywrightBrowser();
   const context = await browser.newContext({
-    userAgent: effectiveUserAgent(input),
+    userAgent: input.userAgent,
     extraHTTPHeaders: buildHeaders(input, targetUrl, targetUrl),
     ...(ctx.proxy ? { proxy: playwrightProxy(ctx.proxy) } : {}),
   });
@@ -797,7 +742,9 @@ async function fetchWithPuppeteer(
     if (ctx.proxy && (ctx.proxy.username || ctx.proxy.password)) {
       await page.authenticate({ username: ctx.proxy.username, password: ctx.proxy.password });
     }
-    await page.setUserAgent(effectiveUserAgent(input));
+    if (input.userAgent) {
+      await page.setUserAgent(input.userAgent);
+    }
     if (input.headers) {
       await page.setExtraHTTPHeaders(buildHeaders(input, targetUrl, targetUrl));
     }
@@ -1112,16 +1059,9 @@ async function orchestrateCaptcha(
   }
   recordCaptchaMetric('detected', detection.type);
 
-  // Per-request input may disable an operator-enabled solver, but it cannot turn
-  // solving on. This keeps access-control/challenge automation behind an
-  // explicit deployment decision instead of an ordinary authenticated request.
-  const autoSolve = captchaAutoSolveAllowed(config.captchaAutoSolve, input.solveCaptcha);
+  const autoSolve = input.solveCaptcha ?? config.captchaAutoSolve;
   const solvable = SOLVABLE_CAPTCHA_TYPES.has(detection.type) && Boolean(detection.sitekey);
   if (!autoSolve || !solvable) {
-    return;
-  }
-  if (!config.allowCaptchaSolving) {
-    outcome.error = 'captcha solving is disabled by operator policy';
     return;
   }
   if (!isCaptchaSolverConfigured()) {
@@ -1153,7 +1093,7 @@ async function orchestrateCaptcha(
           },
           detection,
           pageUrl: ops.url(),
-          userAgent: effectiveUserAgent(input),
+          userAgent: input.userAgent,
         });
         await ops.evaluate(buildInjectionScript(detection.type, result.token));
         await sleep(1_500);
@@ -1216,24 +1156,11 @@ async function extractDocument(
     includeHtml: input.includeHtml,
     includeText: input.includeText,
     includeLinks: input.includeLinks,
-    includePhones: wantsPhones(input),
-    includeEmails: wantsEmails(input),
-    contactRegion: (input.contactRegion ?? config.contactRegion).toUpperCase(),
     maxHtmlChars: getMaxHtmlChars(input),
     maxTextChars: getMaxTextChars(input),
     maxLinks: config.maxLinks,
-    maxPhones: Math.min(input.maxPhones ?? config.maxPhones, config.maxPhones),
-    maxEmails: Math.min(input.maxEmails ?? config.maxEmails, config.maxEmails),
     timeoutMs: getTimeoutMs(input),
   });
-}
-
-function wantsPhones(input: ScrapeRequest): boolean {
-  return input.includePhones ?? input.includeContacts ?? false;
-}
-
-function wantsEmails(input: ScrapeRequest): boolean {
-  return input.includeEmails ?? input.includeContacts ?? false;
 }
 
 function parserForStrategy(strategy: StrategyName): ParserName {
@@ -1252,14 +1179,9 @@ function runExtractionWorker(input: {
   includeHtml?: boolean;
   includeText?: boolean;
   includeLinks?: boolean;
-  includePhones?: boolean;
-  includeEmails?: boolean;
-  contactRegion?: string;
   maxHtmlChars: number;
   maxTextChars: number;
   maxLinks: number;
-  maxPhones: number;
-  maxEmails: number;
   timeoutMs: number;
 }): Promise<ExtractionResult> {
   return parserWorkerSemaphore.run(
@@ -1269,14 +1191,8 @@ function runExtractionWorker(input: {
           import.meta.url.endsWith('.ts') ? './extraction-worker.ts' : './extraction-worker.js',
           import.meta.url,
         );
-        const workerEntry = import.meta.url.endsWith('.ts')
-          ? new URL(
-              `data:text/javascript,${encodeURIComponent(
-                `import { tsImport } from ${JSON.stringify(import.meta.resolve('tsx/esm/api'))}; await tsImport(${JSON.stringify(workerUrl.href)}, import.meta.url);`,
-              )}`,
-            )
-          : workerUrl;
-        const worker = new Worker(workerEntry, {
+        const worker = new Worker(workerUrl, {
+          execArgv: import.meta.url.endsWith('.ts') ? ['--import', 'tsx'] : undefined,
           resourceLimits: {
             maxOldGenerationSizeMb: config.parserWorkerMemoryMb,
             stackSizeMb: 4,
@@ -1379,31 +1295,6 @@ async function getPuppeteerBrowser(): Promise<PuppeteerBrowser> {
 
 function chromiumLaunchArgs(): string[] {
   return ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
-}
-
-// Multi-engine launcher for the persistent browser-agent sessions. Chromium
-// reuses the shared scraper singleton; firefox/webkit are launched lazily and
-// cached, so a browser process is only spawned for an engine actually used.
-const agentEngineBrowsers = new Map<'firefox' | 'webkit', PlaywrightBrowser>();
-async function getAgentBrowser(
-  engine: 'chromium' | 'firefox' | 'webkit',
-): Promise<PlaywrightBrowser> {
-  if (engine === 'chromium') {
-    return getPlaywrightBrowser();
-  }
-  const existing = agentEngineBrowsers.get(engine);
-  if (existing?.isConnected()) {
-    return existing;
-  }
-  const playwright = await import('playwright');
-  const browser = await playwright[engine].launch({ headless: config.browserHeadless });
-  browser.on('disconnected', () => {
-    if (agentEngineBrowsers.get(engine) === browser) {
-      agentEngineBrowsers.delete(engine);
-    }
-  });
-  agentEngineBrowsers.set(engine, browser);
-  return browser;
 }
 
 async function capturePlaywrightFailureScreenshot(
@@ -1594,96 +1485,6 @@ async function validateTargetUrl(rawUrl: string): Promise<URL> {
     );
   }
   return url;
-}
-
-async function enforceResponsibleScrapingPolicy(
-  input: ScrapeRequest,
-  targetUrl: URL,
-  ctx: ScrapeContext,
-): Promise<void> {
-  const respectRobots = input.respectRobots ?? config.respectRobots;
-  let crawlDelayMs = config.minOriginDelayMs;
-  if (!respectRobots) {
-    if (!config.allowRobotsOverride) {
-      throw new Error('robots.txt override is blocked by scraper policy');
-    }
-    metrics.robotsOverrides += 1;
-  } else {
-    metrics.robotsChecks += 1;
-    const robotsUrl = new URL('/robots.txt', targetUrl.origin);
-    const body = await loadRobotsText(robotsUrl, ctx);
-    const robots = (
-      robotsParser as unknown as (
-        url: string,
-        text: string,
-      ) => {
-        isAllowed(url: string, userAgent?: string): boolean | undefined;
-        getCrawlDelay(userAgent?: string): number | undefined;
-      }
-    )(robotsUrl.toString(), body);
-    if (robots.isAllowed(targetUrl.toString(), effectiveUserAgent(input)) === false) {
-      metrics.robotsDenials += 1;
-      throw new Error(`robots.txt disallows ${targetUrl.pathname || '/'}`);
-    }
-    const declaredDelaySeconds = robots.getCrawlDelay(effectiveUserAgent(input));
-    if (declaredDelaySeconds !== undefined && Number.isFinite(declaredDelaySeconds)) {
-      crawlDelayMs = Math.max(
-        crawlDelayMs,
-        Math.min(60_000, Math.max(0, declaredDelaySeconds * 1_000)),
-      );
-    }
-  }
-  await waitForOriginTurn(targetUrl.origin, crawlDelayMs);
-}
-
-async function loadRobotsText(robotsUrl: URL, ctx: ScrapeContext): Promise<string> {
-  const cached = robotsCache.get(robotsUrl.origin);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.body;
-  }
-
-  await validateTargetUrl(robotsUrl.toString());
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.min(config.dnsTimeoutMs, 5_000));
-  const proxyDispatcher = buildFetchDispatcher(ctx.proxy);
-  try {
-    const response = await fetch(robotsUrl, {
-      method: 'GET',
-      redirect: 'error',
-      headers: { 'user-agent': config.userAgent },
-      signal: controller.signal,
-      dispatcher: proxyDispatcher ?? guardedAgent,
-    } as RequestInit & { dispatcher: Dispatcher });
-    if (response.status >= 500) {
-      throw new Error(`robots.txt unavailable with status ${response.status}`);
-    }
-    const body = response.ok ? (await readResponseText(response, 262_144)).text : '';
-    if (robotsCache.size >= 256) {
-      robotsCache.delete(robotsCache.keys().next().value!);
-    }
-    robotsCache.set(robotsUrl.origin, {
-      body,
-      expiresAt: Date.now() + config.robotsCacheTtlMs,
-    });
-    return body;
-  } finally {
-    clearTimeout(timeout);
-    if (proxyDispatcher) {
-      await proxyDispatcher.close().catch(() => undefined);
-    }
-  }
-}
-
-async function waitForOriginTurn(origin: string, delayMs: number): Promise<void> {
-  const now = Date.now();
-  const scheduledAt = Math.max(now, originNextRequestAt.get(origin) ?? now);
-  originNextRequestAt.set(origin, scheduledAt + delayMs);
-  if (originNextRequestAt.size > 1_024) {
-    originNextRequestAt.delete(originNextRequestAt.keys().next().value!);
-  }
-  if (scheduledAt > now) {
-    await sleep(scheduledAt - now);
-  }
 }
 
 async function assertAllowedBrowserRequest(rawUrl: string): Promise<void> {
@@ -1889,12 +1690,10 @@ function buildHeaders(
     }
     headers[normalizedName] = value;
   }
-  headers['user-agent'] = effectiveUserAgent(input);
+  if (input.userAgent) {
+    headers['user-agent'] = input.userAgent;
+  }
   return headers;
-}
-
-function effectiveUserAgent(input: ScrapeRequest): string {
-  return input.userAgent ?? config.userAgent;
 }
 
 function isClientPolicyError(message: string): boolean {
@@ -1903,7 +1702,6 @@ function isClientPolicyError(message: string): boolean {
     message.includes('blocked by scraper policy') ||
     message.includes('blocked outbound header') ||
     message.includes('blocked sensitive outbound header') ||
-    message.includes('robots.txt disallows') ||
     message.includes('maximum redirect count exceeded') ||
     message.includes('only http and https URLs are supported') ||
     message.includes('unsupported scrape strategy') ||
@@ -2010,15 +1808,6 @@ function renderMetrics(): string {
     '# HELP dd_web_scraper_proxy_failures_total Proxy failures reported back to the pool.',
     '# TYPE dd_web_scraper_proxy_failures_total counter',
     `dd_web_scraper_proxy_failures_total ${proxyStats.failures}`,
-    '# HELP dd_web_scraper_robots_checks_total Scrapes checked against robots.txt.',
-    '# TYPE dd_web_scraper_robots_checks_total counter',
-    `dd_web_scraper_robots_checks_total ${metrics.robotsChecks}`,
-    '# HELP dd_web_scraper_robots_denials_total Scrapes denied by robots.txt.',
-    '# TYPE dd_web_scraper_robots_denials_total counter',
-    `dd_web_scraper_robots_denials_total ${metrics.robotsDenials}`,
-    '# HELP dd_web_scraper_robots_overrides_total Authorized robots.txt overrides used.',
-    '# TYPE dd_web_scraper_robots_overrides_total counter',
-    `dd_web_scraper_robots_overrides_total ${metrics.robotsOverrides}`,
     '# HELP dd_web_scraper_captcha_total CAPTCHA orchestration events by outcome and type.',
     '# TYPE dd_web_scraper_captcha_total counter',
   );
@@ -2096,10 +1885,6 @@ function statusDescriptor(): StatusDescriptor {
     captchaAutoSolve: config.captchaAutoSolve,
     captchaSolverConfigured: isCaptchaSolverConfigured(),
     captchaMaxConcurrent: config.captchaMaxConcurrent,
-    respectRobots: config.respectRobots,
-    allowRobotsOverride: config.allowRobotsOverride,
-    minOriginDelayMs: config.minOriginDelayMs,
-    allowCaptchaSolving: config.allowCaptchaSolving,
   };
 }
 
@@ -2168,7 +1953,6 @@ function clampNumber(value: number, min: number, max: number): number {
 
 async function closeBrowsers(): Promise<void> {
   const closing: Promise<unknown>[] = [];
-  await closeAllSessions().catch(() => undefined);
   if (playwrightBrowser) {
     closing.push(playwrightBrowser.close().catch(() => undefined));
     playwrightBrowser = null;
@@ -2176,10 +1960,6 @@ async function closeBrowsers(): Promise<void> {
   if (puppeteerBrowser) {
     closing.push(puppeteerBrowser.close().catch(() => undefined));
     puppeteerBrowser = null;
-  }
-  for (const [engine, browser] of agentEngineBrowsers) {
-    closing.push(browser.close().catch(() => undefined));
-    agentEngineBrowsers.delete(engine);
   }
   await Promise.all(closing);
 }
@@ -2198,7 +1978,6 @@ async function main(): Promise<void> {
 
 function shutdown(signal: string): void {
   fastify.log.info(`${signal} received; shutting down`);
-  void telemetry.shutdown();
   fastify.close().finally(() => {
     closeBrowsers().finally(() => process.exit(0));
   });

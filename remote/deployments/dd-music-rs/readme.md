@@ -71,5 +71,3 @@ cargo run
 
 The local route can render the page without credentials, but `/songs` and generation need a
 Postgres URL pointed at a database with the `music_songs` and `music_song_votes` tables applied.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

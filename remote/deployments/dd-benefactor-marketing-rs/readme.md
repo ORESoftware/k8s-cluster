@@ -127,5 +127,3 @@ Core domain routes include:
 
 Domain routes require either `Authorization: Bearer <token>` or the legacy `Auth` header matching
 `BENEFACTOR_MARKETING_API_AUTH_BEARER`.
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

@@ -116,37 +116,25 @@ spec:
               value: '200'
             - name: MCP_ALLOW_EXTERNAL_URLS
               value: 'false'
-            # Defense in depth behind the NetworkPolicy: gateway and agent SDK
-            # clients inject the shared cluster credential as X-Server-Auth.
+            # Optional in-pod bearer gate on POST /mcp (auth is normally enforced
+            # at the gateway). Off here so the gateway model is unchanged. Set to
+            # 'true' and supply MCP_AUTH_SECRET (e.g. from a Secret) to also
+            # require Authorization: Bearer <secret> / X-Server-Auth on every
+            # JSON-RPC call — this is the only way to close the unauthenticated
+            # in-VPC ingress path (NetworkPolicy 172.31.0.0/16 :8091) without
+            # dropping host-network pool-worker access.
             - name: MCP_REQUIRE_AUTH
-              value: 'true'
+              value: 'false'
+            # Secret backing the gate above. Mounted by explicit key (optional,
+            # absent today) so flipping MCP_REQUIRE_AUTH=true after populating
+            # dd-cluster-mcp-rs-secrets actually works — without this the gate
+            # would have no secret source and fail closed.
             - name: MCP_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
-                  key: SERVER_AUTH_SECRET
-            # Read-only Cloudflare API token for the cloudflare_zones /
-            # cloudflare_dns_records tools. Optional: when the key is absent
-            # the tools report a not-configured hint instead of failing.
-            - name: CLOUDFLARE_API_TOKEN
-              valueFrom:
-                secretKeyRef:
                   name: dd-cluster-mcp-rs-secrets
-                  key: CLOUDFLARE_API_TOKEN
+                  key: MCP_AUTH_SECRET
                   optional: true
-            # Domains monitored by the domain_registration (RDAP) and
-            # domain_dns_wiring (DNS-over-HTTPS) tools. Derived from the
-            # dd-remote-gateway vhosts (app./admin.fiducia.cloud server_name
-            # blocks) plus the public marketing apexes it fronts
-            # (fiducia.cloud, canonical.cloud, athleto.store) plus the
-            # dedicated AthletO jello-ws host.
-            - name: DD_MCP_DOMAINS
-              value: fiducia.cloud,app.fiducia.cloud,admin.fiducia.cloud,canonical.cloud,athleto.store,app.athleto.store
-            # Where those domains are expected to land: the gateway Elastic IP
-            # (see mcp/README.md). domain_dns_wiring also unions in live
-            # LoadBalancer/Ingress endpoints from the cluster automatically.
-            - name: DD_MCP_EXPECTED_INGRESS_IPS
-              value: '98.90.186.114'
             - name: OTEL_SERVICE_NAME
               value: dd-cluster-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

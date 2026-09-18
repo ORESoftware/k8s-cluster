@@ -72,5 +72,3 @@ service directly.
 kubectl exec deploy/dd-ws-loadtest-rs-rust-wss -- printenv | grep TARGET_WS_URL
 # -> ws://dd-rust-wss-server.default.svc.cluster.local:8097/
 ```
-
-> **ORM policy:** prefer **SeaORM** over sqlx for new database code (MASH stack: maud, axum, SeaORM, supabase, htmx).

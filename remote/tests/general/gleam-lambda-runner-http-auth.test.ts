@@ -116,27 +116,20 @@ async function withRunner(
 
   try {
     const startedAt = Date.now();
-    let lastHealthError = 'health endpoint never returned a non-200 response';
     while (Date.now() - startedAt < 30_000) {
       assert.equal(processHandle.exitCode, null, `runner exited early:\n${output}`);
-      let healthy = false;
       try {
         const health = await fetchJson(port, '/healthz');
         if (health.status === 200) {
-          healthy = true;
-        } else {
-          lastHealthError = `health endpoint returned HTTP ${health.status}`;
+          await callback(port);
+          return;
         }
-      } catch (error) {
-        lastHealthError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-      }
-      if (healthy) {
-        await callback(port);
-        return;
+      } catch {
+        // Server is still starting.
       }
       await sleep(250);
     }
-    assert.fail(`runner did not become healthy (${lastHealthError}):\n${output}`);
+    assert.fail(`runner did not become healthy:\n${output}`);
   } finally {
     await stopRunner(processHandle);
   }
@@ -152,7 +145,6 @@ test('gleam lambda runner direct HTTP routes fail closed without shared auth', {
       authConfigured: false,
       postgresConfigured: false,
       natsConfigured: false,
-      workflowEngineEnabled: false,
     });
 
     const invoke = await fetchJson(port, '/invoke/00000000-0000-0000-0000-000000000000', {
