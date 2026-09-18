@@ -524,3 +524,52 @@ fn confirm_options_resolve_with_defaults() {
     assert_eq!(timeout, 5_000);
     assert_eq!(interval, 500);
 }
+
+/// A `reqwest::Error`'s `Display` appends ` for url (<the full request URL>)`,
+/// so interpolating one into a message puts `SOLANA_RPC_URL`,
+/// `FIDUCIA_LOCK_URL` or the formal-methods service URL into the log. `readyz`
+/// logs the coordination and formal-methods error strings verbatim
+/// (handlers.rs), and `solana_rpc_request` logs its own, so every reqwest
+/// error that reaches a message must be routed through `without_url()`.
+///
+/// This asserts against the source text so that reintroducing a bare
+/// `{error}` at any of these eight call sites turns the suite red -- the
+/// closures themselves are inline and cannot be called directly.
+#[test]
+fn reqwest_errors_never_reach_a_message_carrying_their_url() {
+    fn count(haystack: &str, needle: &str) -> usize {
+        haystack.matches(needle).count()
+    }
+
+    // (file, source, number of reqwest error sites that must be stripped)
+    let sources: &[(&str, &str, usize)] = &[
+        ("rpc.rs", include_str!("rpc.rs"), 2),
+        ("coordination.rs", include_str!("coordination.rs"), 3),
+        ("solana_features.rs", include_str!("solana_features.rs"), 3),
+    ];
+
+    for (name, src, expected) in sources {
+        assert_eq!(
+            count(src, "error.without_url()"),
+            *expected,
+            "{name}: a reqwest error site lost its without_url() stripping"
+        );
+    }
+
+    const FORBIDDEN: &[&str] = &[
+        "Fiducia coordination unavailable: {error}",
+        "Fiducia coordination request failed: {error}",
+        "Fiducia coordination response failed: {error}",
+        "formal-methods readiness failed: {error}",
+        "formal-methods request failed: {error}",
+        "formal-methods response failed: {error}",
+    ];
+    for (name, src, _) in sources {
+        for pattern in FORBIDDEN {
+            assert!(
+                !src.contains(pattern),
+                "{name}: `{pattern}` interpolates a reqwest error with its URL"
+            );
+        }
+    }
+}

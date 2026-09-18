@@ -223,7 +223,10 @@ impl CoordinationState {
                 "Fiducia coordination readiness returned HTTP {}",
                 response.status()
             )),
-            Ok(Err(error)) => Err(format!("Fiducia coordination unavailable: {error}")),
+            Ok(Err(error)) => Err(format!(
+                "Fiducia coordination unavailable: {}",
+                error.without_url()
+            )),
             Err(_) => Err("Fiducia coordination readiness timed out".to_string()),
         }
     }
@@ -468,7 +471,7 @@ async fn fiducia_post(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("Fiducia coordination request failed: {error}"))?;
+        .map_err(|error| format!("Fiducia coordination request failed: {}", error.without_url()))?;
     let status = response.status();
     if response.content_length().unwrap_or(0) > MAX_COORDINATION_RESPONSE_BYTES {
         return Err("Fiducia coordination response exceeded size limit".to_string());
@@ -476,7 +479,7 @@ async fn fiducia_post(
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("Fiducia coordination response failed: {error}"))?;
+        .map_err(|error| format!("Fiducia coordination response failed: {}", error.without_url()))?;
     if bytes.len() as u64 > MAX_COORDINATION_RESPONSE_BYTES {
         return Err("Fiducia coordination response exceeded size limit".to_string());
     }

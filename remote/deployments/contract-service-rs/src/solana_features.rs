@@ -188,7 +188,7 @@ impl SolanaFeatureState {
         )
         .await
         .map_err(|_| "formal-methods readiness timed out".to_string())?
-        .map_err(|error| format!("formal-methods readiness failed: {error}"))?;
+        .map_err(|error| format!("formal-methods readiness failed: {}", error.without_url()))?;
         if response.status().is_success() {
             Ok(())
         } else {
@@ -696,7 +696,7 @@ async fn formal_post(config: &FormalConfig, path: &str, payload: Value) -> Resul
         .json(&payload)
         .send()
         .await
-        .map_err(|error| format!("formal-methods request failed: {error}"))?;
+        .map_err(|error| format!("formal-methods request failed: {}", error.without_url()))?;
     let status = response.status();
     if response.content_length().unwrap_or(0) > MAX_FORMAL_RESPONSE_BYTES {
         return Err("formal-methods response exceeded size limit".to_string());
@@ -704,7 +704,7 @@ async fn formal_post(config: &FormalConfig, path: &str, payload: Value) -> Resul
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("formal-methods response failed: {error}"))?;
+        .map_err(|error| format!("formal-methods response failed: {}", error.without_url()))?;
     if bytes.len() as u64 > MAX_FORMAL_RESPONSE_BYTES {
         return Err("formal-methods response exceeded size limit".to_string());
     }
