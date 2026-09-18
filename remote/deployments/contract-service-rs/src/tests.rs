@@ -524,3 +524,158 @@ fn confirm_options_resolve_with_defaults() {
     assert_eq!(timeout, 5_000);
     assert_eq!(interval, 500);
 }
+
+/// A `reqwest::Error`'s `Display` appends ` for url (<the full request URL>)`,
+/// so interpolating one into a message puts `SOLANA_RPC_URL`,
+/// `FIDUCIA_LOCK_URL`, the formal-methods service URL or `EVM_RPC_URL` into
+/// that message. These messages do not stay local: `readyz` logs the
+/// coordination and formal-methods strings (handlers.rs), `solana_rpc_request`
+/// logs its own, and the blockchain routes hand `evm_rpc`'s string straight
+/// back to the caller in a 502 body. So every reqwest error that reaches a
+/// message is routed through `without_url()`.
+///
+/// This asserts against the source text so that reintroducing a bare
+/// `{error}` at any of these call sites turns the suite red -- the closures
+/// themselves are inline and cannot be called directly.
+#[test]
+fn reqwest_errors_never_reach_a_message_carrying_their_url() {
+    // (file, source, number of reqwest error sites, how each one is stripped)
+    let sources: &[(&str, &str, usize, &str)] = &[
+        ("rpc.rs", include_str!("rpc.rs"), 2, "error.without_url()"),
+        (
+            "coordination.rs",
+            include_str!("coordination.rs"),
+            3,
+            "upstream_failure(",
+        ),
+        (
+            "solana_features.rs",
+            include_str!("solana_features.rs"),
+            3,
+            "upstream_failure(",
+        ),
+        (
+            "blockchain/evm.rs",
+            include_str!("blockchain/evm.rs"),
+            2,
+            "upstream_failure(",
+        ),
+    ];
+
+    for (name, src, expected, stripper) in sources {
+        assert_eq!(
+            src.matches(stripper).count(),
+            *expected,
+            "{name}: a reqwest error site lost its URL stripping"
+        );
+    }
+
+    const FORBIDDEN: &[&str] = &[
+        "Fiducia coordination unavailable: {error}",
+        "Fiducia coordination request failed: {error}",
+        "Fiducia coordination response failed: {error}",
+        "formal-methods readiness failed: {error}",
+        "formal-methods request failed: {error}",
+        "formal-methods response failed: {error}",
+        "EVM RPC request failed: {error}",
+        "EVM RPC returned a non-JSON body: {error}",
+    ];
+    for (name, src, _, _) in sources {
+        for pattern in FORBIDDEN {
+            assert!(
+                !src.contains(pattern),
+                "{name}: `{pattern}` interpolates a reqwest error with its URL"
+            );
+        }
+    }
+
+    // The two `rpc.rs` sites record the class in a separate field rather than
+    // through `upstream_failure`, so check that field is still there.
+    assert_eq!(
+        include_str!("rpc.rs")
+            .matches("\"errorKind\": kind,")
+            .count(),
+        2,
+        "rpc.rs: a Solana RPC failure log lost its errorKind field"
+    );
+}
+
+/// Stripping the URL costs the operator the only thing that distinguished one
+/// transport failure from another: for every send failure `without_url()`
+/// renders as the bare string "error sending request", because `Display`
+/// covers the top error and never its source chain. `upstream_failure` is
+/// therefore required to record a fixed class slug alongside it.
+///
+/// Both halves are asserted against errors `reqwest` really produced, not
+/// against a guess at its wording, and the premise -- that `reqwest` does name
+/// the URL when asked -- is asserted first so this cannot pass vacuously.
+#[tokio::test]
+async fn an_upstream_failure_message_names_its_class_and_never_its_url() {
+    use std::time::Duration;
+
+    // A connect failure: reserved by RFC 6761 to never resolve.
+    let url = "http://fiducia-lock.invalid/v1/leases?lease-shaped=abc123";
+    let error = reqwest::Client::new()
+        .post(url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+        .expect_err("an unresolvable host cannot answer");
+    assert!(
+        error.to_string().contains("fiducia-lock.invalid"),
+        "premise failed, reqwest no longer names the URL: {error}"
+    );
+    assert_eq!(upstream_failure_kind(&error), "connect");
+
+    let message = upstream_failure("Fiducia coordination request failed", error);
+    assert!(message.starts_with("Fiducia coordination request failed: "));
+    assert!(
+        message.ends_with("(connect)"),
+        "the failure class is missing, so the message says nothing an operator \
+         can act on: {message}"
+    );
+    for fragment in [
+        "fiducia-lock.invalid",
+        "/v1/leases",
+        "lease-shaped=abc123",
+        "for url",
+    ] {
+        assert!(
+            !message.contains(fragment),
+            "{fragment} survived into the failure message: {message}"
+        );
+    }
+
+    // A timeout must not be reported as a connect failure: a listener that
+    // accepts and then stays silent.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let _accepting = tokio::spawn(async move {
+        let mut held = Vec::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            held.push(stream);
+        }
+    });
+    let error = reqwest::Client::new()
+        .get(format!("http://{addr}/evm-rpc-secret-path"))
+        .timeout(Duration::from_millis(250))
+        .send()
+        .await
+        .expect_err("a silent upstream cannot answer");
+    assert_eq!(
+        upstream_failure_kind(&error),
+        "timeout",
+        "a timeout was misreported: {error}"
+    );
+    let message = upstream_failure("EVM RPC request failed", error);
+    assert!(
+        message.ends_with("(timeout)"),
+        "the failure class is missing: {message}"
+    );
+    for fragment in ["evm-rpc-secret-path", &addr.to_string(), "for url"] {
+        assert!(
+            !message.contains(fragment),
+            "{fragment} survived into the failure message: {message}"
+        );
+    }
+}

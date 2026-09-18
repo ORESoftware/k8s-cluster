@@ -145,6 +145,54 @@ pub(crate) fn sensitive_eq(left: &str, right: &str) -> bool {
     diff == 0
 }
 
+/// The class of a `reqwest` transport failure, as a fixed slug.
+///
+/// `reqwest::Error`'s `Display` appends ` for url (<the full request URL>)`
+/// whenever the error carries one, so every message built from one is routed
+/// through `without_url()`. That stripping has a cost: for any send failure
+/// `without_url()` renders as the bare string "error sending request", because
+/// `Display` covers only the top error and never its source chain. Connection
+/// refused, an unresolvable host and a timeout all collapse to the same
+/// sentence, which is the one thing an operator needs to tell apart.
+///
+/// Each slug below is a literal chosen here and returned as `&'static str`,
+/// derived only from `reqwest`'s own predicates. None of them can carry a
+/// piece of the request, so recording one restores the distinction without
+/// putting anything caller-supplied or configured back into the message.
+///
+/// `is_timeout` and `is_connect` are tested before `is_request` because a
+/// connect failure also answers true to `is_request`, and the specific class is
+/// the useful one.
+pub(crate) fn upstream_failure_kind(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connect"
+    } else if error.is_redirect() {
+        "redirect"
+    } else if error.is_decode() {
+        "decode"
+    } else if error.is_body() {
+        "body"
+    } else if error.is_request() {
+        "request"
+    } else {
+        "other"
+    }
+}
+
+/// An upstream failure message: the context, `reqwest`'s own wording with the
+/// URL removed, and the fixed failure class from `upstream_failure_kind`.
+///
+/// These strings do not stay local. `readyz` logs the coordination and
+/// formal-methods strings, and the blockchain routes hand theirs back to the
+/// caller in the response body, so the URL must not survive into one.
+pub(crate) fn upstream_failure(context: &str, error: reqwest::Error) -> String {
+    // `without_url` consumes the error, so the class is read off it first.
+    let kind = upstream_failure_kind(&error);
+    format!("{context}: {} ({kind})", error.without_url())
+}
+
 pub(crate) fn config_error(message: impl Into<String>) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidInput, message.into())
 }
