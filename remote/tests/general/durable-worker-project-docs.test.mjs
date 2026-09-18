@@ -58,6 +58,14 @@ test('roadmap records landed SDK artifacts and separated remaining M3 lanes', ()
     roadmap,
     /sha256:a49f6e81d8f80783f507d1dba47f1cf96bb290ccb0d9e29651ee0a86442f72a6/,
   );
+  assert.match(
+    roadmap,
+    /durable-worker-dart-sdk-81bf0548fb68ada82fd3d01d4456219cd4e71387/,
+  );
+  assert.match(
+    roadmap,
+    /sha256:64cae700516eb549f5fd998f4452c2028e26c2117e87cabea492b2ddde0d921c/,
+  );
   assert.match(roadmap, /Gleam SDK: GitHub issue #1164 \/ Linear DEN-2480/);
   assert.match(
     roadmap,
