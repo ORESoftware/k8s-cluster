@@ -166,6 +166,34 @@ type = "integer"
 default = 1000
 help = "Minimum delay between top-level local requests to one origin."
 
+[flags.max-per-origin-concurrent]
+env = "SCRAPER_MAX_PER_ORIGIN_CONCURRENT"
+aliases = ["max-per-origin-concurrent"]
+type = "integer"
+default = 2
+help = "Maximum concurrent local requests to one origin; extra callers wait within the origin wait budget."
+
+[flags.max-origin-wait-ms]
+env = "SCRAPER_MAX_ORIGIN_WAIT_MS"
+aliases = ["max-origin-wait-ms"]
+type = "integer"
+default = 30000
+help = "Longest a request may wait for its polite turn at an origin before returning 429 with Retry-After."
+
+[flags.origin-backoff-base-ms]
+env = "SCRAPER_ORIGIN_BACKOFF_BASE_MS"
+aliases = ["origin-backoff-base-ms"]
+type = "integer"
+default = 2000
+help = "First jittered exponential back-off step after an origin answers 429/503 without Retry-After."
+
+[flags.origin-backoff-max-ms]
+env = "SCRAPER_ORIGIN_BACKOFF_MAX_MS"
+aliases = ["origin-backoff-max-ms"]
+type = "integer"
+default = 300000
+help = "Upper bound on per-origin back-off, including a server-supplied Retry-After."
+
 [flags.allow-robots-override]
 env = "SCRAPER_ALLOW_ROBOTS_OVERRIDE"
 aliases = ["allow-robots-override"]
