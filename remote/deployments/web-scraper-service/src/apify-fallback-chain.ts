@@ -331,7 +331,9 @@ function normalizeDomainPattern(rawPattern: string): string {
     isIP(hostname) !== 0 ||
     hostname === 'localhost' ||
     hostname.endsWith('.localhost') ||
+    hostname === 'local' ||
     hostname.endsWith('.local') ||
+    hostname === 'internal' ||
     hostname.endsWith('.internal') ||
     !labelsValid
   ) {
