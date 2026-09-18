@@ -58,6 +58,9 @@ test('aggregate workflow is pinned, read-only, source-scoped, and report-preserv
   assert.match(workflow, /dtolnay\/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30/u);
   assert.match(workflow, /dart-lang\/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260/u);
   assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/u);
+  assert.match(workflow, /github\.event\.pull_request\.head\.sha/u);
+  assert.match(workflow, /SOURCE_SHA:/u);
+  assert.match(workflow, /"source_sha": os\.environ\["SOURCE_SHA"\]/u);
   assert.match(workflow, /persist-credentials: false/u);
   assert.match(workflow, /submodules: false/u);
   assert.doesNotMatch(workflow, /contents:\s*write|packages:\s*write|persist-credentials:\s*true/u);
