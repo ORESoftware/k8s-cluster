@@ -165,6 +165,31 @@ target. Robots documents are fetched through the same SSRF-safe/proxy path and
 cached for `SCRAPER_ROBOTS_CACHE_TTL_MS`. Prometheus exposes checks, denials,
 and overrides as `dd_web_scraper_robots_*` counters.
 
+### Per-origin politeness and back-off
+
+On top of spacing, each pod enforces (see `src/origin-politeness.ts`):
+
+- at most `SCRAPER_MAX_PER_ORIGIN_CONCURRENT` (default 2) in-flight fetches to
+  one origin; extra requests wait for a slot;
+- adaptive back-off when a target answers `429` or `503`: a bounded
+  `Retry-After` is honored, otherwise jittered exponential back-off starting at
+  `SCRAPER_ORIGIN_BACKOFF_BASE_MS` (default 2s) and capped at
+  `SCRAPER_ORIGIN_BACKOFF_MAX_MS` (default 5m). Back-off never shrinks and is
+  not forgotten by LRU eviction;
+- a bounded wait: if a request cannot get a polite turn within
+  `min(SCRAPER_MAX_ORIGIN_WAIT_MS, request timeout)`, it fails fast with HTTP
+  `429`, `errorCode: "origin-politeness-deferred"`, `retryAfterMs`, and a
+  `Retry-After` header instead of holding an in-flight slot. Callers should
+  requeue after that delay. A 429 is never eligible for the Apify fallback, so a
+  target that asked us to slow down is not re-hit through a remote provider.
+
+Browser contexts are always closed in `finally` (including when `newPage()`
+fails), with a 5s bound; a close that rejects or hangs no longer masks the
+scrape's real error. Prometheus: `dd_web_scraper_origin_politeness_rejections_total`,
+`dd_web_scraper_origin_backoffs_total`, `dd_web_scraper_origins_in_backoff`,
+`dd_web_scraper_origin_waiting_requests`, and
+`dd_web_scraper_browser_context_cleanup_problems_total`.
+
 ## CAPTCHA solving orchestration
 
 For every scrape the fetched page is scanned for a challenge — reCAPTCHA v2/v3,

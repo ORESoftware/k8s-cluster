@@ -78,6 +78,45 @@ An HTTP success response is not proof of exactly-once execution. The runtime rej
 
 The `dev` run for merge commit `a693040ad69a1f54f14dd65fb8b74ab11fee132b` published artifact `durable-worker-go-sdk-a693040ad69a1f54f14dd65fb8b74ab11fee132b` with GitHub artifact digest `sha256:b24060664d79c845c4b7370f4cabb5b0ac79b9a09fc5b00b45b596ad9948d78c`.
 
+### Rust worker SDK — PR #1037 / DEN-2392
+
+- async Rust 1.85+ client with a replaceable transport boundary;
+- automatic retries only for operations with a stable protocol identity;
+- redirect refusal, bounded response bodies, structured transport and protocol errors;
+- bounded Tokio worker slots, independent worker and step heartbeats, progress, and draining;
+- deterministic progress IDs scoped to the step and lease generation;
+- heartbeat and output fencing cancel handlers and suppress stale terminal writes;
+- permanent CI is read-only, non-persistent, and locked on Rust 1.85.0 and stable.
+
+The trusted `dev` run for merge commit `435d42437f1b122b8a5a46ad8340070b67773ce3` published source artifact `durable-worker-rust-sdk-435d42437f1b122b8a5a46ad8340070b67773ce3` with GitHub artifact digest `sha256:fc52f3d5318a13c3881b6adb8bbea41397e1dcc5ae2a5a221e7eb57e0aa948bb`. The reviewed Cargo lock artifact digest is `sha256:04a9ca5128201acedc315d34c4a174bcdc00407d4e7db3932986e33c36db8783`.
+
+## Landed SDK delivery
+
+### Dart worker SDK — successor PR #1586 / DEN-2464
+
+- dependency-free Dart 3.4+ client and asynchronous worker loop;
+- safe retry boundaries, redirect refusal, bounded responses, and lease-sensitive errors;
+- bounded worker slots, worker and step heartbeats, deterministic progress identities, and draining;
+- heartbeat uncertainty and explicit fencing cancel the handler and suppress stale completion/failure writes;
+- Dart 3.4.0 and 3.12.2 validation, shared fixture coverage, repeated fencing stress, and deterministic source artifacts.
+
+The reviewed successor head `9df684208898e862fe4ac746b2b04495a4ab46e8`
+passed the Dart 3.4.0 and 3.12.2 lifecycle/fencing matrix and merged through PR
+#1586 as `81bf0548fb68ada82fd3d01d4456219cd4e71387`. The reviewed
+dependency-lock artifact digest is
+`sha256:a49f6e81d8f80783f507d1dba47f1cf96bb290ccb0d9e29651ee0a86442f72a6`.
+Trusted `dev` workflow run `35276234766` for merge
+`81bf0548fb68ada82fd3d01d4456219cd4e71387` published source artifact
+`durable-worker-dart-sdk-81bf0548fb68ada82fd3d01d4456219cd4e71387`
+with GitHub artifact digest
+`sha256:64cae700516eb549f5fd998f4452c2028e26c2117e87cabea492b2ddde0d921c`.
+
+### Gleam and BEAM interoperability
+
+- Gleam SDK: GitHub issue #1164 / Linear DEN-2480;
+- Erlang and Elixir interoperability: GitHub issue #1165 / Linear DEN-2482;
+- DEN-2482 remains blocked by the shared Gleam transport and lease primitives so the independently reviewable Erlang/Elixir API does not duplicate or fork the protocol core.
+
 ## Architectural position
 
 The runtime's differentiated model is:
@@ -132,12 +171,12 @@ Delivered lifecycle-aware worker SDKs:
 
 - TypeScript;
 - Python;
-- Go.
+- Go;
+- Rust;
+- Dart.
 
 Remaining worker SDKs:
 
-- Rust;
-- Dart;
 - Gleam;
 - Erlang and Elixir interoperability.
 

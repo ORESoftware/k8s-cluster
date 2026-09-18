@@ -77,16 +77,18 @@ let summary = worker.run(Cancellation::default()).await?;
 # }
 ```
 
-The worker owns registration, bounded local slot admission, worker TTL heartbeats, independent step heartbeats, deterministic progress chunk identities, drain signaling, and stale-terminal suppression. A failed or fenced step heartbeat cancels the task context; after cancellation the worker sends neither completion nor failure under that stale generation.
+The worker owns registration, bounded local slot admission, worker TTL heartbeats, independent step heartbeats, deterministic progress chunk identities, drain signaling, and stale-terminal suppression. The configured worker-heartbeat interval must remain shorter than the worker TTL. A failed, blocked, or fenced step heartbeat aborts the handler future and the worker sends neither completion nor failure under that stale generation. The assignment `timeoutMs` is enforced locally, including for handlers that do not cooperatively poll the cancellation token. Handler panics are isolated and converted into a non-retryable `handler_panic` failure.
 
-Raise `WorkerFailure::new(code, message, retryable)` for expected handler failures. Keep downstream writes idempotent or fenced even when the handler itself is deterministic.
+`WorkerSummary::failed` counts handler failures acknowledged by the durable control plane. `WorkerSummary::protocol_errors` counts terminal operations whose durable outcome is unknown, so operators do not mistake transport ambiguity for an acknowledged task failure.
+
+Raise `WorkerFailure::new(code, message, retryable)` for expected handler failures. Keep downstream writes idempotent or fenced even when the handler itself is deterministic. Handler-created child tasks must also be cancelled or fenced by the application; aborting the handler future cannot revoke work that it detached independently.
 
 ## Verification
 
 ```bash
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets --all-features
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features
 ```
 
 The repository workflow runs both the declared MSRV and current stable Rust, consumes the shared protocol fixture, repeats the lease-fencing cancellation test, audits dependency duplication, scans credential-shaped source, and publishes a deterministic source archive plus SHA-256 checksum after merge to `dev`.

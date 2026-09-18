@@ -1,0 +1,7 @@
+name: oresoftware_durable_worker
+version: 0.1.0
+description: Lifecycle-aware Dart SDK for the ORESoftware durable-worker runtime.
+repository: https://github.com/ORESoftware/k8s-cluster
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"

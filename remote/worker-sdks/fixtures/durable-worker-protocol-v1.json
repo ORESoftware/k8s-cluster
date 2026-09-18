@@ -1,9 +1,23 @@
 {
   "version": 1,
   "delivery": "at-least-once",
-  "effectSafety": ["idempotency-key", "fencing-token"],
-  "transientStatuses": [408, 425, 429, 500, 502, 503, 504],
-  "leaseLostStatuses": [404, 409],
+  "effectSafety": [
+    "idempotency-key",
+    "fencing-token"
+  ],
+  "transientStatuses": [
+    408,
+    425,
+    429,
+    500,
+    502,
+    503,
+    504
+  ],
+  "leaseLostStatuses": [
+    404,
+    409
+  ],
   "neverRetryWithoutIdentity": [
     "submit-task-without-idempotency-key",
     "submit-run-without-idempotency-key",
@@ -41,7 +55,9 @@
     "stepKey": "task",
     "taskType": "fixture:task",
     "queue": "default",
-    "input": {"value": 7},
+    "input": {
+      "value": 7
+    },
     "attempt": 1,
     "leaseToken": "lease-fixture",
     "leaseGeneration": 3,
@@ -49,5 +65,17 @@
     "leaseExpiresAtMs": 4102444800000,
     "timeoutMs": 60000,
     "affinityKey": null
-  }
+  },
+  "handAuthoredSdks": [
+    "typescript",
+    "python",
+    "go",
+    "rust",
+    "dart"
+  ],
+  "conformanceDimensions": [
+    "retry-safety",
+    "transport-containment",
+    "lease-fencing"
+  ]
 }

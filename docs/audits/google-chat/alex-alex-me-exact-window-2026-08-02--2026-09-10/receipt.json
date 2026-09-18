@@ -46,26 +46,104 @@
     "recordCount": 13,
     "immutableGoogleChatSourceIdsBound": false,
     "records": [
-      {"id":"S9-01","date":"2026-09-09","classification":"actionable","owner":"chapter-publishing/cp-monorepo#5"},
-      {"id":"S9-02","date":"2026-09-09","classification":"actionable","owner":"ORESoftware/my-ai#142"},
-      {"id":"S9-03","date":"2026-09-09","classification":"coordination_meta","owner":"ORESoftware/.github#185; ORESoftware/my-ai#130"},
-      {"id":"S9-04","date":"2026-09-09","classification":"actionable","owner":"ores-chat/.github#7"},
-      {"id":"S9-05","date":"2026-09-09","classification":"actionable","owner":"ORESoftware/my-ai#143"},
-      {"id":"S9-06","date":"2026-09-09","classification":"coordination_quality","owner":"existing PR-readiness/recovery controllers"},
-      {"id":"S9-07","date":"2026-09-09","classification":"linked_existing","owner":"ores-otel/ores-otel-interfaces#1; ores-otel/ores.otel.log#64"},
-      {"id":"S9-08","date":"2026-09-09","classification":"linked_existing_consumer_follow_up","owner":"flags-2-env/flags-2-env#16; ORESoftware/ores-cli#52; zed-pkg/.github#87"},
-      {"id":"S10-01","date":"2026-09-10","classification":"context_status_recap","owner":"canonical open product issues/PRs named by recap"},
-      {"id":"S10-02","date":"2026-09-10","classification":"linked_existing_implementation","owner":"flags-2-env/flags-2-env#16","implementationCommit":"333c2ace93c362d274171ab0e0edf613d96a8e59"},
-      {"id":"S10-03","date":"2026-09-10","classification":"actionable","owner":"ORESoftware/k8s-cluster#1559"},
-      {"id":"S10-04","date":"2026-09-10","classification":"coordination_quality","owner":"active PR-readiness/recovery controllers"},
-      {"id":"S10-05","date":"2026-09-10","classification":"actionable_follow_up_deduplicated","owner":"zed-pkg/.github#87"}
+      {
+        "id": "S9-01",
+        "date": "2026-09-09",
+        "classification": "actionable",
+        "owner": "chapter-publishing/cp-monorepo#5"
+      },
+      {
+        "id": "S9-02",
+        "date": "2026-09-09",
+        "classification": "actionable",
+        "owner": "ORESoftware/my-ai#142"
+      },
+      {
+        "id": "S9-03",
+        "date": "2026-09-09",
+        "classification": "coordination_meta",
+        "owner": "ORESoftware/.github#185; ORESoftware/my-ai#130"
+      },
+      {
+        "id": "S9-04",
+        "date": "2026-09-09",
+        "classification": "actionable",
+        "owner": "ores-chat/.github#7"
+      },
+      {
+        "id": "S9-05",
+        "date": "2026-09-09",
+        "classification": "actionable",
+        "owner": "ORESoftware/my-ai#143"
+      },
+      {
+        "id": "S9-06",
+        "date": "2026-09-09",
+        "classification": "coordination_quality",
+        "owner": "existing PR-readiness/recovery controllers"
+      },
+      {
+        "id": "S9-07",
+        "date": "2026-09-09",
+        "classification": "linked_existing",
+        "owner": "ores-otel/ores-otel-interfaces#1; ores-otel/ores.otel.log#64"
+      },
+      {
+        "id": "S9-08",
+        "date": "2026-09-09",
+        "classification": "linked_existing_consumer_follow_up",
+        "owner": "flags-2-env/flags-2-env#16; ORESoftware/ores-cli#52; zed-pkg/.github#87"
+      },
+      {
+        "id": "S10-01",
+        "date": "2026-09-10",
+        "classification": "context_status_recap",
+        "owner": "canonical open product issues/PRs named by recap"
+      },
+      {
+        "id": "S10-02",
+        "date": "2026-09-10",
+        "classification": "linked_existing_implementation",
+        "owner": "flags-2-env/flags-2-env#16",
+        "implementationCommit": "333c2ace93c362d274171ab0e0edf613d96a8e59"
+      },
+      {
+        "id": "S10-03",
+        "date": "2026-09-10",
+        "classification": "actionable",
+        "owner": "ORESoftware/k8s-cluster#1559"
+      },
+      {
+        "id": "S10-04",
+        "date": "2026-09-10",
+        "classification": "coordination_quality",
+        "owner": "active PR-readiness/recovery controllers"
+      },
+      {
+        "id": "S10-05",
+        "date": "2026-09-10",
+        "classification": "actionable_follow_up_deduplicated",
+        "owner": "zed-pkg/.github#87"
+      }
     ]
   },
   "blockers": [
-    {"code":"sep10_source_identity_unbound","detail":"Protected bridge rerun is required to bind Sep 10 tail records to immutable Google Chat source IDs/hashes and terminating pagination evidence."},
-    {"code":"attachment_review_incomplete","detail":"ORESoftware/my-ai#121 tracks three image-only historical inputs whose bytes were not returned by the bridge."},
-    {"code":"linear_issue_limit","detail":"Linear workspace issue creation is capped; ORESoftware/k8s-cluster#1552 preserves gaps without fabricating ownership."},
-    {"code":"implementation_evidence_incomplete","detail":"Canonical child issues without exact tested implementation PRs remain open implementation gaps."}
+    {
+      "code": "sep10_source_identity_unbound",
+      "detail": "Protected bridge rerun is required to bind Sep 10 tail records to immutable Google Chat source IDs/hashes and terminating pagination evidence."
+    },
+    {
+      "code": "attachment_review_incomplete",
+      "detail": "ORESoftware/my-ai#121 tracks three image-only historical inputs whose bytes were not returned by the bridge."
+    },
+    {
+      "code": "linear_issue_limit",
+      "detail": "Linear workspace issue creation is capped; ORESoftware/k8s-cluster#1552 preserves gaps without fabricating ownership."
+    },
+    {
+      "code": "implementation_evidence_incomplete",
+      "detail": "Canonical child issues without exact tested implementation PRs remain open implementation gaps."
+    }
   ],
   "completionInvariant": {
     "unownedActionableCandidatesMustEqual": 0,
