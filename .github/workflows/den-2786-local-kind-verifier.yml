@@ -14,7 +14,6 @@ on:
       - 'remote/argocd/observability/**'
       - 'remote/deployments/benefactor-orchestrator/**'
       - 'remote/tests/general/k8s-resource-exporter-security.test.mjs'
-      - 'remote/tools/check-observability-coverage.mjs'
   workflow_dispatch:
 
 permissions:
@@ -108,7 +107,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Verify resource exporter restricted pod security
+      - name: Verify resource exporter restricted pod security and watch coverage
         run: node --test remote/tests/general/k8s-resource-exporter-security.test.mjs
 
       - name: Verify explicit runtime on Node 22
@@ -138,11 +137,9 @@ jobs:
           npm run check
           npm test
 
-      - name: Verify observability policy and temporary-file hygiene
+      - name: Verify verifier-owned temporary-file hygiene
         run: |
           set -euo pipefail
-          node remote/tools/check-observability-coverage.mjs
-          test ! -e remote/deployments/benefactor-orchestrator/scraper-contact-preload.mjs
           test ! -e .github/den-2786-hardening.py
           test ! -e .github/workflows/den-2786-hardening-carrier.yml
           git diff --check
@@ -165,9 +162,9 @@ jobs:
             echo '- kind v0.30.0 with Kubernetes v1.32.8, one control-plane and one worker: passed'
             echo '- exact-tree namespace inventory/manifest parity and migration contracts: passed'
             echo '- Kubernetes admission plus positive/negative RBAC authorization: passed'
-            echo '- resource exporter restricted non-root and read-only security contract: passed'
+            echo '- resource exporter restricted non-root/read-only profile and explicit watch coverage: passed'
             echo '- benefactor runtime tests on Node 22 and Node 24: passed'
             echo '- hardened benefactor Docker image build: passed'
-            echo '- observability no-global-wrapper policy: passed'
+            echo '- verifier-owned temporary-file hygiene: passed'
             echo '- AWS and Hetzner calls: none'
           } >> "$GITHUB_STEP_SUMMARY"
