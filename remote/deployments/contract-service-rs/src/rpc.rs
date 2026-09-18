@@ -217,7 +217,7 @@ async fn solana_rpc_request(
                 "Solana RPC request failed.",
                 json!({
                     "rpcMethod": method,
-                    "error": error.to_string(),
+                    "error": error.without_url().to_string(),
                     "oresTraceId": "ores-trace-DAP9lrN4w-oYV5TjIxnJy",
                     "oresRoutineId": ROUTINE_ID,
                 }),
@@ -249,7 +249,7 @@ async fn solana_rpc_request(
                 "Solana RPC response body could not be read.",
                 json!({
                     "rpcMethod": method,
-                    "error": error.to_string(),
+                    "error": error.without_url().to_string(),
                     "oresTraceId": "ores-trace-XW0L51OyU50yk0LKyR2rH",
                     "oresRoutineId": ROUTINE_ID,
                 }),
