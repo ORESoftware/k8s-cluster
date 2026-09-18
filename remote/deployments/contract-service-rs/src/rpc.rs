@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 use crate::coordination;
 use crate::metrics::{record_rpc_error, record_rpc_request};
-use crate::shared::{log_error, log_warn, now_ms};
+use crate::shared::{log_error, log_warn, now_ms, upstream_failure_kind};
 use crate::state::{AppState, MAX_RPC_RESPONSE_BYTES, MAX_SIGNED_TRANSACTION_BYTES};
 use crate::validation::normalize_encoding;
 
@@ -211,6 +211,7 @@ async fn solana_rpc_request(
         .send()
         .await
         .map_err(|error| {
+            let kind = upstream_failure_kind(&error);
             record_rpc_error(&state.metrics, method);
             log_error(
                 "solana-rpc-request-failed",
@@ -218,6 +219,7 @@ async fn solana_rpc_request(
                 json!({
                     "rpcMethod": method,
                     "error": error.without_url().to_string(),
+                    "errorKind": kind,
                     "oresTraceId": "ores-trace-DAP9lrN4w-oYV5TjIxnJy",
                     "oresRoutineId": ROUTINE_ID,
                 }),
@@ -243,6 +245,7 @@ async fn solana_rpc_request(
     let mut body_bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| {
+            let kind = upstream_failure_kind(&error);
             record_rpc_error(&state.metrics, method);
             log_error(
                 "solana-rpc-response-read-failed",
@@ -250,6 +253,7 @@ async fn solana_rpc_request(
                 json!({
                     "rpcMethod": method,
                     "error": error.without_url().to_string(),
+                    "errorKind": kind,
                     "oresTraceId": "ores-trace-XW0L51OyU50yk0LKyR2rH",
                     "oresRoutineId": ROUTINE_ID,
                 }),

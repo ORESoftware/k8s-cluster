@@ -24,6 +24,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+use crate::shared::upstream_failure;
 use crate::{json_response, normalize_commitment_or_default, solana_rpc, AppState};
 
 const MAX_FORMAL_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
@@ -188,7 +189,7 @@ impl SolanaFeatureState {
         )
         .await
         .map_err(|_| "formal-methods readiness timed out".to_string())?
-        .map_err(|error| format!("formal-methods readiness failed: {}", error.without_url()))?;
+        .map_err(|error| upstream_failure("formal-methods readiness failed", error))?;
         if response.status().is_success() {
             Ok(())
         } else {
@@ -696,7 +697,7 @@ async fn formal_post(config: &FormalConfig, path: &str, payload: Value) -> Resul
         .json(&payload)
         .send()
         .await
-        .map_err(|error| format!("formal-methods request failed: {}", error.without_url()))?;
+        .map_err(|error| upstream_failure("formal-methods request failed", error))?;
     let status = response.status();
     if response.content_length().unwrap_or(0) > MAX_FORMAL_RESPONSE_BYTES {
         return Err("formal-methods response exceeded size limit".to_string());
@@ -704,7 +705,7 @@ async fn formal_post(config: &FormalConfig, path: &str, payload: Value) -> Resul
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("formal-methods response failed: {}", error.without_url()))?;
+        .map_err(|error| upstream_failure("formal-methods response failed", error))?;
     if bytes.len() as u64 > MAX_FORMAL_RESPONSE_BYTES {
         return Err("formal-methods response exceeded size limit".to_string());
     }

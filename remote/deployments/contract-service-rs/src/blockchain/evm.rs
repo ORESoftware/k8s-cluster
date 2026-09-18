@@ -8,6 +8,8 @@
 use serde_json::{json, Value};
 use sha3::{Digest, Keccak256};
 
+use crate::shared::upstream_failure;
+
 /// keccak256 over arbitrary bytes.
 pub(super) fn keccak256(bytes: &[u8]) -> [u8; 32] {
     let mut hasher = Keccak256::new();
@@ -116,12 +118,12 @@ pub(super) async fn evm_rpc(
         .json(&payload)
         .send()
         .await
-        .map_err(|error| format!("EVM RPC request failed: {error}"))?;
+        .map_err(|error| upstream_failure("EVM RPC request failed", error))?;
     let status = response.status();
     let body: Value = response
         .json()
         .await
-        .map_err(|error| format!("EVM RPC returned a non-JSON body: {error}"))?;
+        .map_err(|error| upstream_failure("EVM RPC returned a non-JSON body", error))?;
     if !status.is_success() {
         return Err(format!("EVM RPC returned HTTP {status}"));
     }

@@ -26,6 +26,8 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use tokio::sync::OnceCell;
 
+use crate::shared::upstream_failure;
+
 const DEFAULT_LEASE_MS: u64 = 5 * 60 * 1_000;
 const DEFAULT_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_COORDINATION_RESPONSE_BYTES: u64 = 1024 * 1024;
@@ -223,10 +225,7 @@ impl CoordinationState {
                 "Fiducia coordination readiness returned HTTP {}",
                 response.status()
             )),
-            Ok(Err(error)) => Err(format!(
-                "Fiducia coordination unavailable: {}",
-                error.without_url()
-            )),
+            Ok(Err(error)) => Err(upstream_failure("Fiducia coordination unavailable", error)),
             Err(_) => Err("Fiducia coordination readiness timed out".to_string()),
         }
     }
@@ -471,7 +470,7 @@ async fn fiducia_post(
     let response = request
         .send()
         .await
-        .map_err(|error| format!("Fiducia coordination request failed: {}", error.without_url()))?;
+        .map_err(|error| upstream_failure("Fiducia coordination request failed", error))?;
     let status = response.status();
     if response.content_length().unwrap_or(0) > MAX_COORDINATION_RESPONSE_BYTES {
         return Err("Fiducia coordination response exceeded size limit".to_string());
@@ -479,7 +478,7 @@ async fn fiducia_post(
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("Fiducia coordination response failed: {}", error.without_url()))?;
+        .map_err(|error| upstream_failure("Fiducia coordination response failed", error))?;
     if bytes.len() as u64 > MAX_COORDINATION_RESPONSE_BYTES {
         return Err("Fiducia coordination response exceeded size limit".to_string());
     }
