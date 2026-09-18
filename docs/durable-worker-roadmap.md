@@ -90,9 +90,9 @@ The `dev` run for merge commit `a693040ad69a1f54f14dd65fb8b74ab11fee132b` publis
 
 The trusted `dev` run for merge commit `435d42437f1b122b8a5a46ad8340070b67773ce3` published source artifact `durable-worker-rust-sdk-435d42437f1b122b8a5a46ad8340070b67773ce3` with GitHub artifact digest `sha256:fc52f3d5318a13c3881b6adb8bbea41397e1dcc5ae2a5a221e7eb57e0aa948bb`. The reviewed Cargo lock artifact digest is `sha256:04a9ca5128201acedc315d34c4a174bcdc00407d4e7db3932986e33c36db8783`.
 
-## Active delivery lanes
+## Landed SDK delivery
 
-### Dart worker SDK — issue #1163 / DEN-2464
+### Dart worker SDK — successor PR #1586 / DEN-2464
 
 - dependency-free Dart 3.4+ client and asynchronous worker loop;
 - safe retry boundaries, redirect refusal, bounded responses, and lease-sensitive errors;
@@ -100,7 +100,13 @@ The trusted `dev` run for merge commit `435d42437f1b122b8a5a46ad8340070b67773ce3
 - heartbeat uncertainty and explicit fencing cancel the handler and suppress stale completion/failure writes;
 - Dart 3.4.0 and 3.12.2 validation, shared fixture coverage, repeated fencing stress, and deterministic source artifacts.
 
-The Dart implementation remains in review until its exact-head workflow passes and a delivery PR is merged. GitHub issue #1163 and Linear DEN-2464 must not be closed earlier.
+The reviewed successor head `9df684208898e862fe4ac746b2b04495a4ab46e8`
+passed the Dart 3.4.0 and 3.12.2 lifecycle/fencing matrix and merged through PR
+#1586 as `81bf0548fb68ada82fd3d01d4456219cd4e71387`. The reviewed
+dependency-lock artifact digest is
+`sha256:a49f6e81d8f80783f507d1dba47f1cf96bb290ccb0d9e29651ee0a86442f72a6`.
+The push-only deterministic source artifact still requires a qualifying trusted
+`dev` push after the publication workflow landed.
 
 ### Gleam and BEAM interoperability
 
@@ -163,10 +169,7 @@ Delivered lifecycle-aware worker SDKs:
 - TypeScript;
 - Python;
 - Go;
-- Rust.
-
-Active worker SDK delivery:
-
+- Rust;
 - Dart.
 
 Remaining worker SDKs:
