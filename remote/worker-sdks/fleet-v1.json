@@ -1,0 +1,74 @@
+{
+  "schema": "ores.durable-worker-sdk-fleet/v1",
+  "version": 1,
+  "protocolFixture": "remote/worker-sdks/fixtures/durable-worker-protocol-v1.json",
+  "lifecycleRoot": "remote/worker-sdks",
+  "generatedClientRoot": "remote/api-sdks",
+  "requiredCapabilities": [
+    "retry-safety",
+    "transport-containment",
+    "lease-fencing"
+  ],
+  "sdks": [
+    {
+      "language": "typescript",
+      "root": "remote/worker-sdks/typescript/durable-worker",
+      "marker": "package.json",
+      "minimumRuntime": "node>=22",
+      "nativeCheck": "npm --prefix remote/worker-sdks/typescript/durable-worker run check && npm --prefix remote/worker-sdks/typescript/durable-worker test",
+      "capabilities": [
+        "retry-safety",
+        "transport-containment",
+        "lease-fencing"
+      ]
+    },
+    {
+      "language": "python",
+      "root": "remote/worker-sdks/python/durable-worker",
+      "marker": "pyproject.toml",
+      "minimumRuntime": "python>=3.11",
+      "nativeCheck": "PYTHONPATH=remote/worker-sdks/python/durable-worker/src python3 -m unittest discover -s remote/worker-sdks/python/durable-worker/tests -v",
+      "capabilities": [
+        "retry-safety",
+        "transport-containment",
+        "lease-fencing"
+      ]
+    },
+    {
+      "language": "go",
+      "root": "remote/worker-sdks/go/durable-worker",
+      "marker": "go.mod",
+      "minimumRuntime": "go>=1.23",
+      "nativeCheck": "cd remote/worker-sdks/go/durable-worker && go test ./... -race -count=1",
+      "capabilities": [
+        "retry-safety",
+        "transport-containment",
+        "lease-fencing"
+      ]
+    },
+    {
+      "language": "rust",
+      "root": "remote/worker-sdks/rust/durable-worker",
+      "marker": "Cargo.toml",
+      "minimumRuntime": "rust>=1.85",
+      "nativeCheck": "cargo test --locked --manifest-path remote/worker-sdks/rust/durable-worker/Cargo.toml --all-targets --all-features -- --nocapture",
+      "capabilities": [
+        "retry-safety",
+        "transport-containment",
+        "lease-fencing"
+      ]
+    },
+    {
+      "language": "dart",
+      "root": "remote/worker-sdks/dart/durable_worker",
+      "marker": "pubspec.yaml",
+      "minimumRuntime": "dart>=3.4<4",
+      "nativeCheck": "cd remote/worker-sdks/dart/durable_worker && dart pub get --enforce-lockfile && dart analyze --fatal-infos --fatal-warnings && dart run tool/test.dart",
+      "capabilities": [
+        "retry-safety",
+        "transport-containment",
+        "lease-fencing"
+      ]
+    }
+  ]
+}
