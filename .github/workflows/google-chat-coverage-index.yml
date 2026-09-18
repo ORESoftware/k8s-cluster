@@ -1,0 +1,62 @@
+name: Google Chat issue and PR inventory
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/google-chat-coverage-index.yml'
+      - 'tools/google-chat-space-export/coverage-index.mjs'
+      - 'tools/google-chat-space-export/test/coverage-index.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  checks: read
+
+concurrency:
+  group: google-chat-coverage-index-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+      - name: Test read-only collection and fail-closed pagination
+        run: node --test tools/google-chat-space-export/test/coverage-index.test.mjs
+      - name: Read public and authorized issue and PR metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          node --input-type=module <<'JS'
+          import { mkdir, writeFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          import { collectCoverageIndex } from './tools/google-chat-space-export/coverage-index.mjs';
+          const result = await collectCoverageIndex({ token: process.env.GITHUB_TOKEN, maxRequests: 1000 });
+          const output = join(process.env.RUNNER_TEMP, 'chat-coverage-index');
+          await mkdir(output, { recursive: true, mode: 0o700 });
+          await writeFile(join(output, 'chat-coverage-index.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
+          console.log(JSON.stringify({ requirements: result.legacyRequirements.length, issues: result.issues.length, candidatePRs: result.pullRequests.length, readComplete: result.readComplete, errors: result.errors.length, semanticCoverageVerified: false }));
+          if (!result.readComplete) process.exitCode = 2;
+          JS
+      - name: Upload metadata only, never raw Chat or issue bodies
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: google-chat-coverage-index-${{ github.run_id }}
+          path: ${{ runner.temp }}/chat-coverage-index/chat-coverage-index.json
+          if-no-files-found: warn
+          retention-days: 3
