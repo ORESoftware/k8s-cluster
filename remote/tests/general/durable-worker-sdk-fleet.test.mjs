@@ -72,7 +72,7 @@ test('aggregate workflow executes every manifest language natively', () => {
   for (const language of fleet.sdks.map((sdk) => sdk.language)) {
     assert.match(workflow, new RegExp(`id: ${language}\\b`, 'u'), language);
   }
-  assert.match(workflow, /node --test remote\/worker-sdks\/typescript\/durable-worker\/test\/client\.test\.mjs/u);
+  assert.match(workflow, /npm --prefix remote\/worker-sdks\/typescript\/durable-worker run check/u);\n  assert.match(workflow, /npm --prefix remote\/worker-sdks\/typescript\/durable-worker test/u);
   assert.match(workflow, /python3 -m unittest discover/u);
   assert.match(workflow, /go test \.\/\.\.\. -race -count=1/u);
   assert.match(workflow, /cargo test --locked/u);
