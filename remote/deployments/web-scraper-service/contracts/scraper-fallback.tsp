@@ -49,7 +49,7 @@ enum FallbackAttemptErrorClass {
   responseTooLarge: "response-too-large",
   providerAuth: "provider-auth",
   invalidRequest: "invalid-request",
-  unknown: "unknown",
+  unknownValue: "unknown",
 }
 
 @id("FallbackAttempt")
