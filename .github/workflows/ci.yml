@@ -1,0 +1,98 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The crate depends on sibling path crates:
+#   soccer_engine -> ../akrion-soccer-engine.rs  (public: akrion-sim/akrion-soccer-engine-rs)
+#   des_engine    -> ../discrete-event-system.rs (public: ORESoftware/discrete-event-system.rs)
+# so both must sit alongside this repo for cargo to resolve them.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: akrion-backend.rs
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: akrion-sim/akrion-soccer-engine-rs
+          path: akrion-soccer-engine.rs
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/discrete-event-system.rs
+          path: discrete-event-system.rs
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: akrion-backend.rs
+      # fmt/clippy/test are blocking gates: a red step must fail the job, or the
+      # green check mark means nothing. Do not re-add `continue-on-error` here —
+      # fix the finding, or (if a gate genuinely cannot be green yet) replace it
+      # with an explicit ratcheting baseline that fails on any NEW violation.
+      - name: fmt
+        working-directory: akrion-backend.rs
+        run: cargo fmt --check
+      - name: clippy
+        working-directory: akrion-backend.rs
+        run: cargo clippy --all-targets -- -D warnings
+      - name: test
+        working-directory: akrion-backend.rs
+        run: cargo test --bins
+
+  # Browser e2e (Playwright + Puppeteer) boots the built server and drives the
+  # /soccer live UI. Best-effort: heavy compile + needs a real Chrome.
+  browser-e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: akrion-backend.rs
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: akrion-sim/akrion-soccer-engine-rs
+          path: akrion-soccer-engine.rs
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/discrete-event-system.rs
+          path: discrete-event-system.rs
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: akrion-backend.rs
+      - name: build server
+        working-directory: akrion-backend.rs
+        run: cargo build --bin dd-soccer-rs
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: install e2e deps
+        working-directory: akrion-backend.rs/e2e
+        run: npm ci || npm install
+      - name: install chromium
+        working-directory: akrion-backend.rs/e2e
+        run: npx playwright install --with-deps chromium
+      - name: browser e2e (playwright + puppeteer)
+        working-directory: akrion-backend.rs/e2e
+        run: npm test

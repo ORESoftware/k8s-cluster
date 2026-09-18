@@ -1,141 +1,19 @@
-# ──────────────────────────────────────────────
-# Node / JavaScript / TypeScript
-# ──────────────────────────────────────────────
-node_modules/
-.pnpm-store/
-dist/
-*.tsbuildinfo
-
-# ──────────────────────────────────────────────
-# Python
-# ──────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-.pytest_cache/
-
-# ──────────────────────────────────────────────
-# Rust / Cargo
-# ──────────────────────────────────────────────
-target/
-
-# ──────────────────────────────────────────────
-# Gleam / Erlang
-# ──────────────────────────────────────────────
-build/
-erl_crash.dump
-manifest.toml
-!remote/deployments/gleam-mcp-server/manifest.toml
-
-# ──────────────────────────────────────────────
-# .NET / F#
-# ──────────────────────────────────────────────
-bin/
-obj/
-*.user
-*.nupkg
-.vs/
-# Dart projects use bin/ as a source directory, not a build output. Whitelist
-# every Dart project's bin/ explicitly so the .NET rule above doesn't hide it.
-!remote/deployments/dart-server/bin/
-!remote/deployments/dart-server/bin/**
-
-# ──────────────────────────────────────────────
-# Dart / Flutter
-# ──────────────────────────────────────────────
-.dart_tool/
-.packages
-.flutter-plugins
-.flutter-plugins-dependencies
-build/
-**/flutter_app/.metadata
-**/flutter_app/.flutter-plugins
-**/flutter_app/.flutter-plugins-dependencies
-# pubspec.lock lives next to a binary deployment (dart-server) — commit it to
-# keep production builds reproducible. Library packages (pg-defs adapters)
-# stay locked-out via the per-folder .gitignore.
-
-# ──────────────────────────────────────────────
-# OS / Editor
-# ──────────────────────────────────────────────
+/target
 .DS_Store
-Thumbs.db
-*.swp
-*.swo
-*~
-.vscode/*
-!.vscode/mcp.json
-.idea/
-
-# ──────────────────────────────────────────────
-# Env / Secrets
-# ──────────────────────────────────────────────
+*.log
 .env
 .env.*
 !.env.example
 
-# ──────────────────────────────────────────────
-# K8s Secrets (filled-in templates)
-# ──────────────────────────────────────────────
-**/k8s/02-secrets.yaml
-# Filled-in storage secrets (keep the *.template.yaml; ignore the real one).
-**/k8s/storage/*.secret.yaml
-kubeconfig
-kubeconfig.*
-!kubeconfig.example
+# e2e node deps (browser tests)
+e2e/node_modules/
 
-# ──────────────────────────────────────────────
-# TLS / SSH / Certificates
-# ──────────────────────────────────────────────
-*.pem
-!remote/deployments/rest-api-rs/certs/rds-us-east-1-bundle.pem
-!remote/deployments/container-pool-rs/certs/rds-us-east-1-bundle.pem
-*.key
-*.p12
-*.pfx
-*.crt
-*.cer
-*.keystore
-*.jks
-id_rsa
-id_ed25519
-*.pub
+# scratch / git worktrees
+tmp/
 
-# ──────────────────────────────────────────────
-# Terraform
-# ──────────────────────────────────────────────
-*.tfstate
-*.tfstate.*
-*.tfvars
-.terraform/
-
-# ──────────────────────────────────────────────
-# Credentials / Tokens
-# ──────────────────────────────────────────────
-credentials
-credentials.json
-token.json
-service-account*.json
-*-credentials.json
-
-# temp folders
+# Generated local learning snapshots and live policy artifacts.
+out/
 tmp
 temp
-.cache/
-
-# Local cluster-test runtime artifacts (Gleam presence server etc.)
-**/.cluster-local/
-
-# Local Maven cache accidentally created by spark-pipeline-server builds.
-remote/deployments/spark-pipeline-server/?/
-
-# Generated soccer-live policy snapshots (large runtime artifacts, regenerated at runtime)
-remote/deployments/soccer-rs/out/
-
-# Local dev checkouts of daedalus per-app repos. Deliberately NOT submodules:
-# the daedalus-monorepo pin covers them (see SUBMODULES.md consolidation) —
-# an embedded gitlink here would be unclonable (no .gitmodules entry).
-/remote/deployments/daedalus-api-server-rs/
-/remote/deployments/daedalus-web-server-rs/
-# Python bytecode / test caches
-__pycache__/
-*.py[cod]
+tmp/worktrees
+temp/worktrees
