@@ -49,6 +49,7 @@ jobs:
       - name: Checkout without persistent credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
           show-progress: false
           submodules: false
@@ -152,6 +153,7 @@ jobs:
         id: report
         if: always()
         env:
+          SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           NODE_SETUP: ${{ steps.node_setup.outcome }}
           PYTHON_SETUP: ${{ steps.python_setup.outcome }}
           GO_SETUP: ${{ steps.go_setup.outcome }}
@@ -192,7 +194,7 @@ jobs:
           }
           report = {
               "schema": "ores.durable-worker-sdk-fleet-report/v1",
-              "source_sha": os.environ["GITHUB_SHA"],
+              "source_sha": os.environ["SOURCE_SHA"],
               "fleet_manifest_sha256": digest("remote/worker-sdks/fleet-v1.json"),
               "protocol_fixture_sha256": digest("remote/worker-sdks/fixtures/durable-worker-protocol-v1.json"),
               "checks": checks,
@@ -212,7 +214,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: durable-worker-sdk-fleet-${{ github.sha }}
+          name: durable-worker-sdk-fleet-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           path: |
             sdk-fleet-report.json
             sdk-fleet-report.sha256
