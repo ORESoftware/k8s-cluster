@@ -38,3 +38,16 @@ test('read-only Python runtime does not attempt bytecode writes', async () => {
   );
   assert.match(container, /mountPath:\s*\/app\s*\n\s*readOnly:\s*true/);
 });
+
+test('explicit exporter watchlist includes current default-namespace workloads', async () => {
+  const container = await exporterContainer();
+  const watchApps = container.match(/- name:\s*WATCH_APPS\s*\n\s*value:\s*([^\n]+)/)?.[1];
+  assert.ok(watchApps, 'WATCH_APPS env value is missing');
+
+  for (const app of ['dd-ci-profile-runner', 'dd-des-web', 'dd-project-automation']) {
+    assert.ok(
+      watchApps.split(',').map((value) => value.trim()).includes(app),
+      `WATCH_APPS must include ${app}`,
+    );
+  }
+});
