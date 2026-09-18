@@ -15,7 +15,7 @@
       "root": "remote/worker-sdks/typescript/durable-worker",
       "marker": "package.json",
       "minimumRuntime": "node>=22",
-      "nativeCheck": "npm --prefix remote/worker-sdks/typescript/durable-worker test",
+      "nativeCheck": "npm --prefix remote/worker-sdks/typescript/durable-worker run check && npm --prefix remote/worker-sdks/typescript/durable-worker test",
       "capabilities": [
         "retry-safety",
         "transport-containment",
