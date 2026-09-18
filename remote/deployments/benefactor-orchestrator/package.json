@@ -8,10 +8,20 @@
   },
   "scripts": {
     "check": "node --check pipeline-lib.mjs && node --check providers/serper.mjs && node --check providers/brave.mjs && node --check providers/index.mjs && node --check orchestrate.mjs && node --check contact-batch-lib.mjs && node --check contact-batch.mjs && node --check hubspot-sync-lib.mjs && node --check hubspot-sync.mjs && node --check scraper-contact-bridge.mjs && node --check scraper-contact-preload.mjs && node --check provider-diagnostics-bridge.mjs",
-    "test": "node --test orchestrate.test.mjs contact-batch.test.mjs hubspot-sync.test.mjs scraper-contact-bridge.test.mjs provider-diagnostics-bridge.test.mjs"
+    "test": "node --test orchestrate.test.mjs contact-batch.test.mjs hubspot-sync.test.mjs scraper-contact-bridge.test.mjs provider-diagnostics-bridge.test.mjs",
+    "lint:ores": "if [ -f ../../../.ores-lint/lint.sh ]; then sh ../../../.ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores"
   },
   "dependencies": {
     "cheerio": "1.2.0",
     "pg": "8.13.1"
+  },
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
   }
 }
