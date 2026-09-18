@@ -1,0 +1,65 @@
+name: DEN-2786 refresh namespace manifest
+
+on:
+  push:
+    branches:
+      - salvage/den-723-current-dev-v2
+    paths:
+      - '.github/workflows/den-2786-refresh-namespace-manifest.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out exact branch head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: salvage/den-723-current-dev-v2
+          fetch-depth: 1
+
+      - name: Generate manifest from repository authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/namespace_manifest.py generate \
+            --root . \
+            --output catalog/namespaces/migration-manifest.json \
+            --format json \
+            > "$RUNNER_TEMP/namespace-manifest-generation-report.json"
+          jq -e '.valid == true and (.diagnostics | length) == 0' \
+            "$RUNNER_TEMP/namespace-manifest-generation-report.json"
+          python3 tools/namespace_manifest.py check --root . --format json \
+            | tee "$RUNNER_TEMP/namespace-manifest-check.json" \
+            | jq -e '.valid == true and (.diagnostics | length) == 0'
+
+      - name: Require generated-only drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          if (( ${#changed[@]} == 0 )); then
+            echo 'namespace manifest is already current'
+            exit 0
+          fi
+          if (( ${#changed[@]} != 1 )) || [[ "${changed[0]}" != 'catalog/namespaces/migration-manifest.json' ]]; then
+            printf 'unexpected generator drift:\n' >&2
+            printf '  %s\n' "${changed[@]}" >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Commit exact generated manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- catalog/namespaces/migration-manifest.json; then
+            exit 0
+          fi
+          git config user.name 'ores namespace manifest bot'
+          git config user.email 'ores-namespace-manifest-bot@users.noreply.github.com'
+          git add catalog/namespaces/migration-manifest.json
+          git commit -m 'DEN-723: regenerate namespace manifest on current dev'
+          git push origin HEAD:salvage/den-723-current-dev-v2
