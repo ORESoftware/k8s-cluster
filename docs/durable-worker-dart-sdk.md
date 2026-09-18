@@ -65,9 +65,16 @@ The reviewed lock artifact is
 `durable-worker-dart-lock-b66a6a6bc69d4794d287f6fb5af94a509f7e12bf`
 with GitHub artifact digest
 `sha256:a49f6e81d8f80783f507d1dba47f1cf96bb290ccb0d9e29651ee0a86442f72a6`.
-It is lock-review evidence, not a package-registry or source release. The
-deterministic source archive remains pending the first trusted `dev` push that
-can execute the push-only publication job introduced by #1586.
+It is lock-review evidence, not a package-registry or source release.
+
+Trusted `dev` workflow run `35276234766` for merge commit
+`81bf0548fb68ada82fd3d01d4456219cd4e71387` published deterministic source
+artifact
+`durable-worker-dart-sdk-81bf0548fb68ada82fd3d01d4456219cd4e71387`
+with GitHub artifact digest
+`sha256:64cae700516eb549f5fd998f4452c2028e26c2117e87cabea492b2ddde0d921c`.
+The artifact retention boundary is 2026-10-17T21:22:59Z. This is an Actions
+source artifact, not a package-registry release.
 
 ## Organization project record
 
@@ -84,7 +91,6 @@ can execute the push-only publication job introduced by #1586.
 | Risk | Medium |
 | Status | Done |
 
-Reviewed exact head and merge evidence are recorded above. The trusted source
-archive identity and digest must still be added after the first qualifying
-`dev` push publication; do not represent the reviewed lock artifact as that
-source release.
+Reviewed exact head, merge evidence, trusted source-artifact identity, digest,
+retention boundary, and producing workflow run are recorded above. The lock
+artifact remains separate review evidence.

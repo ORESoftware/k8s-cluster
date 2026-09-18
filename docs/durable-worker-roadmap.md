@@ -105,8 +105,11 @@ passed the Dart 3.4.0 and 3.12.2 lifecycle/fencing matrix and merged through PR
 #1586 as `81bf0548fb68ada82fd3d01d4456219cd4e71387`. The reviewed
 dependency-lock artifact digest is
 `sha256:a49f6e81d8f80783f507d1dba47f1cf96bb290ccb0d9e29651ee0a86442f72a6`.
-The push-only deterministic source artifact still requires a qualifying trusted
-`dev` push after the publication workflow landed.
+Trusted `dev` workflow run `35276234766` for merge
+`81bf0548fb68ada82fd3d01d4456219cd4e71387` published source artifact
+`durable-worker-dart-sdk-81bf0548fb68ada82fd3d01d4456219cd4e71387`
+with GitHub artifact digest
+`sha256:64cae700516eb549f5fd998f4452c2028e26c2117e87cabea492b2ddde0d921c`.
 
 ### Gleam and BEAM interoperability
 

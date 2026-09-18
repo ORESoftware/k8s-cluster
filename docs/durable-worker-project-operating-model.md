@@ -150,7 +150,7 @@ Fiducia ownership epochs, partitioned streams, failover, chaos testing, and disa
 | Python execution SDK | DEN-2218 | PR #971 | merged |
 | Go execution SDK and shared TypeScript/Python/Go conformance | DEN-2289 | PR #999 | merged; source artifact published |
 | Rust execution SDK | DEN-2392 | PR #1037 | merged; source and lock artifacts published |
-| Dart execution SDK | DEN-2464 | issue #1163 / successor PR #1586 | merged; reviewed lock artifact retained; trusted source publication pending |
+| Dart execution SDK | DEN-2464 | issue #1163 / successor PR #1586 | merged; source artifact published |
 | Gleam execution SDK | DEN-2480 | issue #1164 | ready; separate implementation lane |
 | Erlang and Elixir interoperability | DEN-2482 | issue #1165 | blocked by DEN-2480 |
 
