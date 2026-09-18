@@ -78,7 +78,9 @@ RUN pnpm run build \
       tests/apify-fallback.test.ts \
       tests/apify-fallback-chain.test.ts \
       tests/apify-actor-dispatch.test.ts \
+      tests/bounded-close.test.ts \
       tests/flags-runtime.test.ts \
+      tests/origin-politeness.test.ts \
       tests/runtime-config-guard.test.ts \
       tests/scraper-contract-fixtures.test.ts \
       tests/sensitive-field-policy.test.ts \
