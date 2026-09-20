@@ -1,0 +1,63 @@
+name: validate-gha-indie-worker-74
+
+on:
+  push:
+    branches:
+      - ci/validate-gha-indie-worker-74
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-gha-indie-worker-74
+  cancel-in-progress: true
+
+env:
+  WORKER_REPO: gha-indie-worker/gha-indie-worker.rs
+  WORKER_SHA: be8f6aac3eb6e1d1f76d613e3082ca2114ceb2bf
+  WORKER_PATH: remote/deployments/build-server-rs
+
+jobs:
+  rust:
+    runs-on: [self-hosted, linux]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout immutable provenance workspace
+        uses: actions/checkout@v4
+        with:
+          ref: 5cfac43c6900898f36f588d044ca34083da1c726
+          persist-credentials: false
+
+      - name: Replace historical snapshot with exact split-worker head
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "$WORKER_PATH"
+          git clone --filter=blob:none --no-checkout "https://github.com/${WORKER_REPO}.git" "$WORKER_PATH"
+          git -C "$WORKER_PATH" fetch --depth=1 origin "$WORKER_SHA"
+          git -C "$WORKER_PATH" checkout --detach "$WORKER_SHA"
+          test "$(git -C "$WORKER_PATH" rev-parse HEAD)" = "$WORKER_SHA"
+          grep -F '5cfac43c6900898f36f588d044ca34083da1c726' "$WORKER_PATH/SOURCE_PROVENANCE.md"
+
+      - name: Assert required sibling crates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f remote/libs/telemetry-rs/Cargo.toml
+          test -f remote/libs/runtime-config-client-rs/Cargo.toml
+          test -f remote/libs/nats/subject-defs/generated/rust/Cargo.toml
+          rustc --version
+          cargo --version
+
+      - name: Format
+        shell: bash
+        run: cargo fmt --manifest-path "$WORKER_PATH/Cargo.toml" --all -- --check
+
+      - name: Test bins
+        shell: bash
+        run: cargo test --locked --manifest-path "$WORKER_PATH/Cargo.toml" --bins
+
+      - name: Clippy
+        shell: bash
+        run: cargo clippy --locked --manifest-path "$WORKER_PATH/Cargo.toml" --bins -- -D warnings
