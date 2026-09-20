@@ -1,22 +1,33 @@
 # Git hooks (`.githooks/`)
 
-Versioned hooks for this repo. They come in two flavours:
+Versioned hooks for this repo. They come in three flavours:
 
+- **Secret guard** (`pre-commit`) — runs gitleaks over the staged diff when
+  gitleaks is installed. CI remains the enforcing fallback when it is absent.
 - **Reminders** (`post-merge`, `post-checkout`, `post-rewrite`) — never mutate
   anything; they just nag when a submodule pointer moved but your working tree
   didn't follow.
-- **Guard** (`pre-push`) — can **fail** a push. It refuses to publish a submodule
-  pointer that the submodule's own remote doesn't have.
+- **Push guard** (`pre-push`) — can **fail** a push. It refuses to publish a
+  submodule pointer that the submodule's own remote doesn't have.
 
 ## Activation (required, once per clone)
 
 Git does **not** auto-run a tracked hooks dir, so every clone — including the
-sync bot's — must opt in once. Without this, neither the reminders nor the guard
-fire:
+sync bot's — must opt in once. Without this, neither the reminders nor the
+guards fire:
 
 ```sh
-./.githooks/install.sh        # sets core.hooksPath -> .githooks (idempotent)
+./.githooks/install.sh
 ```
+
+The installer sets `core.hooksPath=.githooks` only when the clone does not
+already have a hooks path. Re-running it when `.githooks` is active is
+idempotent. If a custom `core.hooksPath` is already configured, the installer
+preserves that ownership and warns instead of silently replacing another tool's
+hooks. Merge/chaining of a custom hook tree must be an explicit decision.
+
+The installer also restores executable bits for `pre-commit`, `pre-push`, the
+three reminder hooks, and their helper scripts.
 
 ## The reminders
 
