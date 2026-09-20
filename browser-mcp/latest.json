@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "checked_at": "2026-09-20T16:52:00Z",
-  "workflow_commit": "bfa2d387cc1b92cd1547cd83630070ea4ed26c41",
+  "checked_at": "2026-09-20T19:31:35Z",
+  "workflow_commit": "a9ea64ced7a9b869b19991541b7e2c3c7ad7cdf8",
   "source_revision": "main",
   "status": "workflow_precondition_failed",
   "failure_phase": "aws_oidc_assume_role_failed",
@@ -13,8 +13,8 @@
   ],
   "stdout": "",
   "stderr": "",
-  "workflow_run_id": "35524044586",
+  "workflow_run_id": "35532574971",
   "workflow_run_attempt": "1",
-  "source_commit": "bfa2d387cc1b92cd1547cd83630070ea4ed26c41",
-  "published_at": "2026-09-20T16:55:12Z"
+  "source_commit": "a9ea64ced7a9b869b19991541b7e2c3c7ad7cdf8",
+  "published_at": "2026-09-20T19:34:27Z"
 }
