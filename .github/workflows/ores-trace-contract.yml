@@ -1,0 +1,54 @@
+# Static ORES trace-marker contract.
+#
+# Asserts the full id shape `^ores-(trace|routine)-[A-Za-z0-9_-]{21}$`, the
+# authored peer `OresTraceId`/`OresRoutineId` in ORESoftware/ores-interfaces
+# `contracts/rpc-operation/v1`. The first-generation guard only checked the
+# loose `{12,64}`, which accepted truncated and hand-written ids.
+#
+# Scope note for this repository: the checker scans the WHOLE superproject
+# tree, not a subpath, so a marker added anywhere under `remote/` is covered.
+# Submodules are deliberately NOT checked out: each of the 48 gitlinked
+# repositories carries (or will carry) this same contract itself, and scanning
+# a pinned gitlink here would report violations that cannot be fixed in this
+# repository.
+name: ORES trace marker contract
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ores-trace-contract-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ores-trace-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      # The checker is a single dependency-free Rust file, so it needs no
+      # toolchain beyond the rustc already on the runner and never touches
+      # this repo's own build or target directory.
+      - name: Build the contract checker
+        run: rustc -O -o "$RUNNER_TEMP/ores-trace-contract" .github/ores-trace-contract.rs
+
+      - name: Self-test the contract checker
+        run: |
+          rustc --test -o "$RUNNER_TEMP/ores-trace-contract-test" .github/ores-trace-contract.rs
+          "$RUNNER_TEMP/ores-trace-contract-test"
+
+      - name: Verify static ORES trace markers
+        run: |
+          "$RUNNER_TEMP/ores-trace-contract" .
