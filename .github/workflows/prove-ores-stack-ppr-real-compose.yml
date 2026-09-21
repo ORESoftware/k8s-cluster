@@ -1,0 +1,301 @@
+name: Prove ores-stack PPR with real ores-compose
+
+on:
+  push:
+    branches:
+      - proof/ores-stack-ppr-real-compose-20260920
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: prove-ores-stack-ppr-real-compose
+  cancel-in-progress: true
+
+env:
+  ORES_STACK_SHA: 9c94a23868b8a8bb5ba0aea5a7d9093aedb6fadf
+  ORES_COMPOSE_SHA: e1b24aa736048c0fa3cd24bc1b1fd3f1f3bd1314
+
+jobs:
+  exact-real-compose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Check out trusted proof harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: prove-ores-stack-ppr-real-compose
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Select validated ORESoftware GitHub App credentials from AWS
+        shell: bash
+        run: |
+          set -euo pipefail
+          app_id_file="$RUNNER_TEMP/oresoftware-app-id"
+          private_key_file="$RUNNER_TEMP/oresoftware-app-private-key.pem"
+          evidence_file="$RUNNER_TEMP/oresoftware-app-selector.json"
+          python3 scripts/ops/select_hypesiege_github_app_from_aws.py \
+            --organization ORESoftware \
+            --region "${AWS_REGION:?AWS region required}" \
+            --app-id-out "$app_id_file" \
+            --private-key-out "$private_key_file" \
+            --evidence-out "$evidence_file"
+          test -s "$app_id_file"
+          test -s "$private_key_file"
+          test -s "$evidence_file"
+          printf 'ORE_APP_ID_FILE=%s\n' "$app_id_file" >> "$GITHUB_ENV"
+          printf 'ORE_APP_PRIVATE_KEY_FILE=%s\n' "$private_key_file" >> "$GITHUB_ENV"
+
+      - name: Mint exact repository-scoped contents-read token
+        id: mint
+        shell: bash
+        run: |
+          set -euo pipefail
+          export K8S_SUBMODULE_APP_ID="$(cat "${ORE_APP_ID_FILE:?}")"
+          export K8S_SUBMODULE_APP_PRIVATE_KEY="$(cat "${ORE_APP_PRIVATE_KEY_FILE:?}")"
+          token_file="$RUNNER_TEMP/ores-stack-proof.token"
+          scripts/ci/mint-github-app-installation-token.sh ORESoftware "$token_file" \
+            ores-stack ores-compose ores-clis-core ores-locks-and-leases ores-middleware api-docs
+          token="$(cat "$token_file")"
+          echo "::add-mask::$token"
+          printf 'token=%s\n' "$token" >> "$GITHUB_OUTPUT"
+          unset token K8S_SUBMODULE_APP_ID K8S_SUBMODULE_APP_PRIVATE_KEY
+
+      - name: Check out exact ores-stack candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.ORES_STACK_SHA }}
+          token: ${{ steps.mint.outputs.token }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: proof-work/ores-stack
+
+      - name: Check out exact real ores-compose dependency
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.ORES_COMPOSE_SHA }}
+          token: ${{ steps.mint.outputs.token }}
+          persist-credentials: false
+          fetch-depth: 1
+          path: proof-work/ores-compose
+
+      - name: Verify immutable source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C proof-work/ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C proof-work/ores-compose rev-parse HEAD)" = "$ORES_COMPOSE_SHA"
+          grep -Fq "rev = \"$ORES_COMPOSE_SHA\"" proof-work/ores-stack/crates/ores-stack-cli/Cargo.toml
+          git -C proof-work/ores-stack diff --check
+          git -C proof-work/ores-compose diff --check
+
+      - name: Install Rust 1.88
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+
+      - name: Configure installation-token auth for Cargo Git dependencies
+        shell: bash
+        env:
+          ORE_TOKEN: ${{ steps.mint.outputs.token }}
+        run: |
+          set -euo pipefail
+          git config --global url."https://x-access-token:${ORE_TOKEN}@github.com/".insteadOf "https://github.com/"
+          echo 'CARGO_NET_GIT_FETCH_WITH_CLI=true' >> "$GITHUB_ENV"
+
+      - name: Build real ores-stack against its real pinned ores-compose
+        shell: bash
+        working-directory: proof-work/ores-stack
+        run: |
+          set -euo pipefail
+          cargo build -p ores-stack-cli
+          test -x target/debug/ores-stack
+          echo '--- Cargo.lock diff after authenticated build ---'
+          git diff -- Cargo.lock || true
+
+      - name: Prove infra compose authority and public PPR launch
+        shell: bash
+        working-directory: proof-work/ores-stack
+        run: |
+          set -Eeuo pipefail
+          CLI="$PWD/target/debug/ores-stack"
+          WORK="$(mktemp -d "${RUNNER_TEMP}/ores-stack-real-compose.XXXXXX")"
+          DEV_PID=''
+          cleanup() {
+            if [[ -n "$DEV_PID" ]]; then
+              pkill -TERM -P "$DEV_PID" 2>/dev/null || true
+              kill "$DEV_PID" 2>/dev/null || true
+              wait "$DEV_PID" 2>/dev/null || true
+            fi
+            rm -rf "$WORK"
+          }
+          trap cleanup EXIT
+
+          INFRA="$WORK/proof-infra"
+          API="$WORK/proof-api-server.rs"
+          WEB="$WORK/proof-web-server.rs"
+          LAMBDAS="$WORK/proof-lambdas"
+          mkdir -p "$INFRA" "$API" "$WEB" "$LAMBDAS/src" "$LAMBDAS/config"
+
+          cat >"$INFRA/.ores-stack.toml" <<'EOF'
+          # @generated by `ores-stack create-stack`
+          # stack_prefix = "proof"
+          # api_server_repo = "proof-api-server.rs"
+          # web_server_repo = "proof-web-server.rs"
+          # lambdas_repo = "proof-lambdas"
+          EOF
+
+          cat >"$INFRA/.ores-compose.yaml" <<'EOF'
+          schema_version: ores.compose.v1
+          project: proof
+          allow_lazy_start: false
+          services:
+            sentinel:
+              runtime: host
+              working_dir: .
+              command: ["sh", "-c", "printf 'real-ores-compose\\n' > sentinel.started; exec sleep 300"]
+            api:
+              runtime: host
+              working_dir: proof-api-server.rs
+              command: ["sh", "-c", "exit 97"]
+            web:
+              runtime: host
+              working_dir: proof-web-server.rs
+              command: ["sh", "-c", "exit 98"]
+              depends_on: ["api"]
+          EOF
+
+          cat >"$LAMBDAS/Cargo.toml" <<'EOF'
+          [package]
+          name = "proof-lambdas"
+          version = "0.0.0"
+          edition = "2021"
+          publish = false
+
+          [lib]
+          name = "lambda_app"
+          path = "src/lib.rs"
+
+          [dependencies]
+          serde = { version = "1", features = ["derive"] }
+          EOF
+
+          cat >"$LAMBDAS/src/lib.rs" <<'EOF'
+          use serde::Serialize;
+          #[derive(Clone, Copy)] pub enum Provider { Local }
+          #[derive(Serialize)] pub struct ErrorReceipt { pub code: String }
+          #[derive(Serialize)] pub struct Receipt { pub ok: bool, pub request_id: String, pub bytes: usize, pub generation: &'static str, pub pid: u32, pub error: Option<ErrorReceipt> }
+          pub mod runtime {
+              use super::{Provider, Receipt};
+              pub fn handle_bound(body: &[u8], _provider: Provider, request_id: &str) -> Receipt {
+                  Receipt { ok: true, request_id: request_id.to_owned(), bytes: body.len(), generation: "one", pid: std::process::id(), error: None }
+              }
+          }
+          EOF
+
+          cat >"$LAMBDAS/.ores-mw.toml" <<'EOF'
+          schema_version = 1
+          repository_mode = "server-only"
+          default_target = "portable-adapters"
+
+          [[targets]]
+          name = "portable-adapters"
+          role = "server"
+          roots = ["src"]
+          middleware = "stack"
+          stack_config = "config/ores-middleware.stack.json"
+          EOF
+          printf '{}\n' >"$LAMBDAS/config/ores-middleware.stack.json"
+
+          for port in 3000 8080 8787; do
+            python3 - "$port" <<'PY'
+          import socket, sys
+          s = socket.socket()
+          try:
+              s.bind(('127.0.0.1', int(sys.argv[1])))
+          finally:
+              s.close()
+          PY
+          done
+
+          (
+            cd "$INFRA"
+            ORES_MIDDLEWARE_ENV=development \
+            ORES_MIDDLEWARE_TLS_MODE=disabled \
+            "$CLI" dev --ppr --root=.
+          ) >"$WORK/dev.stdout" 2>"$WORK/dev.stderr" &
+          DEV_PID=$!
+
+          READY=0
+          for _ in $(seq 1 500); do
+            if [[ -f "$WORK/sentinel.started" ]] \
+              && python3 - <<'PY'
+          import socket
+          for port in (3000, 8080, 8787):
+              s = socket.socket(); s.settimeout(.2)
+              try: s.connect(('127.0.0.1', port))
+              except OSError: raise SystemExit(1)
+              finally: s.close()
+          PY
+            then
+              READY=1
+              break
+            fi
+            if ! kill -0 "$DEV_PID" 2>/dev/null; then
+              echo 'ores-stack dev --ppr exited before services became ready' >&2
+              cat "$WORK/dev.stderr" >&2 || true
+              exit 1
+            fi
+            sleep .05
+          done
+          [[ "$READY" -eq 1 ]] || { cat "$WORK/dev.stderr" >&2 || true; exit 1; }
+
+          grep -Fxq 'real-ores-compose' "$WORK/sentinel.started"
+          grep -Fq 'admitted' "$WORK/dev.stderr"
+          grep -Fq '.ores-compose.yaml' "$WORK/dev.stderr"
+
+          curl --silent --show-error --fail --max-time 120 -H 'content-type: application/json' --data '{}' http://127.0.0.1:8787/invoke >"$WORK/one.json"
+          grep -Fq '"generation":"one"' "$WORK/one.json"
+          PID1="$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$WORK/one.json")"
+          [[ -n "$PID1" ]]
+          [[ -f "$LAMBDAS/tmp/main.rs" ]]
+          [[ -f "$LAMBDAS/tmp/Cargo.toml" ]]
+          [[ -x "$LAMBDAS/tmp/main.bin" ]]
+          [[ -d "$LAMBDAS/tmp/target" ]]
+
+          sed -i 's/generation: "one"/generation: "two"/' "$LAMBDAS/src/lib.rs"
+          curl --silent --show-error --fail --max-time 120 -H 'content-type: application/json' --data '{}' http://127.0.0.1:8787/invoke >"$WORK/two.json"
+          grep -Fq '"generation":"two"' "$WORK/two.json"
+          PID2="$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$WORK/two.json")"
+          [[ -n "$PID2" && "$PID1" != "$PID2" ]]
+          kill -0 "$DEV_PID"
+          echo "REAL_COMPOSE_PPR_PASS pid1=$PID1 pid2=$PID2"
+
+      - name: Destroy selected App credential files and auth rewrite
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global --get-regexp '^url\..*\.insteadOf$' | cut -d' ' -f1 | while read -r key; do
+            [[ "$key" == url.https://x-access-token:*@github.com/.insteadOf ]] && git config --global --unset-all "$key" || true
+          done
+          python3 - "${ORE_APP_ID_FILE:-}" "${ORE_APP_PRIVATE_KEY_FILE:-}" <<'PY'
+          import sys
+          from pathlib import Path
+          for value in sys.argv[1:]:
+              if value:
+                  Path(value).unlink(missing_ok=True)
+          PY
