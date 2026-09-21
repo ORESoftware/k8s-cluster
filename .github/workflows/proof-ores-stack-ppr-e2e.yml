@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   exact-head-e2e:
-    runs-on: [self-hosted, linux, sonus-ci]
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       ORES_STACK_SHA: 2c5d797a0e8a187fb0ebb10710d2cdfff506f2c8
@@ -103,7 +103,7 @@ jobs:
           {
             printf 'ores_stack_sha=%s\n' "$ORES_STACK_SHA"
             printf 'ores_compose_sha=%s\n' "$ORES_COMPOSE_SHA"
-            printf 'runner=sonus-ci\n'
+            printf 'runner=ubuntu-24.04\n'
             printf 'result=PASS\n'
           } > proof-evidence/receipt.txt
 
