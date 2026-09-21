@@ -1,0 +1,118 @@
+name: prove ores-stack PPR exact head
+
+on:
+  push:
+    branches:
+      - proof/ores-stack-ppr-e2e-20260920
+    paths:
+      - .github/workflows/proof-ores-stack-ppr-e2e.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prove-ores-stack-ppr-e2e
+  cancel-in-progress: true
+
+jobs:
+  exact-head-e2e:
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 45
+    env:
+      ORES_STACK_SHA: 2c5d797a0e8a187fb0ebb10710d2cdfff506f2c8
+      ORES_COMPOSE_SHA: e1b24aa736048c0fa3cd24bc1b1fd3f1f3bd1314
+      ORE_SOURCE_TOKEN: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN || secrets.ORG_GITOPS_TOKEN }}
+    steps:
+      - name: Require existing scoped source token
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$ORE_SOURCE_TOKEN" ]]; then
+            echo 'Neither GITHUB_REPOSITORY_ADMIN_TOKEN nor ORG_GITOPS_TOKEN is available.' >&2
+            exit 1
+          fi
+
+      - name: Check out exact private ores-stack head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-stack
+          ref: ${{ env.ORES_STACK_SHA }}
+          path: ores-stack
+          persist-credentials: false
+          token: ${{ env.ORE_SOURCE_TOKEN }}
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Check out exact private ores-compose dependency
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/ores-compose
+          ref: ${{ env.ORES_COMPOSE_SHA }}
+          path: ores-compose
+          persist-credentials: false
+          token: ${{ env.ORE_SOURCE_TOKEN }}
+          fetch-depth: 1
+          show-progress: false
+
+      - name: Verify immutable source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C ores-stack rev-parse HEAD)" = "$ORES_STACK_SHA"
+          test "$(git -C ores-compose rev-parse HEAD)" = "$ORES_COMPOSE_SHA"
+          grep -Fq "rev = \"$ORES_COMPOSE_SHA\"" ores-stack/crates/ores-stack-cli/Cargo.toml
+
+      - name: Install Rust 1.88.0
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt,clippy
+
+      - name: Bind private ores-compose dependency to exact local checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ores-stack/.cargo
+          cat > ores-stack/.cargo/config.toml <<'EOF'
+          [patch."https://github.com/ORESoftware/ores-compose.git"]
+          ores-compose = { path = "../../ores-compose" }
+          EOF
+
+      - name: Build and test exact ores-stack CLI
+        working-directory: ores-stack
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustc --version | grep -F 'rustc 1.88.0'
+          bash -n scripts/ppr-e2e-smoke.sh
+          cargo fmt --all -- --check
+          cargo build -p ores-stack-cli
+          cargo test -p ores-stack-cli
+
+      - name: Run exact-head PPR end-to-end smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p proof-evidence
+          (
+            cd ores-stack
+            ORES_STACK_BIN="$PWD/target/debug/ores-stack" bash scripts/ppr-e2e-smoke.sh
+          ) 2>&1 | tee proof-evidence/ppr-e2e.log
+          grep -Fq 'PPR E2E PASS:' proof-evidence/ppr-e2e.log
+          {
+            printf 'ores_stack_sha=%s\n' "$ORES_STACK_SHA"
+            printf 'ores_compose_sha=%s\n' "$ORES_COMPOSE_SHA"
+            printf 'runner=sonus-ci\n'
+            printf 'result=PASS\n'
+          } > proof-evidence/receipt.txt
+
+      - name: Retain proof evidence
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ores-stack-ppr-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: proof-evidence/
+          if-no-files-found: warn
+          retention-days: 14
