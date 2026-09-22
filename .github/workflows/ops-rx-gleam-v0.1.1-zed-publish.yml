@@ -51,14 +51,18 @@ jobs:
         run: |
           set -euo pipefail
           helper=scripts/ops/den2050_registry_token_via_ssm.py
+          workflow=.github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
           python3 -m py_compile "$helper"
           python3 "$helper" --help >/dev/null
-          grep -qF '110411526a780cfaa806a559c283c82b37c12dfb' .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
-          grep -qF '641a7c322199c97a7b901f85fb637f802742e1f7bfecd69cbee1c89a1bd8d4fa' .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
+          grep -qF '110411526a780cfaa806a559c283c82b37c12dfb' "$workflow"
+          grep -qF '641a7c322199c97a7b901f85fb637f802742e1f7bfecd69cbee1c89a1bd8d4fa' "$workflow"
           grep -qF 'create-token' "$helper"
           grep -qF 'revoke-token' "$helper"
+          for role_slot in AWS_ROLE_BOOTSTRAP AWS_ROLE_PRIMARY AWS_ROLE_REMOTE_DEV AWS_ROLE_OIDC AWS_ROLE_ECR; do
+            grep -qE "^[[:space:]]+${role_slot}:" "$workflow"
+          done
           credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY|zpkg_[A-Za-z0-9]{20,}'
-          if grep -nE "$credential_pattern" "$helper" .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml; then
+          if grep -nE "$credential_pattern" "$helper" "$workflow"; then
             echo 'credential-shaped source material detected' >&2
             exit 1
           fi
@@ -72,6 +76,12 @@ jobs:
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      AWS_ROLE_BOOTSTRAP: ${{ secrets.K8S_SUBMODULE_BOOTSTRAP_ROLE_ARN }}
+      AWS_ROLE_PRIMARY: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+      AWS_ROLE_REMOTE_DEV: ${{ secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME }}
+      AWS_ROLE_OIDC: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+      AWS_ROLE_ECR: ${{ secrets.AWS_ECR_ROLE_ARN }}
     steps:
       - name: Check out trusted publisher code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,14 +109,113 @@ jobs:
           test "$(awk -F'"' '/^version = / { print $2; exit }' .zpkg.toml)" = '0.1.1'
           test -z "$(git status --porcelain)"
 
-      - name: Configure short-lived AWS credentials
+      - name: Try dedicated bootstrap AWS OIDC role
+        id: aws_bootstrap
+        if: env.AWS_ROLE_BOOTSTRAP != ''
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          role-to-assume: ${{ env.AWS_ROLE_BOOTSTRAP }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: rx-gleam-zed-publish
+          role-session-name: rx-gleam-zed-bootstrap
           retry-max-attempts: 2
           mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Try primary repository AWS OIDC role
+        id: aws_primary
+        if: >-
+          steps.aws_bootstrap.outcome != 'success' &&
+          env.AWS_ROLE_PRIMARY != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_PRIMARY }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: rx-gleam-zed-primary
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Try remote-development AWS OIDC role
+        id: aws_remote_dev
+        if: >-
+          steps.aws_bootstrap.outcome != 'success' &&
+          steps.aws_primary.outcome != 'success' &&
+          env.AWS_ROLE_REMOTE_DEV != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_REMOTE_DEV }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: rx-gleam-zed-remote-dev
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Try general AWS OIDC role
+        id: aws_oidc
+        if: >-
+          steps.aws_bootstrap.outcome != 'success' &&
+          steps.aws_primary.outcome != 'success' &&
+          steps.aws_remote_dev.outcome != 'success' &&
+          env.AWS_ROLE_OIDC != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_OIDC }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: rx-gleam-zed-oidc
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Try ECR AWS OIDC role
+        id: aws_ecr
+        if: >-
+          steps.aws_bootstrap.outcome != 'success' &&
+          steps.aws_primary.outcome != 'success' &&
+          steps.aws_remote_dev.outcome != 'success' &&
+          steps.aws_oidc.outcome != 'success' &&
+          env.AWS_ROLE_ECR != ''
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ECR }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: rx-gleam-zed-ecr
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+          unset-current-credentials: true
+
+      - name: Require one approved AWS OIDC role
+        id: assert_aws_oidc
+        if: always()
+        shell: bash
+        env:
+          BOOTSTRAP_OUTCOME: ${{ steps.aws_bootstrap.outcome }}
+          PRIMARY_OUTCOME: ${{ steps.aws_primary.outcome }}
+          REMOTE_DEV_OUTCOME: ${{ steps.aws_remote_dev.outcome }}
+          OIDC_OUTCOME: ${{ steps.aws_oidc.outcome }}
+          ECR_OUTCOME: ${{ steps.aws_ecr.outcome }}
+        run: |
+          set -euo pipefail
+          for entry in \
+            "bootstrap:${BOOTSTRAP_OUTCOME:-skipped}" \
+            "primary:${PRIMARY_OUTCOME:-skipped}" \
+            "remote_dev:${REMOTE_DEV_OUTCOME:-skipped}" \
+            "oidc:${OIDC_OUTCOME:-skipped}" \
+            "ecr:${ECR_OUTCOME:-skipped}"; do
+            slot="${entry%%:*}"
+            outcome="${entry#*:}"
+            if [[ "$outcome" == success ]]; then
+              printf 'role_slot=%s\n' "$slot" >> "$GITHUB_OUTPUT"
+              echo "approved AWS OIDC role accepted this trusted-main workflow: $slot"
+              exit 0
+            fi
+          done
+          echo 'none of the approved AWS OIDC roles accepted this trusted-main workflow' >&2
+          exit 1
 
       - name: Mint encrypted short-lived Zed registry token inside the cluster
         id: zed_token
