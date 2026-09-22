@@ -26,6 +26,9 @@
       "athleto-app-rs",
       "athleto-backend.rs"
     ],
+    "anticaptrad": [
+      "act-monorepo"
+    ],
     "benefactor-cc": [
       "backend.rs"
     ],
@@ -51,7 +54,7 @@
       "fiducia-monorepo"
     ],
     "quaestor-ledger": [
-      "billing-server.rs"
+      "quaestor-ledger-server.rs"
     ],
     "sagitta-stack": [
       "dart-server"
