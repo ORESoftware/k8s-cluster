@@ -61,6 +61,9 @@ jobs:
           for role_slot in AWS_ROLE_BOOTSTRAP AWS_ROLE_PRIMARY AWS_ROLE_REMOTE_DEV AWS_ROLE_OIDC AWS_ROLE_ECR; do
             grep -qE "^[[:space:]]+${role_slot}:" "$workflow"
           done
+          grep -qF 'repo:ORESoftware/k8s-cluster:ref:refs/heads/main' "$workflow"
+          grep -qF 'sts.amazonaws.com' "$workflow"
+          grep -qF 'https://github.com/ORESoftware/k8s-cluster/issues/1617' "$workflow"
           credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY|zpkg_[A-Za-z0-9]{20,}'
           if grep -nE "$credential_pattern" "$helper" "$workflow"; then
             echo 'credential-shaped source material detected' >&2
@@ -215,6 +218,7 @@ jobs:
             fi
           done
           echo 'none of the approved AWS OIDC roles accepted this trusted-main workflow' >&2
+          echo '::error title=AWS OIDC trust rejected::Owner IAM trust must allow aud=sts.amazonaws.com and sub=repo:ORESoftware/k8s-cluster:ref:refs/heads/main for an approved role. See https://github.com/ORESoftware/k8s-cluster/issues/1617' >&2
           exit 1
 
       - name: Mint encrypted short-lived Zed registry token inside the cluster
