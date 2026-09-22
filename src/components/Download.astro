@@ -1,0 +1,81 @@
+---
+// Final download call-to-action section (#download). Store listing and desktop
+// installer URLs are injected at build time so unpublished or unsigned builds
+// are never presented as production downloads.
+import StoreButtons from "./StoreButtons.astro";
+import DesktopDownloads from "./DesktopDownloads.astro";
+---
+
+<section class="section download" id="download">
+  <span class="doodle dd1" aria-hidden="true">🎵</span>
+  <span class="doodle dd2" aria-hidden="true">🎷</span>
+  <span class="doodle dd3" aria-hidden="true">🎤</span>
+  <div class="container dl-card">
+    <span class="eyebrow">⬇️ Free to start</span>
+    <h2>Stop losing the good stuff.</h2>
+    <p>
+      Install Sonus Auris on your phone or desktop. Store badges and installer
+      buttons become active only after a reviewed production release is available.
+    </p>
+    <StoreButtons align="center" desktop={true} />
+    <DesktopDownloads align="center" />
+    <p class="dl-fine">
+      iPhone · Android · Windows · macOS · Linux · Open source · End-to-end encrypted
+    </p>
+  </div>
+</section>
+
+<style>
+  .download {
+    position: relative;
+    background:
+      radial-gradient(800px 400px at 50% 120%, rgba(253, 126, 20, 0.16), transparent 60%),
+      var(--paper-2);
+    overflow: hidden;
+  }
+  .dl-card {
+    max-width: 880px;
+    text-align: center;
+    background: linear-gradient(135deg, var(--green-700), var(--green-900));
+    color: #fffdf8;
+    border-radius: var(--radius-lg);
+    padding: clamp(40px, 6vw, 64px) 28px;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .dl-card .eyebrow {
+    background: rgba(255, 253, 248, 0.12);
+    border-color: rgba(255, 253, 248, 0.22);
+    color: #ffe0bd;
+  }
+  .dl-card h2 {
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    margin-top: 8px;
+  }
+  .dl-card > p {
+    color: rgba(255, 253, 248, 0.85);
+    font-size: 1.12rem;
+    max-width: 620px;
+    margin-bottom: 22px;
+  }
+  .dl-fine {
+    margin-top: 20px;
+    font-size: 0.86rem !important;
+    color: rgba(255, 253, 248, 0.7) !important;
+  }
+  .doodle {
+    position: absolute;
+    font-size: clamp(2rem, 4vw, 3rem);
+    animation: bob 5s ease-in-out infinite;
+  }
+  .dd1 { top: 16%; left: 8%; }
+  .dd2 { bottom: 18%; right: 10%; animation-delay: 0.7s; }
+  .dd3 { top: 22%; right: 16%; animation-delay: 1.2s; }
+  @keyframes bob {
+    0%, 100% { transform: translateY(0) rotate(-5deg); }
+    50% { transform: translateY(-14px) rotate(5deg); }
+  }
+</style>

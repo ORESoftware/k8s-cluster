@@ -1,0 +1,36 @@
+[help]
+url = "https://github.com/sonus-auris/sonus-auris-site.web"
+columns = ["options", "env", "type", "description"]
+
+[parse]
+require_equals = true
+stop_at_first_positional = false
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+allow_unknown = false
+
+[flags.host]
+env = "SONUS_AURIS_SITE_HOST"
+aliases = ["host", "bind-host"]
+short = "H"
+type = "string"
+help = "Astro development/preview bind host."
+
+[flags.port]
+env = "SONUS_AURIS_SITE_PORT"
+aliases = ["port", "bind-port"]
+short = "p"
+type = "integer"
+help = "Astro development/preview bind port."
+
+[flags.site]
+env = "SONUS_AURIS_SITE_URL"
+aliases = ["site", "site-url"]
+type = "string"
+help = "Canonical public site URL used by Astro builds."
+
+[flags.base]
+env = "SONUS_AURIS_SITE_BASE"
+aliases = ["base", "base-path"]
+type = "string"
+help = "Public base path used by Astro builds."

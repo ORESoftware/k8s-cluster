@@ -1,0 +1,40 @@
+---
+import Legal from "../layouts/Legal.astro";
+
+const ISSUE_URL = "https://github.com/sonus-auris/sonus-auris-ui.dart/issues/new/choose";
+const SOURCE_URL = "https://github.com/sonus-auris/sonus-auris-ui.dart";
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<Legal
+  title="Support"
+  description="Get help with Sonus Auris recording, accounts, privacy, and cloud backup."
+>
+  <h1>Sonus Auris support</h1>
+  <p>
+    Need help with recording, your account, or a connected cloud destination?
+    Sonus Auris is open source, and support requests are tracked publicly so
+    fixes and workarounds remain searchable.
+  </p>
+
+  <h2>Get help</h2>
+  <ul>
+    <li><a href={ISSUE_URL} rel="noopener noreferrer">Open a support request on GitHub</a>.</li>
+    <li><a href={SOURCE_URL} rel="noopener noreferrer">Review the source and current issues</a>.</li>
+    <li><a href={`${base}/privacy/`}>Read the privacy policy</a>.</li>
+    <li><a href={`${base}/account-deletion/`}>Delete your account and data</a>.</li>
+  </ul>
+
+  <h2>Before opening a request</h2>
+  <p>
+    Include your phone model, OS version, app version, and the exact step that
+    failed. Never post passwords, Supabase tokens, cloud access keys, private
+    recording links, or audio you do not intend to make public.
+  </p>
+
+  <h2>Urgent privacy requests</h2>
+  <p>
+    Use the account-deletion pathway above. The monitored privacy email will be
+    published on that page before the store release.
+  </p>
+</Legal>
