@@ -1,0 +1,25 @@
+{
+  "name": "fiducia-marketing",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "audit": "npm audit --omit=dev --audit-level=high",
+    "test": "node --test tests/*contract.test.mjs",
+    "test:browser": "npm run build && rm -rf test-results && mkdir -p test-results && node --test --test-concurrency=1 tests/site-*.test.mjs",
+    "preview": "astro preview",
+    "sync": "npm run build && node scripts/sync-static.mjs"
+  },
+  "dependencies": {
+    "astro": "^7.0.3",
+    "@fiducia/interfaces": "file:../fiducia-interfaces"
+  },
+  "devDependencies": {
+    "@fiducia/test-config": "file:../fiducia-test-config",
+    "playwright": "^1.61.1",
+    "puppeteer": "^25.2.1"
+  }
+}

@@ -1,0 +1,116 @@
+name: investor browser audit
+
+on:
+  pull_request:
+    paths:
+      - 'src/layouts/Layout.astro'
+      - 'src/pages/investors.astro'
+      - 'public/company-facts.json'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'astro.config.mjs'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/investor-browser-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/layouts/Layout.astro'
+      - 'src/pages/investors.astro'
+      - 'public/company-facts.json'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'astro.config.mjs'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/investor-browser-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: browser (${{ matrix.base }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - base: root
+            public_base: '/'
+          - base: prefixed
+            public_base: '/fiducia'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: repo
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-interfaces
+          ref: 487e470c45ab5851e8f6f3b1dc048fe067fbf408
+          path: fiducia-interfaces
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-test-config
+          ref: 825220281fdc16bbf47a035177001d2fe29bdabf
+          path: fiducia-test-config
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22.22.1'
+          cache: npm
+          cache-dependency-path: repo/package-lock.json
+      - id: chrome
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2
+      - run: npm ci --ignore-scripts
+        working-directory: repo
+      - name: Source evidence contracts
+        run: npm test
+        working-directory: repo
+      - name: Playwright and Puppeteer evidence audit
+        working-directory: repo
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          PUBLIC_BASE: ${{ matrix.public_base }}
+        run: |
+          set -o pipefail
+          npm run test:browser 2>&1 | tee browser-audit.log
+      - name: Record job diagnostics
+        if: always()
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          PUBLIC_BASE: ${{ matrix.public_base }}
+        run: |
+          mkdir -p repo/test-results
+          {
+            printf 'base=%s\n' "${PUBLIC_BASE}"
+            printf 'commit=%s\n' "${GITHUB_SHA}"
+            printf 'event=%s\n' "${GITHUB_EVENT_NAME}"
+            printf 'run_attempt=%s\n' "${GITHUB_RUN_ATTEMPT}"
+            printf 'node=' && node --version
+            if test -n "${CHROME_BIN}" && test -x "${CHROME_BIN}"; then
+              printf 'chrome=' && "${CHROME_BIN}" --version
+            else
+              printf 'chrome=unavailable\n'
+            fi
+          } > "repo/test-results/environment-${{ matrix.base }}.txt"
+          if test -f repo/browser-audit.log; then
+            cp repo/browser-audit.log "repo/test-results/browser-${{ matrix.base }}.log"
+          fi
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: investor-browser-${{ matrix.base }}-attempt-${{ github.run_attempt }}
+          path: repo/test-results/
+          if-no-files-found: error
+          retention-days: 14
