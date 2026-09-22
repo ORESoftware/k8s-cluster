@@ -54,7 +54,7 @@
       "fiducia-monorepo"
     ],
     "quaestor-ledger": [
-      "billing-server.rs"
+      "quaestor-ledger-server.rs"
     ],
     "sagitta-stack": [
       "dart-server"
