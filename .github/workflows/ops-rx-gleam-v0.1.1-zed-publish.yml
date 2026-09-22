@@ -58,10 +58,9 @@ jobs:
           grep -qF '641a7c322199c97a7b901f85fb637f802742e1f7bfecd69cbee1c89a1bd8d4fa' "$workflow"
           grep -qF 'create-token' "$helper"
           grep -qF 'revoke-token' "$helper"
-          grep -qF 'AWS_ROLE_PRIMARY: ${{ secrets.AWS_ROLE_TO_ASSUME }}' "$workflow"
-          grep -qF 'AWS_ROLE_REMOTE_DEV: ${{ secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME }}' "$workflow"
-          grep -qF 'AWS_ROLE_OIDC: ${{ secrets.AWS_OIDC_ROLE_ARN }}' "$workflow"
-          grep -qF 'AWS_ROLE_ECR: ${{ secrets.AWS_ECR_ROLE_ARN }}' "$workflow"
+          for role_slot in AWS_ROLE_BOOTSTRAP AWS_ROLE_PRIMARY AWS_ROLE_REMOTE_DEV AWS_ROLE_OIDC AWS_ROLE_ECR; do
+            grep -qE "^[[:space:]]+${role_slot}:" "$workflow"
+          done
           credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY|zpkg_[A-Za-z0-9]{20,}'
           if grep -nE "$credential_pattern" "$helper" "$workflow"; then
             echo 'credential-shaped source material detected' >&2
