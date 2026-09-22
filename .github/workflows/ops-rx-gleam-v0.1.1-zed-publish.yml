@@ -1,0 +1,193 @@
+name: Publish rx-gleam v0.1.1 to Zed
+run-name: Publish rx-gleam v0.1.1 to Zed @ ${{ github.sha }}
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: rx-gleam-v0.1.1-zed-publish
+  cancel-in-progress: false
+
+env:
+  ZED_REGISTRY: https://registry.zpkg.net
+  ZED_VERSION: '0.3.0'
+  ZED_ARCHIVE_SHA256: e380240c96242ab3b29e0e9d14c95ba946d086f20f0732e34d0e5cf47513efc7
+  RX_GLEAM_RELEASE_SHA: 110411526a780cfaa806a559c283c82b37c12dfb
+  RX_GLEAM_PACKAGE_SHA256: 641a7c322199c97a7b901f85fb637f802742e1f7bfecd69cbee1c89a1bd8d4fa
+  INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
+
+      - name: Validate bounded publication contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          helper=scripts/ops/den2050_registry_token_via_ssm.py
+          python3 -m py_compile "$helper"
+          python3 "$helper" --help >/dev/null
+          grep -qF '110411526a780cfaa806a559c283c82b37c12dfb' .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
+          grep -qF '641a7c322199c97a7b901f85fb637f802742e1f7bfecd69cbee1c89a1bd8d4fa' .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml
+          grep -qF 'create-token' "$helper"
+          grep -qF 'revoke-token' "$helper"
+          credential_pattern='gh''p_|github_''pat_|BEGIN [A-Z ]*PRIVATE KEY|zpkg_[A-Za-z0-9]{20,}'
+          if grep -nE "$credential_pattern" "$helper" .github/workflows/ops-rx-gleam-v0.1.1-zed-publish.yml; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+          git diff --check HEAD^ HEAD
+
+  publish:
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out trusted publisher code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Check out immutable rx-gleam release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/rx-gleam
+          ref: v0.1.1
+          path: rx-gleam
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify immutable rx-gleam release source
+        shell: bash
+        working-directory: rx-gleam
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RX_GLEAM_RELEASE_SHA"
+          test "$(awk -F'"' '/^version = / { print $2; exit }' gleam.toml)" = '0.1.1'
+          test "$(awk -F'"' '/^version = / { print $2; exit }' .zpkg.toml)" = '0.1.1'
+          test -z "$(git status --porcelain)"
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: rx-gleam-zed-publish
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Mint encrypted short-lived Zed registry token inside the cluster
+        id: zed_token
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          token_name="rx-gleam-011-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          token_file="$RUNNER_TEMP/rx-gleam-zed-registry-token"
+          python3 scripts/ops/den2050_registry_token_via_ssm.py mint \
+            --instance-id "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --token-name "$token_name" \
+            --expected-public-base-url "$ZED_REGISTRY" \
+            --token-file "$token_file"
+          token="$(cat "$token_file")"
+          echo "::add-mask::${token}"
+          {
+            echo "token_name=${token_name}"
+            echo "token_file=${token_file}"
+            echo "minted=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install checksum-pinned Zed v0.3.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/zed.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/zed-pkg/zed-cli/releases/download/v${ZED_VERSION}/zed-x86_64-unknown-linux-musl.tar.gz" \
+            -o "$archive"
+          echo "${ZED_ARCHIVE_SHA256}  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/zed-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/zed-bin"
+          echo "$RUNNER_TEMP/zed-bin" >> "$GITHUB_PATH"
+
+      - name: Publish exact rx-gleam v0.1.1 artifact to authoritative registry
+        shell: bash
+        working-directory: rx-gleam
+        env:
+          REGISTRY_TOKEN_FILE: ${{ steps.zed_token.outputs.token_file }}
+          ZED_PKG_SOURCE_FALLBACK: '0'
+        run: |
+          set -euo pipefail
+          token="$(cat "$REGISTRY_TOKEN_FILE")"
+          echo "::add-mask::${token}"
+          export ZED_PKG_TOKEN="$token"
+          export ZED_PKG_REGISTRY="$ZED_REGISTRY"
+          test -z "$(git status --porcelain)"
+          zed validate
+          zed publish
+
+      - name: Verify authoritative version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$RUNNER_TEMP/rx-gleam-zed-version.json"
+          curl --fail --silent --show-error --location \
+            "$ZED_REGISTRY/v1/packages/oresoftware/rx-gleam/versions/0.1.1" \
+            -o "$body"
+          jq -e \
+            --arg sha "$RX_GLEAM_PACKAGE_SHA256" \
+            '.org == "oresoftware" and .name == "rx-gleam" and .version == "0.1.1" and .sha256 == $sha' \
+            "$body" >/dev/null
+          echo "Verified oresoftware/rx-gleam@0.1.1 sha256=$RX_GLEAM_PACKAGE_SHA256"
+
+      - name: Revoke short-lived Zed registry token
+        if: always() && steps.zed_token.outputs.minted == 'true'
+        shell: bash
+        env:
+          TOKEN_NAME: ${{ steps.zed_token.outputs.token_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/den2050_registry_token_via_ssm.py revoke \
+            --instance-id "$INSTANCE_ID" \
+            --region "$AWS_REGION" \
+            --token-name "$TOKEN_NAME" \
+            --expected-public-base-url "$ZED_REGISTRY"
+
+      - name: Destroy credential material
+        if: always()
+        shell: bash
+        run: |
+          shred -u "$RUNNER_TEMP/rx-gleam-zed-registry-token" 2>/dev/null || true
