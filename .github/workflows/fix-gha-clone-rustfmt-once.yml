@@ -32,14 +32,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo fmt --all
+          manifest='remote/deployments/gha-clone-server-rs/Cargo.toml'
+          cargo fmt --manifest-path "$manifest" --all
           expected='remote/deployments/gha-clone-server-rs/tests/msgint_operator_config.rs'
           actual="$(git diff --name-only)"
           test "$actual" = "$expected" || {
             printf 'unexpected rustfmt drift:\n%s\n' "$actual" >&2
             exit 1
           }
-          cargo fmt --all -- --check
+          cargo fmt --manifest-path "$manifest" --all -- --check
           git diff --check
       - name: Commit formatter-produced bytes
         shell: bash
