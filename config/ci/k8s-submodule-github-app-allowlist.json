@@ -26,6 +26,9 @@
       "athleto-app-rs",
       "athleto-backend.rs"
     ],
+    "anticaptrad": [
+      "act-monorepo"
+    ],
     "benefactor-cc": [
       "backend.rs"
     ],
