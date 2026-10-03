@@ -55,8 +55,17 @@ test("other shared-definition consumers use the same immutable checkout boundary
   );
   assert.doesNotMatch(seaOrm, /cargo fmt --all/);
   assert.match(seaOrm, /cargo fmt -- --check/);
+  // The pinned shared snapshot intentionally predates the parent-workspace
+  // exclusion for generated ORM crates. The workflow must therefore format the
+  // exact generated SeaORM source directly, while the consumer clippy/test/check
+  // commands compile the same path dependency through the real service graph.
+  assert.match(seaOrm, /rustfmt[\s\S]*--edition 2021[\s\S]*--check/);
   assert.match(
     seaOrm,
-    /--manifest-path \.\.\/\.\.\/libs\/pg-defs\/generated\/rust\/sea-orm\/Cargo\.toml/,
+    /\.\.\/\.\.\/libs\/pg-defs\/generated\/rust\/sea-orm\/src\/lib\.rs/,
+  );
+  assert.doesNotMatch(
+    seaOrm,
+    /cargo fmt --manifest-path \.\.\/\.\.\/libs\/pg-defs\/generated\/rust\/sea-orm\/Cargo\.toml/,
   );
 });

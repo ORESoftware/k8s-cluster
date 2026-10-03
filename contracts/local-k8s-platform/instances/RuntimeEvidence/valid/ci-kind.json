@@ -1,0 +1,21 @@
+{
+  "schema": "ores.local-k8s-runtime-evidence/v1",
+  "profileName": "ci-kind",
+  "profileSha256": "13e91860cd6ca8ba7477804aac23a5d22b014e10d0e73c4e90149c906c0a8ea4",
+  "evidenceSource": "github-actions-kind",
+  "sourceSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runtime": "docker-kind",
+  "architecture": "amd64",
+  "resourceClass": "compact",
+  "topology": "single-node",
+  "kubernetesVersion": "v1.32.8",
+  "runtimeArtifact": "kindest/node:v1.32.8@sha256:abd489f042d2b644e2d033f5c2d900bc707798d075e8186cb65e3f1367a9d5a1",
+  "apiServerReady": true,
+  "serverAdmissionPassed": true,
+  "rbacListPods": true,
+  "rbacGetSecrets": false,
+  "providerWrites": false,
+  "secretInputs": false,
+  "cloudMutationPolicy": "denied",
+  "cloudWrites": false
+}

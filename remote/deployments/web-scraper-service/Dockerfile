@@ -67,7 +67,7 @@ COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
  && flags2env audit .cli-flags.toml \
  && APIFY_FALLBACK_ENABLED=true flags2env __dd_web_scraper__ --port=8098 >/tmp/dd-web-scraper-flags.json \
- && node -e "const fs=require('node:fs');const v=JSON.parse(fs.readFileSync('/tmp/dd-web-scraper-flags.json','utf8'));const routes=JSON.parse(v.APIFY_DOMAIN_FALLBACKS_JSON);if(v.PORT!=='8098'||v.APIFY_FALLBACK_ENABLED!=='true'||v.APIFY_FALLBACK_ACTORS!=='apify/web-scraper,apify/playwright-scraper'||v.APIFY_FALLBACK_MAX_ATTEMPTS!=='2'||!routes['*.greenhouse.io'])process.exit(1)" \
+ && node -e "const fs=require('node:fs');const v=JSON.parse(fs.readFileSync('/tmp/dd-web-scraper-flags.json','utf8'));const routes=JSON.parse(v.APIFY_DOMAIN_FALLBACKS_JSON);if(v.PORT!=='8098'||v.APIFY_FALLBACK_ENABLED!=='true'||v.APIFY_FALLBACK_ACTORS!=='apify/web-scraper,apify/playwright-scraper'||v.APIFY_FALLBACK_MAX_ATTEMPTS!=='2'||v.APIFY_FALLBACK_MAX_PER_MINUTE!=='20'||!routes['*.greenhouse.io'])process.exit(1)" \
  && pnpm exec tjsv check \
       --typespec=contracts/scraper-fallback.tsp \
       --schema=contracts/scraper-fallback.schema.json \
@@ -78,6 +78,8 @@ RUN pnpm run build \
       tests/apify-fallback.test.ts \
       tests/apify-fallback-chain.test.ts \
       tests/apify-actor-dispatch.test.ts \
+      tests/provider-start-budget.test.ts \
+      tests/scrape-retry-policy.test.ts \
       tests/bounded-close.test.ts \
       tests/flags-runtime.test.ts \
       tests/origin-politeness.test.ts \

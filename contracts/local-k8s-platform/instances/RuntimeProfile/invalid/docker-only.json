@@ -1,0 +1,12 @@
+{
+  "schema": "ores.local-k8s-runtime-profile/v1",
+  "name": "docker-only",
+  "runtime": "docker-only",
+  "architecture": "arm64",
+  "resourceClass": "standard",
+  "topology": "single-node",
+  "kubernetesVersion": "v1.32.8",
+  "runtimeArtifact": "docker-engine",
+  "cloudMutationPolicy": "denied",
+  "cloudWrites": false
+}

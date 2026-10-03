@@ -15,3 +15,9 @@ Available hand-authored worker SDKs:
 Shared lifecycle semantics are ratcheted in `fixtures/durable-worker-protocol-v1.json`. The fixture defines ambiguous operations that must not be retried without a protocol identity, lease-loss statuses, progress identity, and the common assignment envelope. Language-specific runtime tests remain authoritative for concurrency and cancellation behavior.
 
 All worker SDKs must preserve the runtime's at-least-once delivery contract. External side effects require an idempotency key or a downstream write guarded by the assignment fencing token.
+
+## Fleet governance
+
+`fleet-v1.json` is the versioned inventory for the landed hand-authored lifecycle SDK fleet. The aggregate `durable-worker-sdk-fleet` workflow runs native checks for every listed SDK and publishes a deterministic report plus SHA-256 evidence without replacing each language's focused workflow.
+
+See `docs/durable-worker-sdk-fleet.md` for additive language onboarding and the boundary between lifecycle SDKs and generated OpenAPI clients.

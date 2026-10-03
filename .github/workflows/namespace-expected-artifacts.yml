@@ -1,0 +1,142 @@
+name: Namespace expected artifact evidence
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: namespace-expected-artifacts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  render:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Select exact source ref
+        id: source-ref
+        shell: bash
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            test -n "$PR_HEAD_SHA"
+            printf 'ref=%s\n' "$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+          else
+            test -n "$EVENT_SHA"
+            printf 'ref=%s\n' "$EVENT_SHA" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out exact source without submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source-ref.outputs.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Verify exact source and compile generators
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ steps.source-ref.outputs.ref }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          python3 -m py_compile tools/namespace_migration.py tools/namespace_manifest.py
+          git diff --check
+
+      - name: Render canonical expected inventory and manifest without mutating the checkout
+        id: expected
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/namespace-expected-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          evidence="$RUNNER_TEMP/namespace-expected-evidence-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$scratch/artifacts" "$scratch/catalog/namespaces" "$evidence"
+
+          python3 tools/namespace_migration.py inventory \
+            --root . \
+            --format json \
+            > "$scratch/artifacts/namespace-inventory.json"
+
+          cp catalog/namespaces/owners.json "$scratch/catalog/namespaces/owners.json"
+          cp catalog/namespaces/migration-rules.json "$scratch/catalog/namespaces/migration-rules.json"
+          cp catalog/namespaces/migration-manifest.schema.json "$scratch/catalog/namespaces/migration-manifest.schema.json"
+
+          python3 tools/namespace_manifest.py render \
+            --root "$scratch" \
+            > "$scratch/catalog/namespaces/migration-manifest.json"
+
+          python3 tools/namespace_manifest.py check \
+            --root "$scratch" \
+            --format json \
+            > "$evidence/expected-manifest-check.json"
+
+          cp "$scratch/artifacts/namespace-inventory.json" \
+            "$evidence/namespace-inventory.expected.json"
+          cp "$scratch/catalog/namespaces/migration-manifest.json" \
+            "$evidence/migration-manifest.expected.json"
+
+          sha256sum \
+            "$evidence/namespace-inventory.expected.json" \
+            "$evidence/migration-manifest.expected.json" \
+            > "$evidence/expected-artifacts.sha256"
+
+          python3 - "$evidence" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          evidence = Path(sys.argv[1])
+          report = json.loads((evidence / 'expected-manifest-check.json').read_text(encoding='utf-8'))
+          manifest = json.loads((evidence / 'migration-manifest.expected.json').read_text(encoding='utf-8'))
+          inventory = json.loads((evidence / 'namespace-inventory.expected.json').read_text(encoding='utf-8'))
+          entries = manifest['spec']['entries']
+          occurrences = inventory['occurrences']
+          checks = {
+              'manifestValid': report.get('valid') is True,
+              'zeroDiagnostics': report.get('diagnostics') == [],
+              'entryCountMatchesInventory': len(entries) == len(occurrences),
+              'executionDisabled': manifest['spec'].get('executionAuthorized') is False,
+              'destructiveCleanupDisabled': all(
+                  entry.get('destructiveCleanupAllowed') is False for entry in entries
+              ),
+          }
+          failed = [name for name, value in checks.items() if not value]
+          if failed:
+              raise SystemExit('expected namespace artifact checks failed: ' + ', '.join(failed))
+          (evidence / 'expected-artifact-invariants.json').write_text(
+              json.dumps({
+                  'valid': True,
+                  'entryCount': len(entries),
+                  'inventoryEntryCount': len(occurrences),
+                  'checks': checks,
+              }, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+          printf 'path=%s\n' "$evidence" >> "$GITHUB_OUTPUT"
+
+      - name: Prove tracked artifacts were not mutated
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- artifacts/namespace-inventory.json catalog/namespaces/migration-manifest.json
+
+      - name: Upload deterministic expected namespace artifacts
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: namespace-expected-artifacts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.expected.outputs.path }}
+          if-no-files-found: warn
+          retention-days: 14

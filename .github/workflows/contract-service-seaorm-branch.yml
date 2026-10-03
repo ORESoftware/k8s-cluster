@@ -53,9 +53,15 @@ jobs:
           cd "$SERVICE_DIR"
           cargo generate-lockfile
           cargo fmt -- --check
-          cargo fmt \
-            --manifest-path ../../libs/pg-defs/generated/rust/sea-orm/Cargo.toml \
-            -- --check
+          # The pinned shared snapshot predates the parent-workspace exclusion
+          # for this intentionally standalone generated crate. Formatting the
+          # only generated Rust source directly avoids Cargo's parent-workspace
+          # discovery while the consumer clippy/test/check below still compiles
+          # this exact adapter through the real path dependency graph.
+          rustfmt \
+            --edition 2021 \
+            --check \
+            ../../libs/pg-defs/generated/rust/sea-orm/src/lib.rs
           cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets
           cargo check --locked --all-targets

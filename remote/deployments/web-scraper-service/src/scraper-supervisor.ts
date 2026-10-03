@@ -11,6 +11,8 @@ import { dirname, join } from 'node:path';
 import { pipeline } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
+import { tryConsumeProviderStartBudget, pruneProviderStarts } from './provider-start-budget.js';
+
 import {
   classifyFallback,
   readApifyFallbackConfig,
@@ -23,6 +25,13 @@ import {
   runApifyFallbackChain,
   type FallbackAttempt,
 } from './apify-fallback-chain.js';
+import {
+  buildLocalBrowserRetryPlan,
+  classifyLocalRetryFailure,
+  remainingRetryTimeoutMs,
+  type LocalBrowserRetryStrategy,
+  type LocalRetryDecisionReason,
+} from './scrape-retry-policy.js';
 
 const externalHost = process.env.HOST ?? '0.0.0.0';
 const externalPort = readIntegerEnv('PORT', 8097, 1, 65_535);
@@ -38,23 +47,36 @@ const maxCoreResponseBytes = readIntegerEnv(
 );
 const apifyConfig = readApifyFallbackConfig();
 const apifyChainConfig = readApifyFallbackChainConfig(process.env, apifyConfig);
+const apifyMaxPerMinute = readIntegerEnv('APIFY_FALLBACK_MAX_PER_MINUTE', 20, 1, 600);
 
 if (corePort === externalPort && (externalHost === coreHost || externalHost === '127.0.0.1')) {
   throw new Error('SCRAPER_CORE_PORT must differ from PORT');
 }
 
+type SupervisorSkipReason = FallbackDecisionReason | 'provider-rate-limit';
+
 const fallbackMetrics = {
   attempts: 0,
   success: 0,
   failure: 0,
-  skipped: new Map<FallbackDecisionReason, number>(),
+  skipped: new Map<SupervisorSkipReason, number>(),
 };
 const actorAttemptMetrics = new Map<string, { attempts: number; success: number; failure: number }>();
+
+type LocalRetrySkipReason = LocalRetryDecisionReason | 'budget-exhausted';
+
+const localRetryMetrics = {
+  attempts: new Map<LocalBrowserRetryStrategy, number>(),
+  success: new Map<LocalBrowserRetryStrategy, number>(),
+  exhausted: 0,
+  skipped: new Map<LocalRetrySkipReason, number>(),
+};
 
 let shuttingDown = false;
 let child: ChildProcess | null = null;
 let apifyInFlight = 0;
 let apifyCooldownUntil = 0;
+const apifyStarts: number[] = [];
 
 const server = createServer((request, response) => {
   void routeRequest(request, response).catch((error) => {
@@ -88,12 +110,14 @@ async function main(): Promise<void> {
     host: externalHost,
     port: externalPort,
     corePort,
+    localBrowserRetries: ['playwright', 'puppeteer'],
     apifyFallbackEnabled: apifyConfig.enabled,
     apifyFallbackConfigured: apifyConfig.enabled && Boolean(apifyConfig.token),
     apifyDefaultActors: apifyChainConfig.defaultActors,
     apifyDomainRouteCount: apifyChainConfig.domainRoutes.length,
     apifyMaxChainAttempts: apifyChainConfig.maxAttempts,
     apifyMaxChainChargeUsd: apifyChainConfig.maxChainTotalChargeUsd,
+    apifyMaxPerMinute,
   });
 }
 
@@ -168,7 +192,7 @@ async function routeRequest(request: IncomingMessage, response: ServerResponse):
 async function handleScrape(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const startedAt = Date.now();
   const body = await readRequestBodyBounded(request, maxRequestBodyBytes);
-  const local = await callCoreBuffered(
+  let local = await callCoreBuffered(
     request.method ?? 'POST',
     request.url ?? '/scrape',
     request.headers,
@@ -181,9 +205,10 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
     return;
   }
 
-  const requestBody = parseJsonRecord(body.toString('utf8')) as ScrapeFallbackRequest | null;
-  const localJson = parseJsonRecord(local.body.toString('utf8'));
-  if (!requestBody) {
+  const requestBodyRecord = parseJsonRecord(body.toString('utf8'));
+  const requestBody = requestBodyRecord as ScrapeFallbackRequest | null;
+  let localJson = parseJsonRecord(local.body.toString('utf8'));
+  if (!requestBody || !requestBodyRecord) {
     incrementSkipped('non-retriable-error');
     sendBufferedResponse(response, local);
     return;
@@ -192,33 +217,163 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
   if (!requestBody.requestId && typeof localJson?.requestId === 'string') {
     requestBody.requestId = localJson.requestId;
   }
-  const localError =
-    typeof localJson?.error === 'string' ? localJson.error : local.body.toString('utf8').slice(0, 1_000);
+
+  const requestedStrategy =
+    typeof localJson?.requestedStrategy === 'string'
+      ? localJson.requestedStrategy
+      : typeof requestBody.strategy === 'string'
+        ? requestBody.strategy
+        : 'auto';
+  requestBody.strategy = requestedStrategy;
+
+  let localError = localErrorMessage(local, localJson);
+  let retryPlan = buildLocalBrowserRetryPlan({
+    requestedStrategy,
+    initialStrategy: typeof localJson?.strategy === 'string' ? localJson.strategy : undefined,
+    localErrorMessage: localError,
+  });
+  const attemptedStrategies: string[] = [];
+  if (typeof localJson?.strategy === 'string') attemptedStrategies.push(localJson.strategy);
+  let localRetryAttempted = false;
+
+  while (retryPlan.eligible && retryPlan.strategies.length > 0) {
+    const strategy = retryPlan.strategies[0]!;
+    const providerStillEligible = classifyFallback(
+      apifyConfig,
+      requestBody,
+      local.statusCode,
+      localError,
+    ).eligible;
+    const retryTimeoutMs = remainingRetryTimeoutMs({
+      maxTotalTimeoutMs: apifyConfig.maxTotalTimeoutMs,
+      elapsedMs: Date.now() - startedAt,
+      requestedTimeoutMs: requestedLocalTimeoutMs(requestBody),
+      reserveMs: providerStillEligible ? apifyConfig.minDelayMs + 1_000 : 0,
+      minimumAttemptMs: 500,
+    });
+    if (retryTimeoutMs === 0) {
+      incrementLocalRetrySkipped('budget-exhausted');
+      log('info', 'local_retry_budget_exhausted', {
+        requestId: requestBody.requestId ?? null,
+        elapsedMs: Date.now() - startedAt,
+        maxTotalTimeoutMs: apifyConfig.maxTotalTimeoutMs,
+      });
+      break;
+    }
+
+    localRetryAttempted = true;
+    incrementLocalRetryAttempt(strategy);
+    const retryStartedAt = Date.now();
+    const retryBody = Buffer.from(
+      JSON.stringify({
+        ...requestBodyRecord,
+        requestId: requestBody.requestId,
+        strategy,
+        timeoutMs: retryTimeoutMs,
+      }),
+    );
+    const retryResponse = await callCoreBuffered(
+      request.method ?? 'POST',
+      request.url ?? '/scrape',
+      request.headers,
+      retryBody,
+      maxCoreResponseBytes,
+    );
+    const retryJson = parseJsonRecord(retryResponse.body.toString('utf8'));
+    const retryDurationMs = Date.now() - retryStartedAt;
+    attemptedStrategies.push(strategy);
+
+    if (retryResponse.statusCode < 500 || retryResponse.statusCode > 599) {
+      incrementLocalRetrySuccess(strategy);
+      log('info', 'local_retry_attempt', {
+        requestId: requestBody.requestId ?? null,
+        strategy,
+        statusCode: retryResponse.statusCode,
+        outcome: 'success',
+        durationMs: retryDurationMs,
+      });
+      if (retryJson) {
+        retryJson.requestedStrategy = requestedStrategy;
+        respondJson(response, retryResponse.statusCode, retryJson);
+      } else {
+        sendBufferedResponse(response, retryResponse);
+      }
+      return;
+    }
+
+    local = retryResponse;
+    localJson = retryJson;
+    localError = localErrorMessage(local, localJson);
+    const failureClass = classifyLocalRetryFailure(localError);
+    log('warning', 'local_retry_attempt', {
+      requestId: requestBody.requestId ?? null,
+      strategy,
+      statusCode: retryResponse.statusCode,
+      outcome: 'error',
+      failureClass,
+      durationMs: retryDurationMs,
+    });
+
+    retryPlan = buildLocalBrowserRetryPlan({
+      requestedStrategy,
+      initialStrategy: strategy,
+      attemptedStrategies,
+      localErrorMessage: localError,
+    });
+  }
+
+  if (!retryPlan.eligible) incrementLocalRetrySkipped(retryPlan.reason);
+  if (localRetryAttempted) localRetryMetrics.exhausted += 1;
+
   const decision = classifyFallback(apifyConfig, requestBody, local.statusCode, localError);
   if (!decision.eligible) {
     incrementSkipped(decision.reason);
-    sendBufferedResponse(response, local);
+    sendLocalScrapeResponse(response, local, localJson, requestedStrategy);
     return;
   }
 
   if (apifyInFlight >= apifyConfig.maxConcurrent) {
     incrementSkipped('provider-concurrency-limit');
-    sendBufferedResponse(response, local);
+    sendLocalScrapeResponse(response, local, localJson, requestedStrategy);
     return;
   }
   if (Date.now() < apifyCooldownUntil) {
     incrementSkipped('provider-cooldown');
-    sendBufferedResponse(response, local);
+    sendLocalScrapeResponse(response, local, localJson, requestedStrategy);
     return;
   }
 
-  fallbackMetrics.attempts += 1;
+  const localPhaseDurationMs = Date.now() - startedAt;
+  const providerRemainingMs = apifyConfig.maxTotalTimeoutMs - localPhaseDurationMs - apifyConfig.minDelayMs;
+  if (providerRemainingMs < 1_000) {
+    log('info', 'external_fallback_budget_exhausted', {
+      requestId: requestBody.requestId ?? null,
+      localPhaseDurationMs,
+      maxTotalTimeoutMs: apifyConfig.maxTotalTimeoutMs,
+    });
+    sendLocalScrapeResponse(response, local, localJson, requestedStrategy);
+    return;
+  }
+
+  const baselineLocalBudgetMs = providerBudgetLocalTimeoutMs(requestBody);
+  const elapsedBeyondBaselineMs = Math.max(0, localPhaseDurationMs - baselineLocalBudgetMs);
+  const providerConfig = {
+    ...apifyConfig,
+    maxTotalTimeoutMs: Math.max(1_000, apifyConfig.maxTotalTimeoutMs - elapsedBeyondBaselineMs),
+  };
+
   apifyInFlight += 1;
   try {
     if (apifyConfig.minDelayMs > 0) await delay(apifyConfig.minDelayMs);
+    if (!tryConsumeProviderStartBudget(apifyStarts, Date.now(), apifyMaxPerMinute)) {
+      incrementSkipped('provider-rate-limit');
+      sendLocalScrapeResponse(response, local, localJson, requestedStrategy);
+      return;
+    }
+    fallbackMetrics.attempts += 1;
     const fallback = await runApifyFallbackChain(
       requestBody,
-      apifyConfig,
+      providerConfig,
       {
         statusCode: local.statusCode,
         strategy: typeof localJson?.strategy === 'string' ? localJson.strategy : undefined,
@@ -231,7 +386,7 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
     const payload = fallback.result.response;
     payload.durationMs = Date.now() - startedAt;
     if (isRecord(payload.fallback)) {
-      if (typeof localJson?.durationMs === 'number') payload.fallback.localDurationMs = localJson.durationMs;
+      payload.fallback.localDurationMs = localPhaseDurationMs;
       payload.fallback.totalDurationMs = Date.now() - startedAt;
     }
     respondJson(response, 200, payload);
@@ -247,6 +402,7 @@ async function handleScrape(request: IncomingMessage, response: ServerResponse):
       requestId: typeof localJson?.requestId === 'string' ? localJson.requestId : requestBody.requestId ?? null,
     });
     const original = localJson ?? { ok: false, error: localError };
+    original.requestedStrategy = requestedStrategy;
     original.fallback = {
       provider: 'apify',
       attempted: true,
@@ -418,6 +574,35 @@ function sendBufferedResponse(response: ServerResponse, local: BufferedCoreRespo
   response.end(local.body);
 }
 
+function sendLocalScrapeResponse(
+  response: ServerResponse,
+  local: BufferedCoreResponse,
+  localJson: Record<string, any> | null,
+  requestedStrategy: string,
+): void {
+  if (!localJson) {
+    sendBufferedResponse(response, local);
+    return;
+  }
+  localJson.requestedStrategy = requestedStrategy;
+  respondJson(response, local.statusCode, localJson);
+}
+
+function localErrorMessage(local: BufferedCoreResponse, localJson: Record<string, any> | null): string {
+  return typeof localJson?.error === 'string'
+    ? localJson.error
+    : local.body.toString('utf8').slice(0, 1_000);
+}
+
+function requestedLocalTimeoutMs(requestBody: ScrapeFallbackRequest): number {
+  const value = typeof requestBody.timeoutMs === 'number' ? Math.floor(requestBody.timeoutMs) : apifyConfig.localDefaultTimeoutMs;
+  return Math.max(500, Math.min(apifyConfig.localMaxTimeoutMs, value));
+}
+
+function providerBudgetLocalTimeoutMs(requestBody: ScrapeFallbackRequest): number {
+  return Math.max(1_000, requestedLocalTimeoutMs(requestBody));
+}
+
 function sanitizeRequestHeaders(headers: IncomingHttpHeaders | OutgoingHttpHeaders): OutgoingHttpHeaders {
   const output: OutgoingHttpHeaders = { ...headers };
   delete output.host;
@@ -454,6 +639,8 @@ function fallbackStatus(): Record<string, unknown> {
       maxRequestRetries: apifyConfig.maxRequestRetries,
       maxTotalChargeUsd: apifyConfig.maxTotalChargeUsd,
       maxConcurrent: apifyConfig.maxConcurrent,
+      maxPerMinute: apifyMaxPerMinute,
+      startsInRollingMinute: pruneProviderStarts(apifyStarts, Date.now()),
       minDelayMs: apifyConfig.minDelayMs,
       failureCooldownMs: apifyConfig.failureCooldownMs,
       inFlight: apifyInFlight,
@@ -465,16 +652,16 @@ function fallbackStatus(): Record<string, unknown> {
 
 function renderFallbackMetrics(): string {
   const lines = [
-    '# HELP dd_web_scraper_external_fallback_attempts_total External fallback chains after a retriable local scrape failure.',
+    '# HELP dd_web_scraper_external_fallback_attempts_total External fallback attempts after a retriable local scrape failure.',
     '# TYPE dd_web_scraper_external_fallback_attempts_total counter',
     `dd_web_scraper_external_fallback_attempts_total{provider="apify"} ${fallbackMetrics.attempts}`,
-    '# HELP dd_web_scraper_external_fallback_success_total Successful external fallback chains.',
+    '# HELP dd_web_scraper_external_fallback_success_total Successful external fallback scrapes.',
     '# TYPE dd_web_scraper_external_fallback_success_total counter',
     `dd_web_scraper_external_fallback_success_total{provider="apify"} ${fallbackMetrics.success}`,
-    '# HELP dd_web_scraper_external_fallback_failure_total Failed external fallback chains.',
+    '# HELP dd_web_scraper_external_fallback_failure_total Failed external fallback scrapes.',
     '# TYPE dd_web_scraper_external_fallback_failure_total counter',
     `dd_web_scraper_external_fallback_failure_total{provider="apify"} ${fallbackMetrics.failure}`,
-    '# HELP dd_web_scraper_external_fallback_in_flight Current external fallback chains.',
+    '# HELP dd_web_scraper_external_fallback_in_flight Current external fallback calls.',
     '# TYPE dd_web_scraper_external_fallback_in_flight gauge',
     `dd_web_scraper_external_fallback_in_flight{provider="apify"} ${apifyInFlight}`,
     '# HELP dd_web_scraper_external_fallback_actor_attempts_total Apify Actor calls made inside fallback chains.',
@@ -493,6 +680,30 @@ function renderFallbackMetrics(): string {
   for (const [reason, count] of fallbackMetrics.skipped.entries()) {
     lines.push(`dd_web_scraper_external_fallback_skipped_total{provider="apify",reason="${reason}"} ${count}`);
   }
+  lines.push(
+    '# HELP dd_web_scraper_local_retry_attempts_total Local browser retries attempted after an auto-strategy retriable 5xx.',
+    '# TYPE dd_web_scraper_local_retry_attempts_total counter',
+  );
+  for (const [strategy, count] of localRetryMetrics.attempts.entries()) {
+    lines.push(`dd_web_scraper_local_retry_attempts_total{strategy="${strategy}"} ${count}`);
+  }
+  lines.push(
+    '# HELP dd_web_scraper_local_retry_success_total Local browser retries that returned a non-5xx response.',
+    '# TYPE dd_web_scraper_local_retry_success_total counter',
+  );
+  for (const [strategy, count] of localRetryMetrics.success.entries()) {
+    lines.push(`dd_web_scraper_local_retry_success_total{strategy="${strategy}"} ${count}`);
+  }
+  lines.push(
+    '# HELP dd_web_scraper_local_retry_exhausted_total Requests that attempted local browser retries without a local success.',
+    '# TYPE dd_web_scraper_local_retry_exhausted_total counter',
+    `dd_web_scraper_local_retry_exhausted_total ${localRetryMetrics.exhausted}`,
+    '# HELP dd_web_scraper_local_retry_skipped_total Local retry plans skipped or stopped by a bounded policy reason.',
+    '# TYPE dd_web_scraper_local_retry_skipped_total counter',
+  );
+  for (const [reason, count] of localRetryMetrics.skipped.entries()) {
+    lines.push(`dd_web_scraper_local_retry_skipped_total{reason="${reason}"} ${count}`);
+  }
   return `${lines.join('\n')}\n`;
 }
 
@@ -506,8 +717,20 @@ function recordActorAttempts(attempts: FallbackAttempt[]): void {
   }
 }
 
-function incrementSkipped(reason: FallbackDecisionReason): void {
+function incrementSkipped(reason: SupervisorSkipReason): void {
   fallbackMetrics.skipped.set(reason, (fallbackMetrics.skipped.get(reason) ?? 0) + 1);
+}
+
+function incrementLocalRetryAttempt(strategy: LocalBrowserRetryStrategy): void {
+  localRetryMetrics.attempts.set(strategy, (localRetryMetrics.attempts.get(strategy) ?? 0) + 1);
+}
+
+function incrementLocalRetrySuccess(strategy: LocalBrowserRetryStrategy): void {
+  localRetryMetrics.success.set(strategy, (localRetryMetrics.success.get(strategy) ?? 0) + 1);
+}
+
+function incrementLocalRetrySkipped(reason: LocalRetrySkipReason): void {
+  localRetryMetrics.skipped.set(reason, (localRetryMetrics.skipped.get(reason) ?? 0) + 1);
 }
 
 function respondJson(response: ServerResponse, statusCode: number, value: unknown): void {
