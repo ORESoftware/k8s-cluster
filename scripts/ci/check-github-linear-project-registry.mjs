@@ -5,7 +5,6 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const EXPECTED_ORGANIZATION_COUNT = 64;
 export const PROJECT_NUMBER_EXCEPTIONS = new Map([['dancing-dragons', 4]]);
 
 const ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
@@ -75,8 +74,14 @@ export function deriveRecord(row) {
   };
 }
 
-export function validateRegistry(rows, { expectedCount = EXPECTED_ORGANIZATION_COUNT } = {}) {
-  assert.equal(rows.length, expectedCount, `expected ${expectedCount} organizations, found ${rows.length}`);
+export function validateRegistry(rows, { expectedCount } = {}) {
+  if (expectedCount !== undefined) {
+    assert(
+      Number.isSafeInteger(expectedCount) && expectedCount > 0,
+      'expectedCount must be a positive integer',
+    );
+    assert.equal(rows.length, expectedCount, `expected ${expectedCount} organizations, found ${rows.length}`);
+  }
 
   const seenOrganizations = new Map();
   const seenLinearUrls = new Map();
@@ -124,6 +129,7 @@ export function validateDocumentation(markdown) {
 
   const requiredFragments = [
     'ops/portfolio/github-linear-project-registry.tsv',
+    'cardinality is derived from the checked-in TSV',
     '<canonical-org-login>-project',
     'dancing-dragons',
     'project `4`',

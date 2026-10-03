@@ -105,18 +105,16 @@ jobs:
           rm -rf "$PROJECT_EVIDENCE_DIR"
           python3 scripts/ops/sync_org_project_docs_rate_aware.py \
             --evidence-dir "$PROJECT_EVIDENCE_DIR" \
-            --expected-count 64 \
             --min-core-start 1800 \
             --min-graphql-start 400 \
             --max-wait-seconds 10800 \
             --per-org-timeout 1200 \
             --retries 3
 
-      - name: Revalidate exact 64-organization Project evidence
+      - name: Revalidate registered-fleet Project evidence
         run: >-
           python3 scripts/ops/sync_org_project_docs_rate_aware.py
           --evidence-dir "$PROJECT_EVIDENCE_DIR"
-          --expected-count 64
           --validate-only
 
       - name: Audit sealed private repository gaps without blocking Project reconciliation

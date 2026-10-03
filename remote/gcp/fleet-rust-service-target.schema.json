@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.oresoftware.com/platform/gcp-fleet-rust-service-target.v1.schema.json",
+  "title": "GCP fleet Rust service deployment target",
+  "description": "Declarative intent consumed by the ORESoftware/k8s-cluster control plane. This file must not contain credentials, concrete secret values, or duplicate live Terraform/Argo CD resources.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "properties": {
+    "apiVersion": {
+      "const": "platform.oresoftware.com/v1alpha1"
+    },
+    "kind": {
+      "const": "GcpFleetRustServiceTarget"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "githubOwner"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$"
+        },
+        "githubOwner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "linearIssue": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[0-9]+$"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controlPlane",
+        "runtimes",
+        "serviceDiscovery",
+        "httpContract",
+        "shutdown",
+        "secretDelivery",
+        "database"
+      ],
+      "properties": {
+        "controlPlane": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "profile"
+          ],
+          "properties": {
+            "repository": {
+              "const": "ORESoftware/k8s-cluster"
+            },
+            "profile": {
+              "const": "rust-http-service"
+            }
+          }
+        },
+        "runtimes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "cloud-run",
+              "gke"
+            ]
+          }
+        },
+        "serviceDiscovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repositoryGlobs"
+          ],
+          "properties": {
+            "repositoryGlobs": {
+              "type": "array",
+              "minItems": 4,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "*-web-server.rs",
+                  "*-admin-web-server.rs",
+                  "*-api-server.rs",
+                  "*-admin-api-server.rs"
+                ]
+              }
+            }
+          }
+        },
+        "httpContract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "liveness",
+            "readiness",
+            "version",
+            "metrics"
+          ],
+          "properties": {
+            "liveness": {
+              "const": "/healthz"
+            },
+            "readiness": {
+              "const": "/readyz"
+            },
+            "version": {
+              "const": "/version"
+            },
+            "metrics": {
+              "const": "/metrics"
+            }
+          }
+        },
+        "probePolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "startupFailureThreshold": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120,
+              "default": 30
+            },
+            "startupPeriodSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 2
+            },
+            "livenessPeriodSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 10
+            },
+            "readinessPeriodSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 300,
+              "default": 5
+            }
+          }
+        },
+        "shutdown": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "readinessBeforeDrain",
+            "terminationGraceSeconds"
+          ],
+          "properties": {
+            "readinessBeforeDrain": {
+              "const": true
+            },
+            "terminationGraceSeconds": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 300
+            }
+          }
+        },
+        "secretDelivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "gkeProjection",
+            "cloudRunProjection"
+          ],
+          "properties": {
+            "source": {
+              "const": "gcp-secret-manager"
+            },
+            "gkeProjection": {
+              "const": "external-secrets"
+            },
+            "cloudRunProjection": {
+              "const": "secret-manager"
+            }
+          }
+        },
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "organization",
+            "project",
+            "connectionEnv"
+          ],
+          "properties": {
+            "provider": {
+              "const": "neon"
+            },
+            "organization": {
+              "type": "string",
+              "minLength": 1
+            },
+            "project": {
+              "type": "string",
+              "minLength": 1
+            },
+            "connectionEnv": {
+              "const": "NEON_DB_CONNECTION_URI"
+            }
+          }
+        }
+      }
+    }
+  }
+}

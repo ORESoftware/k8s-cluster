@@ -1,6 +1,6 @@
 # GitHub organization, Linear, and GitHub Project registry
 
-The machine-readable governance registry is [`ops/portfolio/github-linear-project-registry.tsv`](../../ops/portfolio/github-linear-project-registry.tsv). It contains the canonical GitHub organization login and Linear project URL for the current 64-organization fleet. The GitHub organization URL, governance repository, canonical Project title, Project number, and Project URL are derived deterministically from that source.
+The machine-readable governance registry is [`ops/portfolio/github-linear-project-registry.tsv`](../../ops/portfolio/github-linear-project-registry.tsv). It contains the canonical GitHub organization login and Linear project URL for every organization currently declared in this governance inventory. GitHub organization URLs, governance repositories, canonical Project titles, Project numbers, and Project URLs are derived deterministically from that source. The governance cardinality is derived from the checked-in TSV; a historical fleet size is not an admission invariant.
 
 ## Registry scopes
 
@@ -8,10 +8,10 @@ This repository maintains two related but intentionally different inventories.
 
 | Inventory | Scope | Source of truth |
 | --- | --- | --- |
-| Organization governance | All 64 managed GitHub organizations, including test and governance-only organizations | [`ops/portfolio/github-linear-project-registry.tsv`](../../ops/portfolio/github-linear-project-registry.tsv) |
+| Organization governance | Every managed GitHub organization currently declared by the governance inventory, including test and governance-only organizations | [`ops/portfolio/github-linear-project-registry.tsv`](../../ops/portfolio/github-linear-project-registry.tsv) |
 | Active cross-system portfolio | The 41 portfolios routed across ChatGPT project names, GitHub Projects v2, Linear, and Slack | [`ops/registries/portfolio-project-links.csv`](../../ops/registries/portfolio-project-links.csv) |
 
-The 41 active portfolios are a strict subset of the 64 managed organizations. Every overlapping organization must use the same Linear project URL in both files. `portfolio_key` is the lowercase cross-system join key and must equal `github_org.casefold()`; GitHub's canonical organization casing remains authoritative in `github_org` and the governance TSV.
+The 41 active portfolios must be a strict subset of the checked-in governance inventory. Every overlapping organization must use the same Linear project URL in both files. `portfolio_key` is the lowercase cross-system join key and must equal `github_org.casefold()`; GitHub's canonical organization casing remains authoritative in `github_org` and the governance TSV.
 
 ## Operating contract
 
@@ -26,6 +26,7 @@ The 41 active portfolios are a strict subset of the 64 managed organizations. Ev
 - Registry rows are sorted by canonical organization login and contain no query strings, fragments, embedded credentials, or credential-shaped values.
 - Every cross-system issue, event, agent run, and synchronization record should carry `portfolio_key` plus provider-native IDs. Match by native ID first and canonical key second; never infer identity solely from display text.
 - Documentation conflicts are resolved semantically against the latest default branch. Managed routing blocks are regenerated while unrelated prose is preserved; automation must never resolve conflicts by blindly choosing one side.
+- A caller may assert an expected count when certifying an immutable historical snapshot, but normal current-fleet validation must derive the row count from the checked-in authority.
 
 The richer naming, Slack, ChatGPT, native-ID, and marker contract is documented in [`docs/portfolio-project-linking.md`](../portfolio-project-linking.md).
 
@@ -45,9 +46,9 @@ The sole Project-number exception is `dancing-dragons`, whose canonical Project 
 
 ## Validation
 
-[`scripts/ci/check-github-linear-project-registry.mjs`](../../scripts/ci/check-github-linear-project-registry.mjs) validates the full 64-organization governance registry without network or credentials. It rejects:
+[`scripts/ci/check-github-linear-project-registry.mjs`](../../scripts/ci/check-github-linear-project-registry.mjs) validates the full checked-in governance registry without network or credentials. It rejects:
 
-- missing, additional, malformed, or unsorted rows;
+- malformed or unsorted rows;
 - duplicate organization ownership, including case variants;
 - duplicate or malformed Linear project URLs;
 - invalid GitHub organization logins;
@@ -55,9 +56,11 @@ The sole Project-number exception is `dancing-dragons`, whose canonical Project 
 - credential-bearing or ambiguous URLs;
 - missing semantic conflict-resolution documentation.
 
-[`scripts/ops/validate_github_linear_registry_relationship.py`](../../scripts/ops/validate_github_linear_registry_relationship.py) validates the relationship between the 64-org governance registry and the 41-row active portfolio registry. It proves that every active portfolio exists in the governance fleet, uses the exact same Linear project URL, preserves canonical GitHub casing, uses the lowercase `portfolio_key`, and derives the expected Project title, number, and URL. It also reports the governance-only organization set.
+The JavaScript validator reports `organizationCount` from the validated records. The permanent workflow checks that this value is positive and exactly equals `records.length`; it does not compare it to a month-specific constant. An optional `expectedCount` remains available for immutable snapshot tests.
 
-The permanent [`github-linear-project-registry.yml`](../../.github/workflows/github-linear-project-registry.yml) workflow validates the standalone 64-org registry. The permanent [`validate-portfolio-project-links.yml`](../../.github/workflows/validate-portfolio-project-links.yml) workflow validates the richer 41-portfolio registry, the cross-registry relationship, positive and negative fixtures, and a credential-free provider reconciliation plan.
+[`scripts/ops/validate_github_linear_registry_relationship.py`](../../scripts/ops/validate_github_linear_registry_relationship.py) validates the relationship between the governance registry and the 41-row active portfolio registry. It derives governance cardinality from the TSV, proves that every active portfolio exists in that governance inventory, uses the exact same Linear project URL, preserves canonical GitHub casing, uses the lowercase `portfolio_key`, and derives the expected Project title, number, and URL. It also reports the governance-only organization set. `--expected-governance-count` is reserved for explicit historical/snapshot certification.
+
+The permanent [`github-linear-project-registry.yml`](../../.github/workflows/github-linear-project-registry.yml) workflow validates the standalone checked-in governance registry. The permanent [`validate-portfolio-project-links.yml`](../../.github/workflows/validate-portfolio-project-links.yml) workflow validates the richer 41-portfolio registry, the cross-registry relationship, positive and negative fixtures, and a credential-free provider reconciliation plan.
 
 Run the local credential-free checks before any provider mutation:
 
@@ -75,30 +78,44 @@ python3 -m unittest \
 
 Run [`scripts/ops/sync_org_project_docs.sh`](../../scripts/ops/sync_org_project_docs.sh) with an authenticated GitHub CLI session that can administer the listed organizations. [`scripts/ops/sync_org_project_docs_rate_aware.py`](../../scripts/ops/sync_org_project_docs_rate_aware.py) performs the same fail-closed reconciliation when GitHub API capacity is constrained. The publisher may create or reopen the canonical Project, initialize the public `.github` repository, update only managed routing blocks, open or reuse a normal pull request, and attach the durable governance issue to the canonical Project.
 
+For count-bound live evidence, derive the expected count from the same checked-in authority immediately before reconciliation rather than embedding a fleet-size literal:
+
+```bash
+EXPECTED_COUNT="$(
+  node scripts/ci/check-github-linear-project-registry.mjs \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["organizationCount"])'
+)"
+python3 scripts/ops/sync_org_project_docs_rate_aware.py \
+  --expected-count "$EXPECTED_COUNT" \
+  --evidence-dir ops/evidence/org-project-docs-rate-aware
+```
+
 [`scripts/ops/sync_portfolio_project_links.py`](../../scripts/ops/sync_portfolio_project_links.py) separately reconciles the 41 active ChatGPT/GitHub/Linear/Slack mappings. [`scripts/ops/sync_github_project_metadata.py`](../../scripts/ops/sync_github_project_metadata.py) reconciles GitHub Project readmes and short descriptions from the active portfolio registry.
 
 Fleet mutation and read-only registry validation are intentionally separate. A green registry check proves the declared mapping is internally coherent; it does not by itself claim that all Projects, repositories, issues, or pull requests were successfully reconciled remotely.
 
-## Evidence status
+## Historical 64-organization evidence
 
-GitHub Actions run `31033274687` is quarantined and is **not** acceptance evidence. After GitHub rate limiting began, REST `403` payloads were rendered as organization identities and incomplete rows were marked successful. The incident is recorded in [`ops/evidence/org-project-docs/INVALID-RUN-31033274687.md`](../../ops/evidence/org-project-docs/INVALID-RUN-31033274687.md), and [`audit.json`](../../ops/evidence/org-project-docs/audit.json) records `is_valid: false`.
+GitHub Actions run `31033274687` belongs to the historical 64-organization campaign. It is quarantined and is **not** acceptance evidence. After GitHub rate limiting began, REST `403` payloads were rendered as organization identities and incomplete rows were marked successful. The incident is recorded in [`ops/evidence/org-project-docs/INVALID-RUN-31033274687.md`](../../ops/evidence/org-project-docs/INVALID-RUN-31033274687.md), and [`audit.json`](../../ops/evidence/org-project-docs/audit.json) records `is_valid: false`.
 
 Do not use that run's `README.md`, `results.json`, or `results.jsonl` to claim that all 64 Projects, `.github` repositories, documentation pull requests, governance issues, or Project items were reconciled.
 
-A replacement run becomes acceptance evidence only when it:
+A replacement for that historical campaign becomes acceptance evidence only when it:
 
-1. contains exactly 64 unique requested organizations from the governance registry;
+1. covers exactly the same historical 64-organization requested set rather than silently substituting the current governance inventory;
 2. passes [`scripts/ops/validate_org_project_docs_evidence.py`](../../scripts/ops/validate_org_project_docs_evidence.py);
 3. has internally consistent Project, repository, pull-request, governance-issue, and Project-item identifiers and URLs;
 4. contains no REST, GraphQL, rate-limit, or other API-error payloads;
 5. completes live verification while preserving unrelated organization documentation.
 
+That historical 64-row evidence contract does not constrain the cardinality of the current governance TSV.
+
 Credentials belong in a protected environment or process environment. Never place a PAT in command-line arguments, registry files, documentation, evidence, workflow inputs, issues, or pull-request bodies.
 
 ## Adding or changing an organization
 
-1. Update the 64-organization governance TSV in case-insensitive sorted order.
+1. Update the governance TSV in case-insensitive sorted order. Do not edit a separate fleet-size constant.
 2. For an active portfolio, update the 41-row CSV with the exact GitHub Project, Linear UUID/URL, and Slack IDs.
 3. Run the standalone, cross-registry, and provider-specific validators.
-4. Reconcile provider metadata through the reviewed workflow.
+4. Reconcile provider metadata through the reviewed workflow or script using cardinality derived from the checked-in governance registry.
 5. Commit only validated, redacted evidence. Preserve failed evidence as an explicitly quarantined incident instead of rewriting it to appear successful.

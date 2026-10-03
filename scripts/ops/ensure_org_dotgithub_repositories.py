@@ -13,7 +13,6 @@ from typing import Any
 from bootstrap_current_org_dotgithub_repositories import EXPECTED_LOGIN, REPOSITORY
 from harden_org_dotgithub_fleet import GitHub, HardeningError, load_registry, quote, repo_path
 
-EXPECTED_COUNT = 64
 
 
 def validate_repository(org: str, repository: dict[str, Any]) -> None:
@@ -129,13 +128,14 @@ def markdown_report(payload: dict[str, Any]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", default="ops/portfolio/github-linear-project-registry.tsv")
-    parser.add_argument("--expected-count", type=int, default=EXPECTED_COUNT)
+    parser.add_argument("--expected-count", type=int)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--json-report")
     parser.add_argument("--markdown-report")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
     rows = load_registry(args.registry, args.expected_count)
+    effective_count = len(rows)
     if args.execute:
         token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_REPOSITORY_ADMIN_TOKEN")
         if not token:
@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     payload = {
         "schema_version": 1,
         "mode": mode,
-        "expected_count": args.expected_count,
+        "expected_count": effective_count,
         "organizations": organizations,
     }
     json_text = json.dumps(payload, indent=2, sort_keys=True) + "\n"

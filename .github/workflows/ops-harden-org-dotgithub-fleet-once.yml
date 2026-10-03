@@ -33,7 +33,6 @@ jobs:
     env:
       REPOSITORY: ${{ github.repository }}
       DEFAULT_BRANCH: main
-      EXPECTED_COUNT: '64'
       HANDSHAKE_NONCE: 8bb2ced1ea4f43be858cb9a267af2914
       PUBLIC_KEY_PATH: .github/tmp/org-dotgithub-hardening-8bb2ced1ea4f43be858cb9a267af2914.pub.pem
       CIPHERTEXT_PATH: .github/tmp/org-dotgithub-hardening-8bb2ced1ea4f43be858cb9a267af2914.enc.b64
@@ -64,13 +63,16 @@ jobs:
             scripts/ops/test_receive_encrypted_github_credential.py
           PYTHONPATH=scripts/ops python3 scripts/ops/test_harden_org_dotgithub_fleet.py -v
           python3 scripts/ops/ensure_org_dotgithub_repositories.py \
-            --expected-count "$EXPECTED_COUNT" \
             --json-report "$RUNNER_TEMP/org-dotgithub-repositories-dry-run.json" \
             --markdown-report "$RUNNER_TEMP/org-dotgithub-repositories-dry-run.md"
+          expected_count="$(jq -er '.expected_count | select(type == "number" and . > 0)' "$RUNNER_TEMP/org-dotgithub-repositories-dry-run.json")"
           python3 scripts/ops/harden_org_dotgithub_fleet.py \
-            --expected-count "$EXPECTED_COUNT" \
+            --expected-count "$expected_count" \
             --json-report "$RUNNER_TEMP/org-dotgithub-hardening-dry-run.json" \
             --markdown-report "$RUNNER_TEMP/org-dotgithub-hardening-dry-run.md"
+          jq -e --argjson count "$expected_count" '
+            .expected_count == $count and (.organizations | length) == $count
+          ' "$RUNNER_TEMP/org-dotgithub-hardening-dry-run.json" >/dev/null
 
       - name: Receive one-time encrypted repository-admin credential
         shell: bash
@@ -89,10 +91,10 @@ jobs:
           mkdir -p "$EVIDENCE_DIR"
           python3 scripts/ops/ensure_org_dotgithub_repositories.py \
             --execute \
-            --expected-count "$EXPECTED_COUNT" \
             --json-report "$EVIDENCE_DIR/repositories.json" \
             --markdown-report "$EVIDENCE_DIR/repositories.md"
-          jq -e --argjson count "$EXPECTED_COUNT" '
+          expected_count="$(jq -er '.expected_count | select(type == "number" and . > 0)' "$EVIDENCE_DIR/repositories.json")"
+          jq -e --argjson count "$expected_count" '
             .mode == "execute" and
             .expected_count == $count and
             (.organizations | length) == $count and
@@ -100,10 +102,10 @@ jobs:
           ' "$EVIDENCE_DIR/repositories.json" >/dev/null
           python3 scripts/ops/harden_org_dotgithub_fleet.py \
             --execute \
-            --expected-count "$EXPECTED_COUNT" \
+            --expected-count "$expected_count" \
             --json-report "$EVIDENCE_DIR/hardening.json" \
             --markdown-report "$EVIDENCE_DIR/README.md"
-          jq -e --argjson count "$EXPECTED_COUNT" '
+          jq -e --argjson count "$expected_count" '
             .mode == "execute" and
             .expected_count == $count and
             (.organizations | length) == $count and

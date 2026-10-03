@@ -1,5 +1,5 @@
-name: Bootstrap Elenkos repository fleets
-run-name: Validate or publish Elenkos fleets at ${{ github.sha }}
+name: Validate Elenkos repository fleet contracts
+run-name: Validate Elenkos fleet contracts at ${{ github.sha }}
 
 on:
   pull_request:
@@ -26,10 +26,9 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
-  group: bootstrap-elenkos-repository-fleets
+  group: validate-elenkos-repository-fleet-contracts
   cancel-in-progress: false
 
 jobs:
@@ -131,35 +130,3 @@ jobs:
           cargo +1.90.0 fmt --manifest-path "$manifest" --all -- --check
           cargo +1.90.0 test --manifest-path "$manifest" --all-targets
           cargo +1.90.0 clippy --manifest-path "$manifest" --all-targets -- -D warnings
-
-  publish:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [validate, rust-contracts]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - name: Check out trusted main revision
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Materialize reviewed payload
-        shell: bash
-        run: bash scripts/ops/materialize_elenkos_fleet_payload_20260819.sh
-      - name: Configure short-lived AWS credentials
-        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: bootstrap-elenkos-repository-fleets
-          retry-max-attempts: 2
-          mask-aws-account-id: true
-      - name: Publish exact fleets through protected GitHub App installations
-        shell: bash
-        env:
-          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-        run: |
-          set -euo pipefail
-          trusted_sha="$(git rev-parse HEAD)"
-          bash scripts/ops/dispatch_elenkos_fleet_via_ssm_20260819.sh "$trusted_sha" "$AWS_REGION"

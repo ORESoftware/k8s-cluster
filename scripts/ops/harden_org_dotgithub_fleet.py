@@ -23,7 +23,6 @@ from bootstrap_current_org_dotgithub_repositories import (
 
 API = "https://api.github.com"
 DEFAULT_REGISTRY = "ops/portfolio/github-linear-project-registry.tsv"
-EXPECTED_COUNT = 64
 POLICY_VERSION = "2026-08-05"
 BRANCH_PREFIX = "agent/harden-org-defaults"
 
@@ -113,7 +112,7 @@ def repo_path(org: str) -> str:
     return f"/repos/{quote(org)}/{REPOSITORY}"
 
 
-def load_registry(path: str, expected_count: int) -> list[tuple[str, str]]:
+def load_registry(path: str, expected_count: int | None = None) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = []
     for line_number, raw in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
@@ -131,7 +130,7 @@ def load_registry(path: str, expected_count: int) -> list[tuple[str, str]]:
             raise HardeningError(f"registry line {line_number} has invalid Linear URL")
         rows.append((org, linear_url))
     lowered = [org.lower() for org, _ in rows]
-    if len(rows) != expected_count:
+    if expected_count is not None and len(rows) != expected_count:
         raise HardeningError(f"expected {expected_count} registry organizations, observed {len(rows)}")
     if len(set(lowered)) != len(lowered):
         raise HardeningError("registry contains duplicate organization logins")
@@ -347,7 +346,7 @@ def markdown_report(payload: dict[str, Any]) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", default=DEFAULT_REGISTRY)
-    parser.add_argument("--expected-count", type=int, default=EXPECTED_COUNT)
+    parser.add_argument("--expected-count", type=int)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--json-report")
     parser.add_argument("--markdown-report")
@@ -355,12 +354,13 @@ def main(argv: list[str] | None = None) -> int:
 
     validate_static()
     rows = load_registry(args.registry, args.expected_count)
+    effective_count = len(rows)
     if not args.execute:
         payload = {
             "schema_version": 1,
             "mode": "dry-run",
             "policy_version": POLICY_VERSION,
-            "expected_count": args.expected_count,
+            "expected_count": effective_count,
             "organizations": [
                 {"organization": org, "linear_url": linear_url, "planned": True}
                 for org, linear_url in rows
@@ -373,13 +373,13 @@ def main(argv: list[str] | None = None) -> int:
         api = GitHub(token)
         authenticated_preflight(api, rows)
         results = [harden_one(api, org, linear_url) for org, linear_url in rows]
-        if len(results) != args.expected_count or not all(row.get("verified") is True for row in results):
+        if len(results) != effective_count or not all(row.get("verified") is True for row in results):
             raise HardeningError("hardening result is incomplete")
         payload = {
             "schema_version": 1,
             "mode": "execute",
             "policy_version": POLICY_VERSION,
-            "expected_count": args.expected_count,
+            "expected_count": effective_count,
             "organizations": results,
         }
 

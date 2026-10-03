@@ -58,8 +58,15 @@ test('derives canonical GitHub Project and governance links', () => {
   assert.equal(exception.projectUrl, 'https://github.com/orgs/dancing-dragons/projects/4');
 });
 
+test('derives registry cardinality from the supplied rows by default', () => {
+  assert.equal(validateRegistry([validRows[0]]).length, 1);
+  assert.equal(validateRegistry(validRows).length, 2);
+  expectFailure(() => validateRegistry(validRows, { expectedCount: 3 }), 'expected 3 organizations');
+  expectFailure(() => validateRegistry(validRows, { expectedCount: 0 }), 'positive integer');
+});
+
 test('accepts sorted unique rows and renders all canonical links', () => {
-  const records = validateRegistry(validRows, { expectedCount: 2 });
+  const records = validateRegistry(validRows);
   const markdown = renderMarkdown(records);
   assert.match(markdown, /Validated organizations: \*\*2\*\*/);
   assert.match(markdown, /https:\/\/github\.com\/orgs\/alpha-org\/projects\/1/);
@@ -69,49 +76,31 @@ test('accepts sorted unique rows and renders all canonical links', () => {
 
 test('rejects duplicate organization and Linear ownership', () => {
   expectFailure(
-    () =>
-      validateRegistry(
-        [validRows[0], { ...validRows[0], organization: 'ALPHA-ORG', sourceLine: 3 }],
-        { expectedCount: 2 },
-      ),
+    () => validateRegistry([validRows[0], { ...validRows[0], organization: 'ALPHA-ORG', sourceLine: 3 }]),
     'duplicate organization',
   );
 
   expectFailure(
-    () =>
-      validateRegistry(
-        [validRows[0], { ...validRows[1], linearUrl: validRows[0].linearUrl }],
-        { expectedCount: 2 },
-      ),
+    () => validateRegistry([validRows[0], { ...validRows[1], linearUrl: validRows[0].linearUrl }]),
     'duplicate Linear project URL',
   );
 });
 
 test('rejects unsorted, malformed, credentialed, and ambiguous URLs', () => {
+  expectFailure(() => validateRegistry([...validRows].reverse()), 'must be sorted');
   expectFailure(
-    () => validateRegistry([...validRows].reverse(), { expectedCount: 2 }),
-    'must be sorted',
-  );
-  expectFailure(
-    () =>
-      validateRegistry(
-        [{ ...validRows[0], organization: 'bad--org' }, validRows[1]],
-        { expectedCount: 2 },
-      ),
+    () => validateRegistry([{ ...validRows[0], organization: 'bad--org' }, validRows[1]]),
     'consecutive hyphens',
   );
   expectFailure(
     () =>
-      validateRegistry(
-        [
-          {
-            ...validRows[0],
-            linearUrl: 'https://linear.app/denman/project/example?token=secret',
-          },
-          validRows[1],
-        ],
-        { expectedCount: 2 },
-      ),
+      validateRegistry([
+        {
+          ...validRows[0],
+          linearUrl: 'https://linear.app/denman/project/example?token=secret',
+        },
+        validRows[1],
+      ]),
     'invalid Linear project URL',
   );
 
@@ -122,9 +111,10 @@ test('rejects unsorted, malformed, credentialed, and ambiguous URLs', () => {
   );
 });
 
-test('requires the semantic conflict-resolution and project exception contract in docs', () => {
+test('requires the semantic conflict-resolution and dynamic-cardinality contract in docs', () => {
   const complete = [
     'ops/portfolio/github-linear-project-registry.tsv',
+    'cardinality is derived from the checked-in TSV',
     '<canonical-org-login>-project',
     'dancing-dragons',
     'project `4`',
@@ -137,5 +127,9 @@ test('requires the semantic conflict-resolution and project exception contract i
   expectFailure(
     () => validateDocumentation(complete.replace('resolved semantically', 'resolved automatically')),
     'resolved semantically',
+  );
+  expectFailure(
+    () => validateDocumentation(complete.replace('cardinality is derived from the checked-in TSV', 'cardinality is fixed')),
+    'cardinality is derived',
   );
 });

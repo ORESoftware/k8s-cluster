@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validate the relationship between the 64-org and 41-portfolio registries.
+"""Validate the relationship between the governance and active-portfolio registries.
 
 The governance registry answers "which GitHub organizations are managed and
-which Linear project owns each organization?". The portfolio registry is the
-richer subset used by ChatGPT, GitHub Projects v2, Linear, and Slack routing.
+which Linear project owns each organization?". Its cardinality is derived from
+the checked-in TSV rather than a fleet-size constant. The portfolio registry is
+the richer subset used by ChatGPT, GitHub Projects v2, Linear, and Slack routing.
 Every portfolio row must resolve to exactly one governance row and must reuse
 its Linear project URL verbatim.
 """
@@ -22,7 +23,6 @@ DEFAULT_GOVERNANCE_REGISTRY = Path(
     "ops/portfolio/github-linear-project-registry.tsv"
 )
 DEFAULT_PORTFOLIO_REGISTRY = Path("ops/registries/portfolio-project-links.csv")
-EXPECTED_GOVERNANCE_COUNT = 64
 EXPECTED_PORTFOLIO_COUNT = 41
 
 ORG_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
@@ -54,7 +54,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--expected-governance-count",
         type=int,
-        default=EXPECTED_GOVERNANCE_COUNT,
+        default=None,
+        help="optional snapshot assertion; normal validation derives cardinality from the TSV",
     )
     parser.add_argument(
         "--expected-portfolio-count",
@@ -91,7 +92,7 @@ def validate_linear_url(value: str, *, context: str) -> None:
 def load_governance_registry(
     path: Path,
     *,
-    expected_count: int = EXPECTED_GOVERNANCE_COUNT,
+    expected_count: int | None = None,
 ) -> dict[str, dict[str, str]]:
     raw = path.read_text(encoding="utf-8")
     reject_credentials(path, raw)
@@ -103,10 +104,15 @@ def load_governance_registry(
             )
         rows = list(reader)
 
-    if len(rows) != expected_count:
-        raise RegistryRelationshipError(
-            f"{path}: expected {expected_count} organizations, found {len(rows)}"
-        )
+    if not rows:
+        raise RegistryRelationshipError(f"{path}: governance registry must not be empty")
+    if expected_count is not None:
+        if expected_count <= 0:
+            raise RegistryRelationshipError("expected governance count must be positive")
+        if len(rows) != expected_count:
+            raise RegistryRelationshipError(
+                f"{path}: expected {expected_count} organizations, found {len(rows)}"
+            )
 
     by_org: dict[str, dict[str, str]] = {}
     observed_order: list[str] = []
@@ -183,7 +189,7 @@ def validate_relationship(
     governance_path: Path = DEFAULT_GOVERNANCE_REGISTRY,
     portfolio_path: Path = DEFAULT_PORTFOLIO_REGISTRY,
     *,
-    expected_governance_count: int = EXPECTED_GOVERNANCE_COUNT,
+    expected_governance_count: int | None = None,
     expected_portfolio_count: int = EXPECTED_PORTFOLIO_COUNT,
 ) -> dict[str, object]:
     governance = load_governance_registry(
@@ -225,7 +231,7 @@ def validate_relationship(
         if governance_row is None:
             raise RegistryRelationshipError(
                 f"{portfolio_path}:{line_number}: {github_org} is absent from the "
-                "64-organization governance registry"
+                "governance registry"
             )
         if row["linear_project_url"] != governance_row["linear_url"]:
             raise RegistryRelationshipError(
