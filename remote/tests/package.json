@@ -86,12 +86,22 @@
     "test:athleto": "pnpm run test:cli:athleto-backend-config && pnpm run test:cli:athleto-app-config && pnpm run test:cli:athleto-app-routing && pnpm run test:ui:athleto",
     "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer && pnpm run test:ui:fiducia-customer && pnpm run test:ui:fiducia-kv-auth && pnpm run test:ui:ai-agent-bridge-auth && pnpm run test:ui:benefactor && pnpm run test:athleto",
     "check:openapi-native": "node ../tools/check-openapi-contracts.mjs",
-    "generate:openapi-sdks": "node ../tools/generate-openapi-sdks.mjs"
+    "generate:openapi-sdks": "node ../tools/generate-openapi-sdks.mjs",
+    "lint:ores": "if [ -f ../../.ores-lint/lint.sh ]; then sh ../../.ores-lint/lint.sh; else echo 'ores-lint not installed'; fi",
+    "prepublishOnly": "npm run lint:ores"
   },
   "devDependencies": {
     "playwright": "^1.60.0",
     "puppeteer": "^25.0.4",
     "tsx": "^4.22.0"
   },
-  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
+  "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
+  "oresLint": {
+    "note": "Declared, not installed. ores-lint resolves these from a global install - see .ores-lint/README.md",
+    "requires": {
+      "eslint": ">=9",
+      "typescript-eslint": ">=8 (optional; without it .ts files are skipped)"
+    },
+    "install": "npm i -g eslint typescript-eslint"
+  }
 }
