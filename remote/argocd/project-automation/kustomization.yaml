@@ -12,3 +12,6 @@ resources:
   - nightly-interdependency.configmap.yaml
   - nightly-interdependency.cronjob.yaml
   - nightly-interdependency.networkpolicy.yaml
+  - nightly-pr-reconciliation.configmap.yaml
+  - nightly-pr-reconciliation.cronjob.yaml
+  - nightly-pr-reconciliation.networkpolicy.yaml
