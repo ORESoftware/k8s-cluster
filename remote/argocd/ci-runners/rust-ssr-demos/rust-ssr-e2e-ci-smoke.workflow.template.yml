@@ -1,0 +1,34 @@
+name: rust SSR repository-scoped ARC smoke
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: rust-ssr-e2e-ci
+    timeout-minutes: 10
+    steps:
+      - name: Prove non-privileged ephemeral runner boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" != 0
+          test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+          test "$(findmnt -n -o FSTYPE /home/runner/_work)" != "hostfs"
+      - name: Prove reviewed tool surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v chromium
+          command -v chromedriver
+          command -v cargo
+          command -v rustup
+          chromium --version
+          chromedriver --version
+          cargo --version
+          rustup --version

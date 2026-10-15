@@ -1,0 +1,49 @@
+name: rust ssr ARC scaffold
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/rust-ssr-arc-scaffold.yml"
+      - "remote/argocd/ci-runners/rust-ssr-demos/**"
+      - "remote/argocd/ci-runners/validate-rust-ssr-arc-scaffold.py"
+  push:
+    branches: [dev]
+    paths:
+      - ".github/workflows/rust-ssr-arc-scaffold.yml"
+      - "remote/argocd/ci-runners/rust-ssr-demos/**"
+      - "remote/argocd/ci-runners/validate-rust-ssr-arc-scaffold.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-ssr-arc-scaffold-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Compile validator
+        run: python3 -m py_compile remote/argocd/ci-runners/validate-rust-ssr-arc-scaffold.py
+      - name: Validate inert ARC scaffold
+        run: python3 remote/argocd/ci-runners/validate-rust-ssr-arc-scaffold.py
+
+  image-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the pinned Linux AMD64 runner image without publishing it
+        run: >-
+          docker build
+          --platform linux/amd64
+          --tag rust-ssr-e2e-ci-runner:contract
+          remote/argocd/ci-runners/rust-ssr-demos/runner-image
