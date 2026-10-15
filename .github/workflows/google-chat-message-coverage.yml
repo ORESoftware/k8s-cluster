@@ -1,0 +1,44 @@
+name: Google Chat per-message coverage
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/google-chat-message-coverage.yml'
+      - 'tools/google-chat-space-export/message-coverage.mjs'
+      - 'tools/google-chat-space-export/coverage-index.mjs'
+      - 'tools/google-chat-space-export/test/message-coverage.test.mjs'
+      - 'tools/google-chat-space-export/test/coverage-index.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: google-chat-message-coverage-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out the exact reviewed head without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Exercise synthetic inventory and metadata regression suites
+        run: |
+          node --test tools/google-chat-space-export/test/coverage-index.test.mjs tools/google-chat-space-export/test/message-coverage.test.mjs
+      - name: Record exact source identity
+        run: |
+          git rev-parse HEAD
+          sha256sum tools/google-chat-space-export/message-coverage.mjs tools/google-chat-space-export/test/message-coverage.test.mjs
