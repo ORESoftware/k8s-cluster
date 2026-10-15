@@ -1,0 +1,130 @@
+# CI: checks out the repo with its sibling file: deps, then runs contract tests
+# and the Astro build, plus browser and dependency-audit gates.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: repo
+      # GitHub Actions checks out one repo in isolation, but npm ci needs the
+      # sibling `file:../` deps (@fiducia/interfaces, @fiducia/test-config) present
+      # alongside so `../fiducia-interfaces` etc. resolve.
+      - name: Validate GitHub Actions
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: >-
+            repo/.github/workflows/ci.yml
+            repo/.github/workflows/pages.yml
+            repo/.github/workflows/investor-browser-audit.yml
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-interfaces
+          ref: 487e470c45ab5851e8f6f3b1dc048fe067fbf408
+          path: fiducia-interfaces
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-test-config
+          ref: 825220281fdc16bbf47a035177001d2fe29bdabf
+          path: fiducia-test-config
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+          cache: npm
+          cache-dependency-path: repo/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: repo
+      - name: Capture complete dependency audit
+        working-directory: repo
+        run: |
+          mkdir -p test-results
+          npm audit --json > test-results/npm-audit.json || true
+      - name: Reject high-severity production dependency advisories
+        working-directory: repo
+        run: npm run audit
+      # Fast source contracts, including the public investor-evidence schema.
+      - run: npm test
+        working-directory: repo
+      # Astro production build — the gating step.
+      - run: npm run build
+        working-directory: repo
+      - name: Upload dependency audit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-audit-${{ github.run_attempt }}
+          path: repo/test-results/npm-audit.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # Build the image from an isolated checkout so sibling file dependencies can
+  # never be satisfied accidentally by a developer's workspace layout.
+  container-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: build immutable marketing image
+        run: >-
+          docker build
+          --build-arg INTERFACES_REF=487e470c45ab5851e8f6f3b1dc048fe067fbf408
+          --build-arg TEST_CONFIG_REF=825220281fdc16bbf47a035177001d2fe29bdabf
+          --tag fiducia-marketing:ci .
+
+  # Browser e2e (Playwright/Puppeteer) uses a real Chrome and the pinned sibling
+  # @fiducia/test-config dependency. Failures block the change.
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: repo
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-interfaces
+          ref: 487e470c45ab5851e8f6f3b1dc048fe067fbf408
+          path: fiducia-interfaces
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-test-config
+          ref: 825220281fdc16bbf47a035177001d2fe29bdabf
+          path: fiducia-test-config
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22.22.1"
+      - id: chrome
+        # Third-party action: pinned to a full commit SHA (v2) so a moved tag
+        # can't inject code; dependabot keeps the pin updated.
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2
+      - run: npm ci --ignore-scripts
+        working-directory: repo
+      - name: browser tests
+        working-directory: repo
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          PUBLIC_BASE: /fiducia
+        run: npm run test:browser

@@ -1,0 +1,23 @@
+# sops recipients for this repository.
+#
+# Everything in this file is PUBLIC key material and is safe to commit. Private
+# keys exist only on developer machines (`just env-keygen`) and never in git.
+#
+# To add someone:
+#   1. they run `just env-whoami` and send you the age1… line
+#   2. add an anchor below and reference it in the key_groups block
+#   3. run `just env-rekey` and commit — this rewrites only key metadata, so
+#      the encrypted values stay byte-identical and the diff stays reviewable
+#
+# To remove someone: delete their anchor, run `just env-rekey`, commit — and
+# then rotate the underlying credentials, because they still hold every secret
+# they had already decrypted.
+
+keys:
+  - &alex age1qrnva7lnv2jzww6ah5au0cqm4wkvkm5shpzflekdcm4nlu6wnyfqgfaxft # alex@dancingdragons.cc
+
+creation_rules:
+  - path_regex: env/enc/.*\.env\.enc$
+    key_groups:
+      - age:
+          - *alex
