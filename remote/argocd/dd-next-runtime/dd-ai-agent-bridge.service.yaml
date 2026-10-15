@@ -86,9 +86,9 @@ metadata:
     denman.linear.app/rollout-issue: DEN-845
     github.com/issue: ORESoftware/k8s-cluster#1111
     dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
-    dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
-    dd.dev/release-workflow-run: '31264194679'
-    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d'
+    dd.dev/source-revision: 'd4ade93a01f79b0347e36c48e6d26b236f83f011'
+    dd.dev/release-workflow-run: '31278723389'
+    dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:a44f383cfdf24adb3f79010f882b7a9d585ec64971cad93e61666f4170e9c6a7'
 spec:
   replicas: 1
   minReadySeconds: 5
@@ -106,9 +106,9 @@ spec:
         app.kubernetes.io/component: slack-command
       annotations:
         dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
-        dd.dev/source-revision: 'ec667946b1f8725b6baea8e67ae6a701d602dc04'
-        dd.dev/release-workflow-run: '31264194679'
-        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d'
+        dd.dev/source-revision: 'd4ade93a01f79b0347e36c48e6d26b236f83f011'
+        dd.dev/release-workflow-run: '31278723389'
+        dd.dev/image-reference: 'ghcr.io/oresoftware/fiducia-slack-command@sha256:a44f383cfdf24adb3f79010f882b7a9d585ec64971cad93e61666f4170e9c6a7'
         dd.dev/activation-mode: signed-dry-run
     spec:
       automountServiceAccountToken: false
@@ -124,7 +124,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: slack-command
-          image: ghcr.io/oresoftware/fiducia-slack-command@sha256:b726025e01652b6e5d89814a928b23bdd5dc2fcf3e461831e82c3c785fa5c64d
+          image: ghcr.io/oresoftware/fiducia-slack-command@sha256:a44f383cfdf24adb3f79010f882b7a9d585ec64971cad93e61666f4170e9c6a7
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
