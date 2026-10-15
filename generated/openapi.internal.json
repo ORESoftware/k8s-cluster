@@ -1,0 +1,1101 @@
+{
+  "components": {
+    "securitySchemes": {
+      "server_auth": {
+        "description": "Operator token configured by T2V_SERVER_AUTH_SECRET.",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "vapi_secret": {
+        "description": "Vapi callback secret configured by T2V_VAPI_WEBHOOK_SECRET.",
+        "in": "header",
+        "name": "x-vapi-secret",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Complete t2v-v2t contract including Vapi partner callbacks, operator call control, history, metrics, and authenticated internal documentation.",
+    "title": "t2v-v2t API (internal)",
+    "version": "0.1.0"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "getT2vServiceBanner",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable service and route summary"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "service"
+        ]
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "getT2vPublicApiReference",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Interactive Scalar reference for the public contract"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "getT2vPublicOpenApiCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {}
+              }
+            },
+            "description": "Compatibility alias for the public OpenAPI document"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "getT2vPublicApiReferenceCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Compatibility alias for the public Scalar reference"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "getT2vHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Process liveness"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/internal/docs/api": {
+      "get": {
+        "operationId": "getT2vInternalApiReference",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Interactive Scalar reference for the complete contract"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Missing or invalid operator bearer token"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator routes disabled because no server secret is configured"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/internal/openapi.json": {
+      "get": {
+        "operationId": "getT2vInternalOpenApi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {}
+              }
+            },
+            "description": "Complete internal OpenAPI 3.1 document"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Missing or invalid operator bearer token"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator routes disabled because no server secret is configured"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "getT2vPrometheusMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus text exposition"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getT2vPublicOpenApi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {}
+              }
+            },
+            "description": "Fail-closed public OpenAPI 3.1 document"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "documentation"
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "getT2vReadiness",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Database reachable and service ready"
+          },
+          "503": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Database unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "operations"
+        ]
+      }
+    },
+    "/v1/analyze": {
+      "post": {
+        "operationId": "analyzeAudioSpectrum",
+        "parameters": [
+          {
+            "description": "wav (default) or mulaw/ulaw/g711",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sample rate for raw mulaw input; defaults to 8000",
+            "in": "query",
+            "name": "rate",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "description": "WAV or raw G.711 mu-law audio bytes",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "FFT, spectral centroid, DTMF, RMS, and voiced-duration analysis"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid audio or parameters"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/v1/history/syntheses": {
+      "get": {
+        "operationId": "listSynthesisHistory",
+        "parameters": [
+          {
+            "description": "Newest rows to return, clamped to 1..=200",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Recent synthesis rows and total count"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid operator bearer token"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator routes disabled or database unavailable"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/v1/history/transcriptions": {
+      "get": {
+        "operationId": "listTranscriptionHistory",
+        "parameters": [
+          {
+            "description": "Newest rows to return, clamped to 1..=200",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Recent transcription rows and total count"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid operator bearer token"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator routes disabled or database unavailable"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/v1/history/translations": {
+      "get": {
+        "operationId": "listTranslationHistory",
+        "parameters": [
+          {
+            "description": "Newest rows to return, clamped to 1..=200",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Recent translation rows and total count"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid operator bearer token"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator routes disabled or database unavailable"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/v1/history/vapi-calls": {
+      "get": {
+        "operationId": "listVapiCallHistory",
+        "parameters": [
+          {
+            "description": "Newest rows to return, clamped to 1..=200",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Recent Vapi call rows and total count"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid operator bearer token"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator routes disabled or database unavailable"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "history"
+        ]
+      }
+    },
+    "/v1/speech-to-speech": {
+      "post": {
+        "operationId": "translateSpeechToSpeech",
+        "parameters": [
+          {
+            "description": "wav (default) or mulaw/ulaw/g711",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sample rate for raw mulaw input; defaults to 8000",
+            "in": "query",
+            "name": "rate",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Required translation target language",
+            "in": "query",
+            "name": "target_lang",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional source-language hint",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "openai, gemini, or anthropic",
+            "in": "query",
+            "name": "provider",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional synthesis voice",
+            "in": "query",
+            "name": "voice",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "wav (default) or mp3",
+            "in": "query",
+            "name": "out_format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "audio (default) or json with base64 audio",
+            "in": "query",
+            "name": "respond",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "description": "Source speech audio bytes",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Translated audio bytes or JSON pipeline result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid audio, provider, language, or output format"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "No transcribable speech"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech or translation provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/v1/stt": {
+      "post": {
+        "operationId": "transcribeAudio",
+        "parameters": [
+          {
+            "description": "wav (default) or mulaw/ulaw/g711",
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sample rate for raw mulaw input; defaults to 8000",
+            "in": "query",
+            "name": "rate",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Optional ISO-639-1 language hint",
+            "in": "query",
+            "name": "language",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Trim leading and trailing silence; defaults true",
+            "in": "query",
+            "name": "trim",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "items": {
+                  "format": "int32",
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "type": "array"
+              }
+            }
+          },
+          "description": "WAV or raw G.711 mu-law audio bytes",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Persisted transcription result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid audio or parameters"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "No signal above the silence threshold"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/v1/translate": {
+      "post": {
+        "operationId": "translateText",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "Text, target_lang, optional source_lang, and optional provider",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Persisted translation result"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid text, language, or provider"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Translation provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Translation provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "translation"
+        ]
+      }
+    },
+    "/v1/tts": {
+      "post": {
+        "operationId": "synthesizeSpeech",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "Object with text plus optional voice and wav/mp3 format",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Synthesized audio with X-Synthesis-Id response header"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid text, voice, or format"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Speech provider or concurrency capacity unavailable"
+          }
+        },
+        "security": [
+          {}
+        ],
+        "tags": [
+          "speech"
+        ]
+      }
+    },
+    "/vapi/call": {
+      "post": {
+        "operationId": "createVapiCall",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "Vapi create-call payload passed through to the configured provider",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Created Vapi call"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid operator bearer token"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Vapi provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator or Vapi client is not configured"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "vapi"
+        ]
+      }
+    },
+    "/vapi/call/{id}": {
+      "get": {
+        "operationId": "getVapiCall",
+        "parameters": [
+          {
+            "description": "Vapi call identifier",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Current Vapi call state"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid operator bearer token"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Vapi provider failed"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Operator or Vapi client is not configured"
+          }
+        },
+        "security": [
+          {
+            "server_auth": []
+          }
+        ],
+        "tags": [
+          "vapi"
+        ]
+      }
+    },
+    "/vapi/webhook": {
+      "post": {
+        "operationId": "receiveVapiWebhook",
+        "parameters": [
+          {
+            "description": "Configured Vapi callback secret; required unless explicit insecure development mode is enabled",
+            "in": "header",
+            "name": "x-vapi-secret",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "Vapi assistant-request, tool-calls, status-update, or end-of-call-report message",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Webhook acknowledged or tool-call results returned"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Malformed JSON or tool-call shape"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Invalid or missing Vapi secret"
+          }
+        },
+        "security": [
+          {
+            "vapi_secret": []
+          }
+        ],
+        "tags": [
+          "vapi"
+        ]
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-language": "rust"
+}
