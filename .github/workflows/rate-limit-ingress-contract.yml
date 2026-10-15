@@ -1,0 +1,50 @@
+name: Rate-limit ingress contract
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/rate-limit-ingress-contract.yml'
+      - 'remote/argocd/rate-limit-ingress/**'
+      - 'tools/rate-limit-ingress-validator/**'
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/rate-limit-ingress-contract.yml'
+      - 'remote/argocd/rate-limit-ingress/**'
+      - 'tools/rate-limit-ingress-validator/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rate-limit-ingress-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install stable Rust with lint components
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path tools/rate-limit-ingress-validator/Cargo.toml --all -- --check
+
+      - name: Lint the exhaustive policy validator
+        run: cargo clippy --manifest-path tools/rate-limit-ingress-validator/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run state-space and privacy tests
+        run: cargo test --manifest-path tools/rate-limit-ingress-validator/Cargo.toml
+
+      - name: Validate the disabled-by-default catalog
+        run: cargo run --manifest-path tools/rate-limit-ingress-validator/Cargo.toml -- .
