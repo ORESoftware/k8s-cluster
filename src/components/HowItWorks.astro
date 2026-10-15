@@ -1,0 +1,102 @@
+---
+// "How it works" section (#how). Renders a numbered 4-step flow from the
+// `steps` data array: install & voiceprint → always listening → auto backup →
+// find & keep the good moments.
+const steps = [
+  {
+    n: "1",
+    emoji: "📲",
+    title: "Install & say hello",
+    body: "Install from the App Store or Google Play, review the recording disclosure, grant microphone access, then tap Start or arm a schedule for the quiet rolling loop.",
+  },
+  {
+    n: "2",
+    emoji: "🎙️",
+    title: "It just keeps listening",
+    body: "Audio is captured and encrypted on-device into a rolling window. Live your life — the jam, the drive, the day.",
+  },
+  {
+    n: "3",
+    emoji: "☁️",
+    title: "Backed up automatically",
+    body: "When you're on power and Wi-Fi, encrypted chunks sync to your private cloud vault. Nothing leaves unencrypted.",
+  },
+  {
+    n: "4",
+    emoji: "💾",
+    title: "Find & keep the gold",
+    body: "Scrub the timeline, jump to your bookmarks, trim the moment, and export. The rest rolls off on its own.",
+  },
+];
+---
+
+<section class="section how" id="how">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">🥁 Four beats</span>
+      <h2>How Sonus Auris works</h2>
+      <p>Set it once. It does the remembering so you don't have to.</p>
+    </div>
+
+    <ol class="steps">
+      {steps.map((s) => (
+        <li class="step card">
+          <span class="step-n">{s.n}</span>
+          <div class="step-emoji">{s.emoji}</div>
+          <h3>{s.title}</h3>
+          <p>{s.body}</p>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>
+
+<style>
+  .how {
+    background: linear-gradient(180deg, var(--paper) 0%, var(--green-50) 100%);
+  }
+  .steps {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 22px;
+    grid-template-columns: 1fr;
+    counter-reset: step;
+  }
+  .step {
+    position: relative;
+    padding: 30px 26px 28px;
+  }
+  .step-n {
+    position: absolute;
+    top: -16px;
+    left: 24px;
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(135deg, var(--orange-500), var(--orange-600));
+    box-shadow: var(--shadow-sm);
+  }
+  .step-emoji {
+    font-size: 2rem;
+    margin: 8px 0 10px;
+  }
+  .step h3 {
+    font-size: 1.18rem;
+  }
+  .step p {
+    color: var(--ink-soft);
+    margin: 0;
+  }
+  @media (min-width: 720px) {
+    .steps { grid-template-columns: 1fr 1fr; }
+  }
+  @media (min-width: 1040px) {
+    .steps { grid-template-columns: repeat(4, 1fr); }
+  }
+</style>

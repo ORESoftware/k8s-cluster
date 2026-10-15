@@ -1,0 +1,123 @@
+---
+// Base HTML document layout. Renders <head> (title, description, favicon,
+// Open Graph tags, self-hosted font preload) and a <body><slot/> for page
+// content. Public asset URLs are prefixed with the configured Astro base path.
+import "../styles/global.css";
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "Sonus Auris — A Dashcam for Audio",
+  description = "Sonus Auris is the always-on audio dashcam. Never lose that killer riff again, and keep a private, secure record when you need one. Open-source app, privacy-first.",
+} = Astro.props;
+
+// Public assets must be prefixed with the deploy base path so links work both
+// at the production root and on preview subpaths. Astro's root base is `/`,
+// so normalize trailing slashes before appending an asset path.
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
+const ogImage = new URL(`${base}/og.svg`, Astro.site);
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
+
+// GitHub Pages ignores `public/_headers`, so enforce the active-content policy
+// browsers support in markup. Header-only controls such as HSTS,
+// frame-ancestors, COOP, CORP, nosniff, and Permissions-Policy remain documented
+// in `_headers` for a future CDN/origin migration and must not be represented as
+// active response headers today.
+//
+// The generated site intentionally has no client JavaScript, remote connections,
+// frames, workers, plugins, or document base override. Keep this policy aligned
+// with `public/_headers`, `tests/security-metadata.test.mjs`, and the independent
+// deployed-runtime browser gates in sonus-auris-e2e.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self' data:",
+  "media-src 'self' blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+const enforceMetaCsp = import.meta.env.PROD;
+
+const fontFaceCss = `@font-face {
+  font-family: "Baloo 2";
+  font-style: normal;
+  font-weight: 500 800;
+  font-display: swap;
+  src: url("${base}/fonts/baloo2.woff2") format("woff2");
+}`;
+
+// GitHub Pages does not honor public/_headers, so enforce the directives that
+// browsers support through a CSP meta element. Header-only protections such as
+// HSTS and frame-ancestors remain documented in public/_headers for the future
+// CDN migration. The current site has no client JavaScript or forms, allowing a
+// deliberately narrow policy that turns unexpected active content into a CI- and
+// browser-visible failure rather than silently expanding the attack surface.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self' data:",
+  "media-src 'self' blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    {enforceMetaCsp && (
+      <meta http-equiv="Content-Security-Policy" content={contentSecurityPolicy} />
+    )}
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
+    <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
+    <meta name="generator" content={Astro.generator} />
+
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta name="theme-color" content="#1faa6c" />
+
+    <!-- Fun rounded brand font — self-hosted under the configured base path,
+         so no third-party request and a tighter CSP. -->
+    <link
+      rel="preload"
+      href={`${base}/fonts/baloo2.woff2`}
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <style is:inline set:html={fontFaceCss}></style>
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>

@@ -1,0 +1,138 @@
+---
+// Open-source section (#open-source). "Don't trust us — read the code" pitch
+// with the `points` list (public code, auditable encryption, source builds), a
+// GitHub CTA, and a decorative terminal transcript.
+const GITHUB_URL = "https://github.com/sonus-auris/sonus-auris-ui.dart";
+const points = [
+  "Every line of the mobile app is public.",
+  "Audit the on-device encryption yourself — or have your security friend do it.",
+  "Build and test the app yourself with standard Flutter tooling.",
+  "Issues, PRs, and roadmap out in the open.",
+];
+---
+
+<section class="section os" id="open-source">
+  <div class="container os-inner card">
+    <div class="os-copy">
+      <span class="eyebrow">💚 The mobile app is open source</span>
+      <h2>Don't simply trust us — read the app's code</h2>
+      <p>
+        The strongest privacy promise is one you can verify. The full Sonus Auris
+        <strong>mobile app</strong> — including the on-device encryption that
+        seals your audio before it ever leaves your phone — lives on GitHub.
+        Inspect it, fork it, build it yourself.
+      </p>
+      <ul class="os-points">
+        {points.map((p) => (
+          <li>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4 10-11"></path>
+            </svg>
+            {p}
+          </li>
+        ))}
+      </ul>
+      <a class="btn btn-secondary" href={GITHUB_URL} rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.05 0-1.12.39-2.03 1.03-2.74-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.71 1.03 1.62 1.03 2.74 0 3.92-2.34 4.78-4.57 5.04.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"></path>
+        </svg>
+        Browse the source
+      </a>
+    </div>
+
+    <div class="os-terminal" aria-hidden="true">
+      <div class="term-bar">
+        <span></span><span></span><span></span>
+        <em>sonus-auris — zsh</em>
+      </div>
+      <pre><code><span class="c-dim">$</span> <span class="c-key">git</span> clone https://github.com/sonus-auris/sonus-auris-ui.dart.git
+<span class="c-dim">Cloning into 'sonus-auris-ui.dart'...</span>
+
+<span class="c-dim">$</span> <span class="c-key">cd</span> sonus-auris-ui.dart
+<span class="c-dim">$</span> <span class="c-key">flutter</span> pub get
+<span class="c-dim">$</span> <span class="c-key">flutter</span> test
+<span class="c-ok">✓</span> Build and inspect the app from source
+
+<span class="c-dim">$</span> <span class="c-key">echo</span> "your audio, your keys, your code"
+<span class="c-amber">your audio, your keys, your code</span></code></pre>
+    </div>
+  </div>
+</section>
+
+<style>
+  .os-inner {
+    display: grid;
+    gap: 38px;
+    align-items: center;
+    padding: clamp(28px, 4vw, 50px);
+  }
+  .os-copy h2 {
+    font-size: clamp(1.8rem, 3.6vw, 2.6rem);
+  }
+  .os-copy > p {
+    color: var(--ink-soft);
+    font-size: 1.1rem;
+    max-width: 520px;
+  }
+  .os-points {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 26px;
+    display: grid;
+    gap: 11px;
+  }
+  .os-points li {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-weight: 600;
+  }
+  .os-points svg {
+    color: var(--green-500);
+    flex: none;
+    margin-top: 2px;
+  }
+  .os-terminal {
+    background: #0c2a22;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    font-family: "SF Mono", "Fira Code", ui-monospace, monospace;
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 14px;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .term-bar span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #ff5f56;
+  }
+  .term-bar span:nth-child(2) { background: #ffbd2e; }
+  .term-bar span:nth-child(3) { background: #27c93f; }
+  .term-bar em {
+    margin-left: auto;
+    font-style: normal;
+    font-size: 0.78rem;
+    color: rgba(255, 255, 255, 0.5);
+  }
+  .os-terminal pre {
+    margin: 0;
+    padding: 18px 18px 22px;
+    font-size: 0.84rem;
+    line-height: 1.7;
+    color: #c9e8d8;
+    overflow-x: auto;
+  }
+  .c-dim { color: #5c8576; }
+  .c-key { color: #34c585; font-weight: 700; }
+  .c-ok { color: #34c585; }
+  .c-amber { color: #ff9f43; }
+  @media (min-width: 900px) {
+    .os-inner { grid-template-columns: 1fr 1fr; }
+  }
+</style>

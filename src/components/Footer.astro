@@ -1,0 +1,120 @@
+---
+// Site footer. Renders the Partners badge row, then brand blurb + link columns
+// (Product / Trust / Legal, including the privacy & account-deletion pages) and
+// a bottom copyright line. `base` prefixes internal links for GitHub Pages.
+import Logo from "./Logo.astro";
+import Partners from "./Partners.astro";
+const GITHUB_URL = "https://github.com/sonus-auris/sonus-auris-ui.dart";
+const year = new Date().getFullYear();
+const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+---
+
+<footer class="footer">
+  <Partners />
+
+  <div class="container foot-inner">
+    <div class="foot-brand">
+      <Logo light />
+      <p>The dashcam for audio. Capture the moment, keep the peace of mind.</p>
+      <a class="foot-gh" href={GITHUB_URL} rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path fill="currentColor" d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.05 0-1.12.39-2.03 1.03-2.74-.1-.26-.45-1.3.1-2.71 0 0 .84-.27 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.32 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.71 1.03 1.62 1.03 2.74 0 3.92-2.34 4.78-4.57 5.04.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z"></path>
+        </svg>
+        github.com/sonus-auris
+      </a>
+    </div>
+
+    <nav class="foot-col" aria-label="Product">
+      <h4>Product</h4>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#why">Who it's for</a>
+      <a href="#download">Download</a>
+    </nav>
+
+    <nav class="foot-col" aria-label="Trust">
+      <h4>Trust</h4>
+      <a href="#privacy">Privacy</a>
+      <a href="#open-source">Open source</a>
+      <a href={GITHUB_URL} rel="noopener noreferrer">Security audits</a>
+      <a href={GITHUB_URL + "/blob/main/LICENSE"} rel="noopener noreferrer">License</a>
+    </nav>
+
+    <nav class="foot-col" aria-label="Legal">
+      <h4>Legal</h4>
+      <a href={`${base}/privacy/`}>Privacy policy</a>
+      <a href={`${base}/account-deletion/`}>Delete your account &amp; data</a>
+      <a href={`${base}/support/`}>Support</a>
+      <a href={`${base}/privacy/#recording-responsibly`}>Responsible recording</a>
+    </nav>
+  </div>
+
+  <div class="container foot-bottom">
+    <span>© {year} Sonus Auris. Made with 💚 &amp; 🧡 for people who hate forgetting.</span>
+    <span class="foot-badges">🔒 E2E encrypted · 💚 Open-source app · 🪪 Privacy-first</span>
+  </div>
+</footer>
+
+<style>
+  .footer {
+    background: #0a241c;
+    color: rgba(255, 253, 248, 0.78);
+  }
+  .foot-inner {
+    padding-top: 48px;
+  }
+  .foot-inner {
+    display: grid;
+    gap: 36px;
+    grid-template-columns: 1fr;
+    padding-bottom: 40px;
+  }
+  .foot-brand p {
+    margin: 14px 0;
+    max-width: 320px;
+    color: rgba(255, 253, 248, 0.62);
+  }
+  .foot-gh {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--green-400);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .foot-col {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+  }
+  .foot-col h4 {
+    color: #fffdf8;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 0 0 4px;
+  }
+  .foot-col a {
+    color: rgba(255, 253, 248, 0.66);
+    font-size: 0.95rem;
+  }
+  .foot-col a:hover {
+    color: var(--green-400);
+  }
+  .foot-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 20px;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid rgba(255, 253, 248, 0.1);
+    padding-block: 22px;
+    font-size: 0.84rem;
+    color: rgba(255, 253, 248, 0.55);
+  }
+  @media (min-width: 760px) {
+    .foot-inner {
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+    }
+  }
+</style>

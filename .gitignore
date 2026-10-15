@@ -139,3 +139,21 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-08e3f31e50f5-merge-remote-agent-den-859-site-trust-ha ---
+.astro/
+.direnv/
+.env.production
+.output/
+.playwright-hostile-build/
+.playwright/
+artifacts/
+blob-report/
+npm-debug.log*
+playwright-report/
+pnpm-debug.log*
+temp/worktrees
+test-results/
+tmp/worktrees
+yarn-debug.log*
+yarn-error.log*
