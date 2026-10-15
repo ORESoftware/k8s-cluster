@@ -2,8 +2,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1737,7 +1737,15 @@ async function writeOrCheck(path, content) {
     return;
   }
   await mkdir(dirname(path), { recursive: true });
+  try {
+    await chmod(path, 0o644);
+  } catch {
+    // first write
+  }
   await writeFile(path, content);
+  if (basename(path).toLowerCase() !== 'readme.md') {
+    await chmod(path, 0o444);
+  }
 }
 
 function canonicalGeneratedArtifacts(publicOpenapiPath) {
