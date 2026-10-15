@@ -1,0 +1,10 @@
+[package]
+name = "dd-nats-subject-defs"
+version = "0.1.0"
+edition = "2021"
+description = "Generated Rust constants, formatters and parsers for dd NATS subject conventions. Do not edit by hand."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

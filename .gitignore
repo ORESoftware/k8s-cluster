@@ -139,3 +139,10 @@ remote/deployments/soccer-rs/out/
 # Python bytecode / test caches
 __pycache__/
 *.py[cod]
+
+# --- carried over from the grafted branch rescue/orphan-4177f475af9c-merge-remote-agent-seaorm-shared-schema ---
+*.log
+Cargo.lock.bak
+local/Cargo.lock
+temp/worktrees
+tmp/worktrees
