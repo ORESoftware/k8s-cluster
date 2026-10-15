@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "repository": "usa-acc/rest-api-backend.rs",
+  "procedure": "docs/FORMAL_REVIEW_PROCEDURE.md",
+  "obligations": [
+    {
+      "id": "PROC_GATE",
+      "kind": "safety",
+      "statement": "Screening and admission cannot occur before the petition signature threshold is reached.",
+      "trigger_paths": [
+        "src/simulation.rs",
+        "src/models.rs"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded procedure model",
+        "threshold boundary tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --locked"
+      ],
+      "assumptions": [
+        "petition events are finite and signatures are monotonic"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "PROC_ADMISSION",
+      "kind": "safety",
+      "statement": "Trial cannot occur unless the configured admission decision rule has passed.",
+      "trigger_paths": [
+        "src/simulation.rs"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded procedure model",
+        "admission vote boundary tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --locked"
+      ],
+      "assumptions": [
+        "the abstract admission panel has a fixed finite size"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "PROC_PANEL",
+      "kind": "safety",
+      "statement": "Every completed verdict contains exactly one mutually exclusive vote per panel seat.",
+      "trigger_paths": [
+        "src/simulation.rs"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded procedure model",
+        "panel cardinality tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --locked"
+      ],
+      "assumptions": [
+        "abstention and recusal are outside the current production model"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "PROC_THRESHOLD",
+      "kind": "safety",
+      "statement": "Conviction is equivalent to guilty votes meeting or exceeding the configured threshold.",
+      "trigger_paths": [
+        "src/simulation.rs",
+        "src/models.rs"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded procedure model",
+        "threshold boundary tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --locked"
+      ],
+      "assumptions": [
+        "threshold is clamped to the panel size"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "PROC_REPLAY",
+      "kind": "refinement",
+      "statement": "Identical normalized requests and seeds produce identical metrics and event traces.",
+      "trigger_paths": [
+        "src/simulation.rs",
+        "tests/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "deterministic model run",
+        "Rust seeded replay tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --locked"
+      ],
+      "assumptions": [
+        "external persistence and wall-clock scheduling are excluded"
+      ],
+      "bounded": true
+    }
+  ]
+}
