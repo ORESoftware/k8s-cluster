@@ -6,14 +6,14 @@ import test from "node:test";
 
 const FIDUCIA_RELEASE = "957618c8ff7ca746519889573443b5e9e68dde19";
 const AKRION_RELEASE = "1bd5dc5a050ce05f9a495e08038cc02e9647e092";
-const CANONICAL_RELEASE = "488791e252c2ac94de78e1cd4d71165b53c2a2c3";
+const CANONICAL_RELEASE = "d6226363aae7d4ebc7a5084b10509c3d189749b4";
 const CANONICAL_WEB_PACKAGE = "ghcr.io/canonical-cloud/canonical-web-server";
 const CANONICAL_REVOKER_PACKAGE =
   "ghcr.io/canonical-cloud/canonical-session-revoker";
 const CANONICAL_WEB_DIGEST =
-  "sha256:5e58011c4bf98e9567cf1cf8c901fc71ddb83dc20a4696f17e378e10b050871a";
+  "sha256:0eac454163bc72bf12ba6659659d528e520d0e37eb473062add806b97c932b29";
 const CANONICAL_REVOKER_DIGEST =
-  "sha256:cb675d56785093ef8a944ed5af5bd5d2387eb052d5e914ebe956cefe09361d5b";
+  "sha256:e32aba74453526a9a81a06d6e3e97f22e6adcc4e807d0284364b581ad0b8f39c";
 const SONUS_EXPORTER =
   "docker.io/nginx/nginx-prometheus-exporter:1.5.1@sha256:9f6d963bb2b19d706d401cc3e2c3ea8de2f1c471b96a2156ca45e76f650b1625";
 
