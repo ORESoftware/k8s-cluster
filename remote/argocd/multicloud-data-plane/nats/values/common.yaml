@@ -25,6 +25,8 @@ config:
         timeout: 2
   jetstream:
     enabled: true
+    merge:
+      domain: ORES_MULTICLOUD
     fileStore:
       enabled: true
       dir: /data
@@ -67,8 +69,17 @@ config:
   profiling:
     enabled: false
   merge:
-    authorization:
-      token: << $NATS_AUTH_TOKEN >>
+    accounts:
+      DD_APP:
+        jetstream: enabled
+        users:
+          - user: << $NATS_APP_USER >>
+            password: << $NATS_APP_PASSWORD >>
+      SYS:
+        users:
+          - user: << $NATS_SYSTEM_USER >>
+            password: << $NATS_SYSTEM_PASSWORD >>
+    system_account: SYS
     max_payload: 8MB
 
 container:
@@ -77,11 +88,26 @@ container:
     tag: 2.14.6-alpine
     pullPolicy: IfNotPresent
   env:
-    NATS_AUTH_TOKEN:
+    NATS_APP_USER:
       valueFrom:
         secretKeyRef:
           name: dd-nats-client-auth
-          key: token
+          key: username
+    NATS_APP_PASSWORD:
+      valueFrom:
+        secretKeyRef:
+          name: dd-nats-client-auth
+          key: password
+    NATS_SYSTEM_USER:
+      valueFrom:
+        secretKeyRef:
+          name: dd-nats-system-auth
+          key: username
+    NATS_SYSTEM_PASSWORD:
+      valueFrom:
+        secretKeyRef:
+          name: dd-nats-system-auth
+          key: password
   resources:
     requests:
       cpu: 500m
