@@ -1,0 +1,27 @@
+[package]
+org = "shared-auth"
+name = "shared-auth-nats-bridge"
+version = "0.1.0"
+description = "HTTP-to-NATS bridge for Shared Auth outbox and webhook events"
+license = "UNLICENSED"
+language = "rust"
+
+[package.repository]
+vcs = "git"
+url = "https://github.com/shared-auth/shared-auth-nats-bridge.rs"
+
+[install]
+dir = ".vendor/.zed"
+
+[dependencies]
+"shared-auth/shared-auth-interfaces" = "^0.1.0"
+"shared-auth/shared-auth-lib" = "^0.1.0"
+"shared-auth/shared-auth-sync" = "^0.1.0"
+
+[publish]
+include_readme = true
+tag_format = "v{version}"
+exclude = [".env", ".env.*", ".direnv/**", ".zed/**", ".zed-pack/**", "node_modules/**", "target/**", "tmp/**", "**/*.log", ".vendor/.zed/**", ".DS_Store"]
+
+[scripts]
+test = "cargo test --all-targets --locked"

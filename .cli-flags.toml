@@ -1,0 +1,40 @@
+# Non-secret CLI configuration for shared-auth-nats-bridge, parsed by
+# flags-2-env. BRIDGE_INTERNAL_TOKEN is environment-only and deliberately NOT a
+# flag.
+[help]
+url = "https://github.com/shared-auth/shared-auth-nats-bridge.rs"
+columns = ["options", "env", "type", "default", "description"]
+
+[parse]
+allow_unknown = false
+
+[env]
+ignore = ["BRIDGE_INTERNAL_TOKEN"]
+
+[flags.bind-addr]
+env = "BRIDGE_BIND_ADDR"
+aliases = ["bind-addr", "bind"]
+short = "b"
+type = "string"
+default = "0.0.0.0:8121"
+help = "HTTP listen address."
+
+[flags.nats-url]
+env = "BRIDGE_NATS_URL"
+aliases = ["nats-url"]
+type = "string"
+default = "nats://dd-nats.messaging.svc.cluster.local:4222"
+help = "Cluster NATS endpoint."
+
+[flags.subject-prefix]
+env = "BRIDGE_SUBJECT_PREFIX"
+aliases = ["subject-prefix"]
+type = "string"
+default = "shared-auth."
+help = "Only subjects under this prefix are publishable."
+
+[flags.deliveries]
+env = "BRIDGE_DELIVERIES"
+aliases = ["deliveries"]
+type = "json"
+help = "JSON array of {subject, webhook} NATS->HTTP fan-out routes."
