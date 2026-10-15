@@ -1,0 +1,349 @@
+[help]
+url = "https://github.com/ORESoftware/live-mutex-rs"
+
+[parse]
+positionals_env = "LMX_CLI_POSITIONALS"
+unknown_options_env = "LMX_CLI_UNKNOWN_OPTIONS"
+errors_env = "LMX_CLI_PARSE_ERRORS"
+
+[flags.config]
+env = "LMX_CONFIG"
+aliases = ["config", "config-path"]
+short = "c"
+type = "string"
+help = "Path to the broker runtime TOML config file."
+
+[flags.bind_host]
+env = "LMX_BIND_HOST"
+aliases = ["bind-host", "host"]
+type = "string"
+help = "Bind host used for broker TCP, HTTP, and status listeners."
+
+[flags.tcp_port]
+env = "LMX_TCP_PORT"
+aliases = ["tcp-port", "port"]
+short = "p"
+type = "integer"
+help = "Broker TCP listener port."
+
+[flags.http_port]
+env = "LMX_HTTP_PORT"
+aliases = ["http-port"]
+type = "integer"
+help = "Broker HTTP listener port."
+
+[flags.disable_tcp]
+env = "LMX_DISABLE_TCP"
+aliases = ["disable-tcp"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Disable the broker TCP listener."
+
+[flags.disable_http]
+env = "LMX_DISABLE_HTTP"
+aliases = ["disable-http"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Disable the broker HTTP listener."
+
+[flags.uds_path]
+env = "LMX_UDS_PATH"
+aliases = ["uds-path", "unix-socket"]
+type = "string"
+help = "Unix domain socket path for broker clients."
+
+[flags.status_port]
+env = "LMX_STATUS_PORT"
+aliases = ["status-port"]
+type = "integer"
+help = "Dedicated read-only status listener port."
+
+[flags.tcp_nodelay]
+env = "LMX_TCP_NODELAY"
+aliases = ["tcp-nodelay"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Apply TCP_NODELAY to broker TCP sockets."
+
+[flags.tcp_quickack]
+env = "LMX_TCP_QUICKACK"
+aliases = ["tcp-quickack"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Apply TCP_QUICKACK after broker reads on Linux."
+
+[flags.tls_cert]
+env = "LMX_TLS_CERT"
+aliases = ["tls-cert"]
+type = "string"
+help = "TLS certificate PEM path. The private-key path remains environment-only."
+
+[flags.default_ttl_ms]
+env = "LMX_DEFAULT_TTL_MS"
+aliases = ["default-ttl-ms"]
+type = "integer"
+help = "Default lock TTL in milliseconds."
+
+[flags.max_lock_holders]
+env = "LMX_MAX_LOCK_HOLDERS"
+aliases = ["max-lock-holders"]
+type = "integer"
+help = "Default per-key lock holder count."
+
+[flags.max_concurrency_cap]
+env = "LMX_MAX_CONCURRENCY_CAP"
+aliases = ["max-concurrency-cap"]
+type = "integer"
+help = "Hard ceiling on requested per-key concurrency."
+
+[flags.ttl_sweep_interval_ms]
+env = "LMX_TTL_SWEEP_INTERVAL_MS"
+aliases = ["ttl-sweep-interval-ms"]
+type = "integer"
+help = "Periodic TTL eviction sweep interval in milliseconds."
+
+[flags.idle_key_grace_ms]
+env = "LMX_IDLE_KEY_GRACE_MS"
+aliases = ["idle-key-grace-ms"]
+type = "integer"
+help = "Idle key pruning grace period in milliseconds."
+
+[flags.max_frame_bytes]
+env = "LMX_MAX_FRAME_BYTES"
+aliases = ["max-frame-bytes"]
+type = "integer"
+help = "TCP and UDS JSONL frame byte cap."
+
+[flags.frame_yield_every]
+env = "LMX_FRAME_YIELD_EVERY"
+aliases = ["frame-yield-every"]
+type = "integer"
+help = "Yield after this many already-buffered broker frames."
+
+[flags.log_format]
+env = "LMX_LOG_FORMAT"
+aliases = ["log-format"]
+type = "string"
+help = "Broker stdout log format: text or json."
+
+[flags.log_level]
+env = "RUST_LOG"
+aliases = ["log-level", "rust-log"]
+type = "string"
+help = "Tracing filter for broker logs."
+
+[flags.otel_endpoint]
+env = "OTEL_EXPORTER_OTLP_ENDPOINT"
+aliases = ["otel-endpoint", "otel-exporter-otlp-endpoint"]
+type = "string"
+help = "OTLP/gRPC endpoint for broker tracing export."
+
+[flags.otel_service_name]
+env = "OTEL_SERVICE_NAME"
+aliases = ["otel-service-name"]
+type = "string"
+help = "OpenTelemetry service name."
+
+[flags.otel_resource_attributes]
+env = "OTEL_RESOURCE_ATTRIBUTES"
+aliases = ["otel-resource-attributes"]
+type = "string"
+help = "OpenTelemetry resource attributes."
+
+[flags.raft_enabled]
+env = "LMX_RAFT_ENABLED"
+aliases = ["raft-enabled"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Enable BrokerRaft mode."
+
+[flags.raft_node_id]
+env = "LMX_RAFT_NODE_ID"
+aliases = ["raft-node-id"]
+type = "string"
+help = "BrokerRaft node id."
+
+[flags.raft_bind_addr]
+env = "LMX_RAFT_BIND_ADDR"
+aliases = ["raft-bind-addr"]
+type = "string"
+help = "BrokerRaft peer RPC bind address."
+
+[flags.raft_advertise_addr]
+env = "LMX_RAFT_ADVERTISE_ADDR"
+aliases = ["raft-advertise-addr"]
+type = "string"
+help = "BrokerRaft peer RPC address advertised to other nodes."
+
+[flags.raft_data_dir]
+env = "LMX_RAFT_DATA_DIR"
+aliases = ["raft-data-dir"]
+type = "string"
+help = "BrokerRaft durable state directory."
+
+[flags.raft_data_dir_lock]
+env = "LMX_RAFT_DATA_DIR_LOCK"
+aliases = ["raft-data-dir-lock"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Hold an advisory lock on the BrokerRaft data directory."
+
+[flags.raft_heartbeat_interval_ms]
+env = "LMX_RAFT_HEARTBEAT_INTERVAL_MS"
+aliases = ["raft-heartbeat-interval-ms"]
+type = "integer"
+help = "BrokerRaft heartbeat interval in milliseconds."
+
+[flags.raft_election_timeout_min_ms]
+env = "LMX_RAFT_ELECTION_TIMEOUT_MIN_MS"
+aliases = ["raft-election-timeout-min-ms"]
+type = "integer"
+help = "BrokerRaft minimum election timeout in milliseconds."
+
+[flags.raft_election_timeout_max_ms]
+env = "LMX_RAFT_ELECTION_TIMEOUT_MAX_MS"
+aliases = ["raft-election-timeout-max-ms"]
+type = "integer"
+help = "BrokerRaft maximum election timeout in milliseconds."
+
+[flags.raft_snapshot_interval_ms]
+env = "LMX_RAFT_SNAPSHOT_INTERVAL_MS"
+aliases = ["raft-snapshot-interval-ms"]
+type = "integer"
+help = "BrokerRaft snapshot cadence in milliseconds."
+
+[flags.raft_snapshot_max_log_entries]
+env = "LMX_RAFT_SNAPSHOT_MAX_LOG_ENTRIES"
+aliases = ["raft-snapshot-max-log-entries"]
+type = "integer"
+help = "Snapshot when retained BrokerRaft log entries reach this count."
+
+[flags.raft_snapshot_max_log_bytes]
+env = "LMX_RAFT_SNAPSHOT_MAX_LOG_BYTES"
+aliases = ["raft-snapshot-max-log-bytes"]
+type = "integer"
+help = "Snapshot when retained BrokerRaft log bytes reach this size."
+
+[flags.raft_snapshot_max_log_age_ms]
+env = "LMX_RAFT_SNAPSHOT_MAX_LOG_AGE_MS"
+aliases = ["raft-snapshot-max-log-age-ms"]
+type = "integer"
+help = "Snapshot and compact retained committed BrokerRaft log prefixes older than this many milliseconds; 0 disables the age trigger."
+
+[flags.raft_trailing_log_entries]
+env = "LMX_RAFT_TRAILING_LOG_ENTRIES"
+aliases = ["raft-trailing-log-entries"]
+type = "integer"
+help = "Retained log suffix after BrokerRaft snapshot compaction."
+
+[flags.raft_max_frame_bytes]
+env = "LMX_RAFT_MAX_FRAME_BYTES"
+aliases = ["raft-max-frame-bytes"]
+type = "integer"
+help = "BrokerRaft peer RPC JSONL frame byte cap."
+
+[flags.raft_append_entries_max_entries]
+env = "LMX_RAFT_APPEND_ENTRIES_MAX_ENTRIES"
+aliases = ["raft-append-entries-max-entries"]
+type = "integer"
+help = "Max log entries in one BrokerRaft AppendEntries batch."
+
+[flags.raft_append_entries_max_bytes]
+env = "LMX_RAFT_APPEND_ENTRIES_MAX_BYTES"
+aliases = ["raft-append-entries-max-bytes"]
+type = "integer"
+help = "Approximate serialized byte budget for one AppendEntries batch."
+
+[flags.raft_append_entries_max_inline_batches]
+env = "LMX_RAFT_APPEND_ENTRIES_MAX_INLINE_BATCHES"
+aliases = ["raft-append-entries-max-inline-batches"]
+type = "integer"
+help = "Max sequential AppendEntries batches before yielding."
+
+[flags.raft_target_quorum_extra_fanout]
+env = "LMX_RAFT_TARGET_QUORUM_EXTRA_FANOUT"
+aliases = ["raft-target-quorum-extra-fanout"]
+type = "integer"
+help = "Extra ready followers to include in foreground target-index replication beyond minimum quorum need."
+
+[flags.raft_install_snapshot_chunk_bytes]
+env = "LMX_RAFT_INSTALL_SNAPSHOT_CHUNK_BYTES"
+aliases = ["raft-install-snapshot-chunk-bytes"]
+type = "integer"
+help = "Serialized snapshot payload bytes per InstallSnapshot chunk."
+
+[flags.raft_install_snapshot_max_staged_bytes]
+env = "LMX_RAFT_INSTALL_SNAPSHOT_MAX_STAGED_BYTES"
+aliases = ["raft-install-snapshot-max-staged-bytes"]
+type = "integer"
+help = "Max decoded snapshot bytes staged by a follower."
+
+[flags.raft_install_snapshot_max_staged_transfers]
+env = "LMX_RAFT_INSTALL_SNAPSHOT_MAX_STAGED_TRANSFERS"
+aliases = ["raft-install-snapshot-max-staged-transfers"]
+type = "integer"
+help = "Max concurrent staged InstallSnapshot transfers retained on disk."
+
+[flags.raft_install_snapshot_stale_transfer_ms]
+env = "LMX_RAFT_INSTALL_SNAPSHOT_STALE_TRANSFER_MS"
+aliases = ["raft-install-snapshot-stale-transfer-ms"]
+type = "integer"
+help = "Idle age before an incomplete staged snapshot transfer is discarded."
+
+[flags.raft_client_batch_max_entries]
+env = "LMX_RAFT_CLIENT_BATCH_MAX_ENTRIES"
+aliases = ["raft-client-batch-max-entries"]
+type = "integer"
+help = "Max leader-local client requests in one BrokerRaft write batch."
+
+[flags.raft_client_pipeline_max_batches]
+env = "LMX_RAFT_CLIENT_PIPELINE_MAX_BATCHES"
+aliases = ["raft-client-pipeline-max-batches"]
+type = "integer"
+help = "Max client batches drained in one BrokerRaft write cycle."
+
+[flags.raft_client_batch_max_pending]
+env = "LMX_RAFT_CLIENT_BATCH_MAX_PENDING"
+aliases = ["raft-client-batch-max-pending"]
+type = "integer"
+help = "Max leader-local client requests waiting for the Raft write lane."
+
+[flags.raft_client_batch_max_delay_ms]
+env = "LMX_RAFT_CLIENT_BATCH_MAX_DELAY_MS"
+aliases = ["raft-client-batch-max-delay-ms"]
+type = "integer"
+help = "BrokerRaft client batch coalescing window in milliseconds."
+
+[flags.raft_client_response_cache_max_entries]
+env = "LMX_RAFT_CLIENT_RESPONSE_CACHE_MAX_ENTRIES"
+aliases = ["raft-client-response-cache-max-entries"]
+type = "integer"
+help = "Max recent idempotent BrokerRaft HTTP responses retained by a leader."
+
+[flags.raft_proxy_retry_budget_ms]
+env = "LMX_RAFT_PROXY_RETRY_BUDGET_MS"
+aliases = ["raft-proxy-retry-budget-ms"]
+type = "integer"
+help = "Follower proxy retry window during BrokerRaft leader churn."
+
+[flags.raft_sync_log]
+env = "LMX_RAFT_SYNC_LOG"
+aliases = ["raft-sync-log"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Flush BrokerRaft append-log writes before acknowledgement."
+
+[flags.raft_sync_commit]
+env = "LMX_RAFT_SYNC_COMMIT"
+aliases = ["raft-sync-commit"]
+type = "bool"
+true_aliases = ["t", "1", "yes", "on"]
+false_aliases = ["f", "0", "no", "off"]
+help = "Flush BrokerRaft commit hard-state writes before applying entries."

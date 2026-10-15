@@ -1,0 +1,36 @@
+name: flags2env consumer compliance
+
+on:
+  pull_request:
+    paths:
+      - .cli-flags.toml
+      - Dockerfile
+      - build.rs
+      - vendor/flags2env/**
+      - src/cli_flags.rs
+      - .github/scripts/flags2env-runtime-smoke.sh
+      - .github/workflows/flags2env-compliance.yml
+  push:
+    branches: [dev]
+    paths:
+      - .cli-flags.toml
+      - Dockerfile
+      - build.rs
+      - vendor/flags2env/**
+      - src/cli_flags.rs
+      - .github/scripts/flags2env-runtime-smoke.sh
+      - .github/workflows/flags2env-compliance.yml
+
+permissions:
+  contents: read
+
+jobs:
+  compliance:
+    uses: ORESoftware/flags-2-env/.github/workflows/reusable-consumer-compliance.yml@b596f2d1c99bd726b262a923916e3015bc80bc37
+    with:
+      tooling_ref: b596f2d1c99bd726b262a923916e3015bc80bc37
+      parser_ref: b596f2d1c99bd726b262a923916e3015bc80bc37
+      kind: server
+      command_name: dd-rust-network-mutex
+      contract_path: .cli-flags.toml
+      runtime_smoke_script: .github/scripts/flags2env-runtime-smoke.sh

@@ -1,0 +1,72 @@
+# Multi-stage build for the BrokerRaft image.
+#
+# The regular Broker image stays in `Dockerfile`; this image carries the
+# Raft-enabled config, exposes the Raft RPC listener, and prepares a writable
+# durable log directory for the non-root runtime user. Today both images build
+# the same binary; keeping separate Dockerfiles leaves room for Raft-specific
+# dependency/features without changing deployment names later.
+#
+# Build:
+#   docker build -f Dockerfile.raft -t oresoftware/live-mutex-rs-raft:0.1.127 .
+#
+# Run one node locally:
+#   docker run --rm -p 6971:6971 -p 7980:7980 \
+#     oresoftware/live-mutex-rs-raft:0.1.127
+
+FROM rust:1.90-bookworm AS build
+
+ARG CARGO_BUILD_FLAGS=""
+
+WORKDIR /app
+
+COPY Cargo.toml Cargo.lock build.rs ./
+COPY vendor ./vendor
+RUN mkdir -p src \
+  && echo "fn main() {}" > src/main.rs \
+  && printf 'pub fn __stub() {}\n' > src/lib.rs \
+  && cargo build --release ${CARGO_BUILD_FLAGS} \
+  && rm -rf src
+
+COPY src ./src
+COPY tests ./tests
+COPY examples ./examples
+COPY PROTOCOL.md ./PROTOCOL.md
+COPY readme.md ./readme.md
+COPY LICENSE ./LICENSE
+
+RUN cargo clean -p dd-rust-network-mutex --release \
+  && cargo build --release --bin dd-rust-network-mutex ${CARGO_BUILD_FLAGS}
+
+RUN size_bytes=$(stat -c '%s' target/release/dd-rust-network-mutex) \
+  && echo "built binary size: ${size_bytes} bytes" \
+  && [ "${size_bytes}" -gt 2000000 ] || { \
+       echo "ERROR: dd-rust-network-mutex is only ${size_bytes} bytes; likely the dependency-cache stub leaked into the runtime layer."; \
+       exit 1; \
+     }
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p /var/lib/dd-rust-network-mutex/raft \
+  && chown -R 65532:65532 /var/lib/dd-rust-network-mutex
+
+COPY --from=build /app/target/release/dd-rust-network-mutex /usr/local/bin/dd-rust-network-mutex
+COPY lmx-raft.toml /etc/dd-rust-network-mutex/lmx.toml
+COPY .cli-flags.toml /etc/dd-rust-network-mutex/.cli-flags.toml
+
+ENV LMX_CONFIG=/etc/dd-rust-network-mutex/lmx.toml \
+    LMX_RAFT_ENABLED=true \
+    LMX_RAFT_BIND_ADDR=0.0.0.0:7980 \
+    LMX_RAFT_DATA_DIR=/var/lib/dd-rust-network-mutex/raft \
+    LMX_LOG_FORMAT=text \
+    RUST_LOG=info,lmx=info
+
+EXPOSE 6971 7980
+
+USER 65532:65532
+
+ENTRYPOINT ["/usr/local/bin/dd-rust-network-mutex"]
+CMD []

@@ -1,0 +1,36 @@
+# Two Services (adapted from docs/k8s.md):
+#  - headless peer Service for stable Raft RPC DNS + replication/proxy dialing.
+#    publishNotReadyAddresses so the cluster can form before any leader is fresh.
+#  - client Service for HTTP. We use /healthz readiness on the pods (see the
+#    StatefulSet), so this round-robins across all nodes and followers proxy
+#    client writes to the leader — exercising the "any node serves" path.
+apiVersion: v1
+kind: Service
+metadata:
+  name: live-mutex-rs-raft-peers
+  labels:
+    app: live-mutex-rs-raft
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: live-mutex-rs-raft
+  ports:
+    - name: raft
+      port: 7980
+      targetPort: raft
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: live-mutex-rs-raft
+  labels:
+    app: live-mutex-rs-raft
+spec:
+  type: ClusterIP
+  selector:
+    app: live-mutex-rs-raft
+  ports:
+    - name: http
+      port: 6971
+      targetPort: http

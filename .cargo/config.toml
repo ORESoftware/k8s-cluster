@@ -1,0 +1,11 @@
+# Many Raft tests spin up real TCP servers and several Tokio runtimes per test.
+# At full parallelism on a many-core machine these oversubscribe the CPU and
+# trip tight fake-server / replication completion timeouts, producing
+# load-induced flakiness (not logic bugs). Cap the default test parallelism so
+# `cargo test` is reliably green out of the box.
+#
+# This is only a default: override it for a one-off full-parallelism run with
+# `cargo test -- --test-threads=N` or by exporting `RUST_TEST_THREADS=N`
+# (an env var set in the parent shell takes precedence over this value).
+[env]
+RUST_TEST_THREADS = "4"

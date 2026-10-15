@@ -1,0 +1,239 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - '**'
+    tags:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  LIVE_MUTEX_HOST: 127.0.0.1
+  LIVE_MUTEX_PORT: "6970"
+
+jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting (advisory)
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets --all-features
+
+      - name: Run tests with all features
+        run: cargo test --locked --all-targets --all-features
+
+      - name: Run tests without default features
+        run: cargo test --locked --no-default-features
+
+      - name: Verify broker CLI FFI packaging
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          package_files="$(cargo package --locked --list)"
+          for file in \
+            .cli-flags.toml \
+            build.rs \
+            vendor/flags2env/LICENSE \
+            vendor/flags2env/parser.c \
+            vendor/flags2env/parser.h
+          do
+            grep -qx "$file" <<< "$package_files"
+          done
+
+          install_root="$(mktemp -d)"
+          cargo install --path . --root "$install_root" --locked --debug --force
+          "$install_root/bin/dd-rust-network-mutex" --help | grep -q -- "--tcp-port"
+          if "$install_root/bin/dd-rust-network-mutex" --tcp-port nope 2>"$install_root/invalid-cli.log"; then
+            echo "expected invalid typed CLI flag to fail" >&2
+            exit 1
+          fi
+          grep -q "invalid broker CLI flag value" "$install_root/invalid-cli.log"
+
+  clients:
+    name: Client protocol checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/ts/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Setup Gleam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          gleam-version: "1.14.0"
+
+      - name: TypeScript checks
+        working-directory: clients/ts
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+
+      - name: Go checks
+        working-directory: clients/go
+        run: go test ./...
+
+      - name: Dart checks
+        working-directory: clients/dart
+        run: |
+          dart pub get
+          dart test
+
+      - name: Gleam checks
+        working-directory: clients/gleam
+        run: gleam test
+
+      - name: Python checks
+        working-directory: clients/python
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+
+      - name: C++ checks
+        working-directory: clients/cpp
+        run: make test
+
+      - name: Java checks
+        working-directory: clients/java
+        run: |
+          ./build.sh
+          java -cp out com.oresoftware.networkmutex.ProtocolTest
+
+  live-smoke:
+    name: Live client smokes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - rust
+      - clients
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clients/ts/package-lock.json
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Setup Gleam
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          gleam-version: "1.14.0"
+
+      - name: Install TypeScript dependencies
+        working-directory: clients/ts
+        run: npm ci
+
+      - name: Build broker
+        run: cargo build --locked --release --no-default-features --bin dd-rust-network-mutex
+
+      - name: Run live smokes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ./target/release/dd-rust-network-mutex &
+          broker_pid="$!"
+          trap 'kill "$broker_pid" >/dev/null 2>&1 || true' EXIT
+
+          timeout 30 bash -c 'until (echo > /dev/tcp/127.0.0.1/6970) >/dev/null 2>&1; do sleep 1; done'
+
+          npm --prefix clients/ts run smoke
+          (cd clients/go && go run ./cmd/smoke)
+          (cd clients/gleam && LIVE_MUTEX_SMOKE=1 gleam test)
+          (cd clients/python && python3 -m unittest discover -s tests -p 'test_*.py' -q && python3 smoke.py)
+          (cd clients/cpp && make test && make run)
+          (cd clients/java && ./build.sh && java -cp out com.oresoftware.networkmutex.ProtocolTest && java -cp out com.oresoftware.networkmutex.Smoke)
+          (cd clients/dart && dart pub get && dart run bin/smoke.dart)

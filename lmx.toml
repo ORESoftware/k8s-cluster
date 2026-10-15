@@ -1,0 +1,78 @@
+# Default configuration for dd-rust-network-mutex.
+#
+# Environment variables still override these values. Set LMX_CONFIG to point
+# at a different TOML file, or omit LMX_CONFIG and run from the repo root to
+# use this file during local development.
+
+[server]
+bind_host = "0.0.0.0"
+tcp_port = 6970
+http_port = 6971
+disable_tcp = false
+disable_http = false
+tcp_nodelay = true
+tcp_quickack = true
+
+[broker]
+default_ttl_ms = 4000
+max_lock_holders = 1
+max_concurrency_cap = 1000
+ttl_sweep_interval_ms = 10
+idle_key_grace_ms = 60000
+
+[raft]
+# The regular Broker image keeps Raft disabled by default. Set enabled=true,
+# or use lmx-raft.toml / Dockerfile.raft for the HTTP BrokerRaft backend.
+enabled = false
+node_id = "node-1"
+bind_addr = "127.0.0.1:7980"
+advertise_addr = "node-1:7980"
+data_dir = "./data/raft/node-1"
+data_dir_lock = true
+max_inbound_rpc_connections = 1024
+inbound_rpc_idle_timeout_ms = 30000
+
+# A 3-node cluster commits with 2 votes. Add node-4 and node-5 below to run a
+# 5-node cluster, which commits with 3 votes. Quorum is derived from peer count;
+# do not configure it manually.
+heartbeat_interval_ms = 100
+election_timeout_min_ms = 800
+election_timeout_max_ms = 1600
+
+# Snapshot every 30 minutes by default. Old log entries are compacted only
+# after a durable snapshot includes their log index.
+snapshot_interval_ms = 1800000
+snapshot_max_log_entries = 100000
+snapshot_max_log_bytes = 67108864
+# Also snapshot/compact committed retained-log prefixes older than 30 minutes.
+# Set to 0 to disable the age trigger.
+snapshot_max_log_age_ms = 1800000
+trailing_log_entries = 10000
+append_entries_max_entries = 256
+append_entries_max_bytes = 1048576
+append_entries_max_inline_batches = 64
+target_quorum_extra_fanout = 0
+install_snapshot_max_staged_bytes = 134217728
+install_snapshot_max_staged_transfers = 4
+
+[[raft.peers]]
+id = "node-1"
+addr = "node-1:7980"
+
+[[raft.peers]]
+id = "node-2"
+addr = "node-2:7980"
+
+[[raft.peers]]
+id = "node-3"
+addr = "node-3:7980"
+
+# To plan 3-of-5 consensus, uncomment two more peers:
+#
+# [[raft.peers]]
+# id = "node-4"
+# addr = "node-4:7980"
+#
+# [[raft.peers]]
+# id = "node-5"
+# addr = "node-5:7980"
