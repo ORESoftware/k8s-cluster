@@ -1,0 +1,126 @@
+name: executable OpenAPI contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/openapi-contract.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/main.rs'
+      - 'src/web.rs'
+      - 'src/web/openapi.rs'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/openapi-contract.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/main.rs'
+      - 'src/web.rs'
+      - 'src/web/openapi.rs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tor-openapi-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Compile, lint, and test
+        run: |
+          set -euo pipefail
+          # Rustfmt follows `mod` declarations by default. Keep this check
+          # exact to the product-owned files instead of reformatting legacy
+          # modules that are outside this PR.
+          rustfmt --edition 2021 --config skip_children=true --check src/main.rs src/web.rs
+          rustfmt --edition 2021 --check src/web/openapi.rs
+          cargo check --locked
+          cargo clippy --locked --all-targets -- \
+            -D warnings \
+            -A clippy::needless_return \
+            -A clippy::needless_range_loop \
+            -A clippy::doc_overindented_list_items
+          cargo test --locked --all-targets
+
+      - name: Prove deterministic public and internal contracts
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.1.json
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.1.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
+          cmp /tmp/openapi.internal.1.json /tmp/openapi.internal.2.json
+          cmp /tmp/openapi.public.1.json /tmp/openapi.public.2.json
+          cmp /tmp/openapi.internal.1.json generated/openapi.internal.json
+          cmp /tmp/openapi.public.1.json generated/openapi.public.json
+
+      - name: Validate route visibility and shared auth classification
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          expected_public = {
+              '/healthz', '/vendor/{file}', '/docs', '/docs/{name}', '/proxy.pac',
+              '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
+          }
+          sensitive = {
+              '/', '/api/status', '/api/fetch', '/ws/stats',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert set(public['paths']) == expected_public
+          assert set(internal['paths']) == expected_public | sensitive
+          assert public['x-dd-contract-scope'] == 'public'
+          assert internal['x-dd-contract-scope'] == 'internal'
+          assert 'securitySchemes' not in public.get('components', {})
+          assert 'ui_token' in internal['components']['securitySchemes']
+          operation_ids = []
+          for path, item in internal['paths'].items():
+              for method, operation in item.items():
+                  if method.lower() not in {'get', 'post', 'put', 'patch', 'delete'}:
+                      continue
+                  operation_ids.append(operation['operationId'])
+                  if path in sensitive:
+                      assert operation.get('security') == [{'ui_token': []}], (method, path)
+          assert len(operation_ids) == len(set(operation_ids))
+          PY
+
+      - name: Reject drift and conflict markers
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --short)"
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            Cargo.toml generated src; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi

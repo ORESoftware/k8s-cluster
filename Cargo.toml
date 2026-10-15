@@ -1,0 +1,59 @@
+[package]
+name = "tor-server"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "An onion-routing anonymizing proxy: a SOCKS5 front-end that builds telescoped multi-hop circuits through relay nodes with per-hop layered encryption (X25519 + ChaCha20-Poly1305)."
+authors = ["ORE Software"]
+license = "MIT"
+repository = "https://github.com/oresoftware/tor-server.rs"
+homepage = "https://github.com/oresoftware/tor-server.rs"
+readme = "README.md"
+keywords = ["onion-routing", "socks5", "proxy", "anonymity", "tor"]
+categories = ["network-programming", "cryptography"]
+
+[[bin]]
+name = "tor-server"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time", "sync"] }
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+subtle = "2"
+zeroize = "1"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+toml = "0.8"
+anyhow = "1"
+tracing = "0.1"
+fiducia-telemetry = { git = "https://github.com/fiducia-cloud/fiducia-telemetry.rs", tag = "v0.2.1" }
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.7", features = ["trace"] }
+maud = "0.27"
+pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
+# crates.io utoipa-axum 0.2.0 still pulls the archived `paste` crate.
+# Pin the complete type family to the reviewed upstream pastey migration.
+utoipa = { version = "=5.5.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa" }
+utoipa-axum = { version = "=0.2.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-axum" }
+utoipa-scalar = { version = "=0.3.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-scalar" }
+
+# Real-Tor backend (TOR_BACKEND=arti). Off by default because it pulls the full
+# Arti stack (hundreds of crates); enable with `--features arti`.
+arti-client = { version = "0.44", optional = true, default-features = false, features = ["tokio", "rustls", "compression", "onion-service-client", "bridge-client", "pt-client"] }
+tor-rtcompat = { version = "0.44", optional = true, default-features = false, features = ["tokio", "rustls"] }
+# Needed to install a rustls CryptoProvider (rustls 0.23 requires selecting one).
+rustls = { version = "0.23", optional = true, default-features = false, features = ["ring"] }
+
+[features]
+default = []
+arti = ["dep:arti-client", "dep:tor-rtcompat", "dep:rustls"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
