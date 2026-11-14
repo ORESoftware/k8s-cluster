@@ -24,8 +24,8 @@ patches:
         template:
           metadata:
             annotations:
-              dd.dev/soccer-engine-revision: 6bacca1f768e999e583b1b17ae779a823f357934
-              dd.dev/des-engine-revision: 1117988f5b026127e6dce1bbeb517ab7b683754a
+              dd.dev/soccer-engine-revision: b2c99ca9233d0aea765178cb752f98a4bdd48d38
+              dd.dev/des-engine-revision: 9bfeb2210d0365651561dc749cef19cf7cee07ba
           spec:
             containers:
               - name: soccer-learning
@@ -33,11 +33,11 @@ patches:
                   - name: SOCCER_SOURCE_REPO
                     value: https://github.com/akrion-sim/akrion-soccer-engine-rs.git
                   - name: SOCCER_SOURCE_REF
-                    value: 6bacca1f768e999e583b1b17ae779a823f357934
+                    value: b2c99ca9233d0aea765178cb752f98a4bdd48d38
                   - name: SOCCER_ENGINE_SOURCE_REPO
                     value: https://github.com/ORESoftware/discrete-event-system.rs.git
                   - name: SOCCER_ENGINE_SOURCE_REF
-                    value: 1117988f5b026127e6dce1bbeb517ab7b683754a
+                    value: 9bfeb2210d0365651561dc749cef19cf7cee07ba
                   # Preserve the live ConfigMap-backed feature-gate ownership
                   # while adopting this Deployment into Argo. Explicit nulls
                   # remove the source manifest's literal value before adding

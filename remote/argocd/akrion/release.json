@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "promotedAt": "2026-08-26T10:51:36Z",
+  "promotedAt": "2026-11-14T19:08:49Z",
   "source": {
     "repository": "akrion-sim/akrion-monorepo",
-    "revision": "fca0d8ed94c64ee9444d3621a6df5d85129332f6",
+    "revision": "f083ac4ad8e2a07cede8fb1d78019b40fb685d3a",
     "workflow": "ci.yml"
   },
   "components": {
@@ -19,12 +19,12 @@
     },
     "soccer": {
       "repository": "akrion-sim/akrion-soccer-engine-rs",
-      "revision": "6bacca1f768e999e583b1b17ae779a823f357934",
+      "revision": "b2c99ca9233d0aea765178cb752f98a4bdd48d38",
       "workflow": "ci.yml"
     },
     "des": {
       "repository": "ORESoftware/discrete-event-system.rs",
-      "revision": "1117988f5b026127e6dce1bbeb517ab7b683754a",
+      "revision": "9bfeb2210d0365651561dc749cef19cf7cee07ba",
       "workflow": null
     }
   }
