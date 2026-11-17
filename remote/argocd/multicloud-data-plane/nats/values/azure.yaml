@@ -2,9 +2,6 @@ config:
   cluster:
     merge:
       name: ores-azure
-  jetstream:
-    merge:
-      domain: ORES_AZURE
   gateway:
     merge:
       name: ores-azure

@@ -12,7 +12,7 @@ anything.
 3. namespace, ExternalSecret, Issuer, Certificate, and Bundle prerequisites;
 4. the CockroachDB v1beta1 operator;
 5. that provider's region of the shared CockroachDB cluster; and
-6. that provider's independent NATS R3 JetStream cluster plus gateway.
+6. that provider's three-server NATS region in the shared `ORES_MULTICLOUD` supercluster.
 
 All six Applications deliberately omit `syncPolicy.automated`. The AWS and GCP cluster roots only
 register them for operator visibility; the Azure bootstrap root does the same when it is created.
@@ -26,6 +26,8 @@ for provider in aws gcp azure; do
 done
 ```
 
-Render the pinned Helm payloads with the commands exercised by
-`.github/workflows/multicloud-data-plane-contract.yml`. A render proves only declarative shape; it
-does not prove cloud routing, DNS, certificates, storage, quorum, restore, or failover.
+The `.github/workflows/multicloud-data-plane-contract.yml` workflow renders the pinned Helm
+payloads, submits them with strict server-side dry-run against their pinned CRDs in an ephemeral
+Kubernetes API server, and runs a real nine-process NATS supercluster test with a complete regional
+outage and rejoin. Those checks prove substantially more than a render, but still do not prove the
+real clouds' routing, DNS, certificates, storage, restore path, or workload behavior.

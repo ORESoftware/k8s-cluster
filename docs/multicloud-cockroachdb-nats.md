@@ -18,15 +18,15 @@ the child Applications in the order below.
 flowchart LR
   subgraph AWS["AWS / us-east-1"]
     AC["CockroachDB x3"]
-    AN["NATS JetStream R3\nORES_AWS"]
+    AN["NATS x3\nORES_MULTICLOUD\nplacement: ores-aws"]
   end
   subgraph GCP["GCP / us-central1"]
     GC["CockroachDB x3"]
-    GN["NATS JetStream R3\nORES_GCP"]
+    GN["NATS x3\nORES_MULTICLOUD\nplacement: ores-gcp"]
   end
   subgraph AZ["Azure / eastus"]
     ZC["CockroachDB x3"]
-    ZN["NATS JetStream R3\nORES_AZURE"]
+    ZN["NATS x3\nORES_MULTICLOUD\nplacement: ores-azure"]
   end
 
   AC <-->|"Cockroach node SQL/RPC\nprivate DNS + shared CA"| GC
@@ -56,19 +56,27 @@ reviewed migration/operations path and test the latency and availability consequ
 changes in the Kubernetes chart. Verify system-range placement and every product database after
 each region joins.
 
-NATS is not backed by CockroachDB. Each cloud owns an independent three-server JetStream Raft
-group and a unique JetStream domain. Gateways connect the three NATS clusters for Core NATS
-interest routing and geographic affinity; they do not turn the regional JetStream stores into a
-single WAN Raft group and do not replicate durable streams automatically. Cross-region stream
-durability requires explicit JetStream mirrors/sources, snapshots, or an application outbox.
-CockroachDB is the authority for transactional outbox/inbox state, idempotency keys, and fenced
-product effects when those guarantees are required.
+NATS is not backed by CockroachDB. Three regional three-server route clusters form one gateway
+supercluster, one `ORES_MULTICLOUD` JetStream domain, and one nine-member JetStream metadata
+quorum. The explicit `SYS` system account is the control-plane identity that allows those metadata
+peers to form correctly; application traffic uses the separate JetStream-enabled `DD_APP` account.
+Gateways connect the three regional NATS clusters for Core NATS interest routing, geographic
+affinity, and JetStream supercluster control traffic.
+
+Every durable stream must use [explicit stream placement](https://docs.nats.io/nats-concepts/jetstream/streams#placement-options)
+with `replicas: 3` and `cluster: ores-aws`, `ores-gcp`, or `ores-azure`. That creates a regional R3
+stream Raft group even though its metadata is visible throughout the supercluster. Placement does
+not replicate a stream into another region automatically. A stream placed in a failed region is
+unavailable until that region recovers unless the owning product has explicitly designed and tested
+JetStream mirrors/sources, snapshots, or an application outbox. CockroachDB is the authority for
+transactional outbox/inbox state, idempotency keys, and fenced product effects when those guarantees
+are required.
 
 Fiducia is not a fourth NATS gateway member in this contract. Its clusters retain a separate
 identity and network trust realm. Traffic crosses through an authenticated, allowlisted
 application/API gateway with replay protection, bounded payloads, redacted telemetry, and
 idempotent request semantics. A future decision may use NATS leaf nodes or another protocol
-behind that gateway, but it must not silently share the ORES NATS account, client token, CA, or
+behind that gateway, but it must not silently share the ORES NATS accounts, credentials, CA, or
 JetStream domain.
 
 ## Pinned components
@@ -101,8 +109,8 @@ Required paths are:
 | CockroachDB nodes | peer-region CockroachDB private service | 26257/TCP | SQL/RPC join and replication |
 | CockroachDB operator | Kubernetes API in its local cluster | 443/TCP | local reconciliation only |
 | NATS gateways | peer-region NATS gateway private service | 7222/TCP | supercluster gateway mTLS |
-| NATS clients | local `dd-nats-supercluster` ClusterIP | 4222/TCP | local mTLS + token client traffic |
-| NATS servers | local headless peers | 6222/TCP | regional Raft/routes only |
+| NATS clients | local `dd-nats-supercluster` ClusterIP | 4222/TCP | local mTLS + `DD_APP` credentials |
+| NATS servers | local headless peers | 6222/TCP | regional routes and placed stream Raft groups |
 
 Private DNS must resolve these names from all three clusters:
 
@@ -119,7 +127,7 @@ DNS name as a SAN. Split-horizon public records are forbidden for these names.
 
 ## Secret contract
 
-No certificate, key, token, URL containing credentials, or cloud credential belongs in Git. Each
+No certificate, key, password, URL containing credentials, or cloud credential belongs in Git. Each
 cluster must already have the provider-specific `ClusterSecretStore/dd-cluster-secrets`. The
 prerequisites Application materializes these namespace-local targets from the same provider-neutral
 remote keys:
@@ -132,16 +140,19 @@ remote keys:
 | `nats-system/dd-nats-client-tls` | `dd/multicloud/nats-client-tls` | `tls.crt`, `tls.key` | provider-specific server certificate |
 | `nats-system/dd-nats-route-tls` | `dd/multicloud/nats-route-tls` | `tls.crt`, `tls.key` | provider-specific regional route certificate |
 | `nats-system/dd-nats-gateway-tls` | `dd/multicloud/nats-gateway-tls` | `tls.crt`, `tls.key` | provider-specific gateway certificate |
-| `nats-system/dd-nats-client-auth` | `dd/multicloud/nats-client-auth` | `token` | rotate independently per environment |
+| `nats-system/dd-nats-client-auth` | `dd/multicloud/nats-client-auth` | `username`, `password` | `DD_APP` workload account; identical in all three clouds |
+| `nats-system/dd-nats-system-auth` | `dd/multicloud/nats-system-auth` | `username`, `password` | `SYS` control account; identical in all three clouds and never distributed to workloads |
 
 cert-manager receives the same CA key in all three clusters and generates local node, HTTP, and
 root-client certificates. trust-manager publishes only the public CA certificate into the
 `ConfigMap/dd-cockroachdb-ca` required by the CockroachDB operator. CA custody, escrow, rotation,
 and access audit remain human-owned. The CA ExternalSecret uses `CreatedOnce`; rotation requires a
 reviewed reissue and rolling-restart procedure rather than an unattended secret refresh.
-NATS requires both a trusted client certificate and the token. This is a fail-closed bootstrap for
-the new plane; subject-level operator/account JWTs are still required before general production
-tenant adoption.
+NATS requires both a trusted client certificate and the `DD_APP` username/password. The separate
+`SYS` credentials are only for broker control-plane access and must not be distributed to normal
+workloads. This is a fail-closed bootstrap for the new plane; subject-level operator/account JWTs
+or additional least-privilege accounts are still required before general production tenant
+adoption.
 
 The NATS server certificates have distinct jobs. `dd-nats-client-tls` must cover the local
 `dd-nats-supercluster` Service DNS names, `dd-nats-route-tls` must cover the StatefulSet/headless
@@ -190,13 +201,23 @@ spread constraints or TLS contract.
    an independent cluster. Reconcile the final three-region values everywhere after each join.
 6. Verify nine live nodes, region/zone localities, zero unavailable ranges, balanced replicas, SQL
    TLS, node-drain behavior, backup, point-in-time restore, and loss of one complete region.
-7. Sync the three NATS Applications. Verify each independent R3 JetStream cluster locally before
-   opening the gateway path. Then verify all six directed gateway connections, mTLS rejection,
-   `reject_unknown_cluster`, and recovery after a regional disconnect.
-8. Define explicit stream mirror/source policies and outbox consumers. Prove PubAck, redelivery,
+7. Sync the three NATS Applications in one coordinated activation window. Do not let one region
+   bootstrap a competing partial metadata authority. Verify the three regional three-server route
+   clusters, all six directed gateway connections, mTLS and credential rejection,
+   `reject_unknown_cluster`, and a nine-member JetStream metadata quorum (`/jsz` reports
+   `meta_cluster.cluster_size: 9` with a leader and no pending state).
+8. Before creating each stream, record its owning region and enforce explicit placement. For
+   example, an AWS-owned R3 stream is created with
+   `nats --js-domain ORES_MULTICLOUD stream add ORDERS --subjects 'orders.>' --storage file --replicas 3 --cluster ores-aws`.
+   The analogous placement clusters are `ores-gcp` and `ores-azure`. Verify the stream leader and
+   both replicas are members of the selected region; reject creation if placement cannot be
+   satisfied.
+9. Define explicit stream mirror/source policies and outbox consumers. Prove PubAck, redelivery,
    DLQ, mirror lag, snapshot restore, promotion RTO, and that retries cannot duplicate a protected
-   product effect.
-9. Shadow traffic from the existing `messaging/dd-nats`, compare effects, canary consumers, then
+   product effect. The nine-member metadata quorum requires five members, so loss of one complete
+   three-server region leaves six metadata peers; still prove that streams placed in surviving
+   regions remain available and that the failed region rejoins without forming a competing quorum.
+10. Shadow traffic from the existing `messaging/dd-nats`, compare effects, canary consumers, then
    promote one subject family at a time. Rollback returns clients to the old service; it never
    deletes the new PVCs. Remove the bootstrap service only after a separate reviewed decision.
 
