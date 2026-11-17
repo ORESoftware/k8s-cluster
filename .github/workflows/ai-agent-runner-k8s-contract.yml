@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           kubectl kustomize remote/argocd/dd-next-runtime >"${RUNNER_TEMP}/dd-next-runtime.yaml"
-          grep -Fq 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:e78d56c95485c4aaea33621268be35c83813a06962f50bb27010df5a0859867c' "${RUNNER_TEMP}/dd-next-runtime.yaml"
+          grep -Fq 'ghcr.io/oresoftware/fiducia-ai-agent-runner@sha256:940ce31bd425081efc925fafe9065ab77e301addb3b916eba620c156658c7161' "${RUNNER_TEMP}/dd-next-runtime.yaml"
           runner_block="$(awk 'BEGIN{RS="---"} /kind: Deployment/ && /name: dd-ai-agent-runner/{print}' "${RUNNER_TEMP}/dd-next-runtime.yaml")"
           grep -Eq '^  replicas: 0$' <<<"${runner_block}"
           if grep -Eq 'git clone|cargo build|GH_PAT|hostPath:' <<<"${runner_block}"; then
