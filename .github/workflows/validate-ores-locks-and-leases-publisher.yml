@@ -1,0 +1,245 @@
+name: Validate ORES locks-and-leases publisher
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/validate-ores-locks-and-leases-publisher.yml
+      - scripts/ops/create_ores_locks_and_leases_repository_20260904.sh
+      - scripts/ops/install_pinned_github_cli.sh
+      - remote/deployments/host-cron/install.sh
+      - catalog/namespaces/migration-manifest.json
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/validate-ores-locks-and-leases-publisher.yml
+      - scripts/ops/create_ores_locks_and_leases_repository_20260904.sh
+      - scripts/ops/install_pinned_github_cli.sh
+      - remote/deployments/host-cron/install.sh
+      - catalog/namespaces/migration-manifest.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-ores-locks-and-leases-publisher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh-namespace-manifest:
+    name: Refresh exact-head namespace evidence
+    if: >-
+      ${{ github.event_name == 'pull_request' &&
+          github.event.pull_request.number == 1473 &&
+          github.event.pull_request.user.login == 'ORESoftware' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.head.ref == 'ops/ores-locks-and-leases-bootstrap-20260904' }}
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.regenerate.outputs.changed }}
+    steps:
+      - name: Check out exact pull-request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+          submodules: false
+
+      - name: Regenerate and commit canonical manifest when stale
+        id: regenerate
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$EXPECTED_HEAD_SHA"
+          git cat-file -e "$BASE_SHA^{commit}"
+
+          work="$(mktemp -d /tmp/namespace-manifest-refresh.XXXXXX)"
+          cleanup() {
+            status=$?
+            trap - EXIT
+            find "$work" -xdev -depth -delete
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          # Execute validator code from the trusted PR base. The trusted code
+          # reads the exact-head tree and emits deterministic evidence.
+          git show "$BASE_SHA:tools/namespace_migration.py" > "$work/namespace_migration.py"
+          git show "$BASE_SHA:tools/namespace_manifest.py" > "$work/namespace_manifest.py"
+          mkdir -p artifacts
+          python3 "$work/namespace_migration.py" inventory \
+            --root . \
+            --format json \
+            > artifacts/namespace-inventory.json
+          python3 "$work/namespace_manifest.py" generate \
+            --root . \
+            --format json \
+            > artifacts/namespace-manifest-generate.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(
+              Path('artifacts/namespace-manifest-generate.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          if report.get('valid') is not True or report.get('diagnostics') != []:
+              raise SystemExit(f'namespace manifest generation failed: {report}')
+          if report.get('entryCount') != 1276:
+              raise SystemExit(
+                  f"unexpected namespace manifest entry count: {report.get('entryCount')}"
+              )
+          PY
+
+          manifest=catalog/namespaces/migration-manifest.json
+          if git diff --quiet -- "$manifest"; then
+            printf 'changed=false\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git diff --check -- "$manifest"
+          mapfile -t changed_paths < <(git diff --name-only)
+          test "${#changed_paths[@]}" -eq 1
+          test "${changed_paths[0]}" = "$manifest"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$manifest"
+          mapfile -t staged_paths < <(git diff --cached --name-only)
+          test "${#staged_paths[@]}" -eq 1
+          test "${staged_paths[0]}" = "$manifest"
+          git commit -m 'chore(namespaces): refresh locks publisher inventory'
+
+          authorization="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w 0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $authorization" \
+            push origin "HEAD:$HEAD_REF"
+          unset authorization GITHUB_TOKEN
+          printf 'changed=true\n' >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: refresh-namespace-manifest
+    if: >-
+      ${{ always() &&
+          (needs.refresh-namespace-manifest.result == 'success' ||
+           needs.refresh-namespace-manifest.result == 'skipped') &&
+          needs.refresh-namespace-manifest.outputs.changed != 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/validate-ores-locks-and-leases-publisher.yml
+
+      - name: Validate publisher and host-reconcile contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          publisher=scripts/ops/create_ores_locks_and_leases_repository_20260904.sh
+          installer=scripts/ops/install_pinned_github_cli.sh
+          host_installer=remote/deployments/host-cron/install.sh
+
+          bash -n "$publisher"
+          bash -n "$installer"
+          bash -n "$host_installer"
+
+          required_markers=(
+            "readonly target='ORESoftware/ores-locks-and-leases'"
+            "readonly issue_title='Bootstrap polyglot locks-and-leases contract and first release'"
+            'install_pinned_github_cli.sh'
+            'candidate-personal-access-token-rejected'
+            'candidate-token-class-rejected'
+            'candidate-identity-rejected'
+            'gh_as_owner repo create'
+            '--private'
+            '--add-readme'
+            'allow_rebase_merge=false'
+            'delete_branch_on_merge=true'
+            'TypeSpec and JSON Schema/OpenAPI are independent'
+            'zed-pkg/zed-lock'
+            'monotonic fencing tokens'
+            'transaction-scoped and session-scoped advisory locks'
+            "Root \`.zpkg.toml\`"
+            'ORES_LOCKS_REPOSITORY_READY'
+            'ORES_LOCKS_BOOTSTRAP_ISSUE_READY'
+          )
+          for marker in "${required_markers[@]}"; do
+            grep -Fq -- "$marker" "$publisher" || {
+              printf 'missing publisher invariant: %s\n' "$marker" >&2
+              exit 1
+            }
+          done
+
+          consumers=(
+            sonus-auris-lib-core
+            daedalus-lib-core
+            cliptown-lib-core
+            ap-lib-core
+            fanwaave-lib-core
+            athleto-lib-core
+            claritas-lib-core
+            claimgraph-lib-core
+            cp-lib-core
+            ecmad-lib-core
+            eal-lib-core
+          )
+          for consumer in "${consumers[@]}"; do
+            grep -Fq -- "$consumer" "$publisher" || {
+              printf 'missing initial consumer: %s\n' "$consumer" >&2
+              exit 1
+            }
+          done
+
+          host_markers=(
+            'ores-locks-and-leases-v1.ready'
+            'create_ores_locks_and_leases_repository_20260904.sh'
+            "bash \"\$ores_locks_publisher\" \"\$trusted_sha\""
+          )
+          for marker in "${host_markers[@]}"; do
+            grep -Fq -- "$marker" "$host_installer" || {
+              printf 'missing host-reconcile invariant: %s\n' "$marker" >&2
+              exit 1
+            }
+          done
+
+          forbidden_literals=('git checkout' 'git reset' 'git stash')
+          for marker in "${forbidden_literals[@]}"; do
+            if grep -Fq -- "$marker" "$publisher"; then
+              printf 'blacklisted command found in publisher: %q\n' "$marker" >&2
+              exit 1
+            fi
+          done
+          if grep -nE '^[[:space:]]*(sudo[[:space:]]+)?(rm|sed)([[:space:]]|$)' "$publisher"; then
+            echo 'blacklisted mutating command found in publisher' >&2
+            exit 1
+          fi
+
+          credential_pattern='gh''p_|github_''pat_|lin_''api_|-----BEGIN (RSA )?PRIVATE KEY-----'
+          if grep -nE "$credential_pattern" \
+            .github/workflows/validate-ores-locks-and-leases-publisher.yml \
+            "$publisher" "$host_installer"; then
+            echo 'credential-shaped source material detected' >&2
+            exit 1
+          fi
+
+          test "$(grep -Fc 'gh_as_owner repo create' "$publisher")" -eq 1
+          test "$(grep -Fc 'gh_as_owner issue create' "$publisher")" -eq 1
+          test "$(grep -Fc 'candidate-personal-access-token-rejected' "$publisher")" -eq 1
+          git diff --check HEAD^ HEAD
