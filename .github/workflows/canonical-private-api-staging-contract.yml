@@ -1,0 +1,164 @@
+name: Canonical private quote API staging contract
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - ".github/workflows/canonical-private-api-staging-contract.yml"
+      - "remote/argocd/apps/canonical-cloud.application.yaml"
+      - "remote/argocd/canonical-cloud/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canonical-private-api-staging-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact reviewed candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 1
+          submodules: false
+
+      - name: Validate private BFF, image, secret, and network boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('remote/argocd/canonical-cloud')
+          required = {
+              'api.deployment.yaml',
+              'api.externalsecret.yaml',
+              'api.networkpolicy.yaml',
+              'api.service.yaml',
+              'web.deployment.yaml',
+              'web.externalsecret.yaml',
+              'web.networkpolicy.yaml',
+              'revoker.deployment.yaml',
+              'kustomization.yaml',
+              'PRIVATE_API_STAGING.md',
+          }
+          files = {path.name: path.read_text() for path in root.iterdir() if path.is_file()}
+          assert required <= files.keys(), sorted(required - files.keys())
+          assert not (root / 'origins.ingress.yaml').exists()
+
+          api = files['api.deployment.yaml']
+          api_secret = files['api.externalsecret.yaml']
+          api_policy = files['api.networkpolicy.yaml']
+          api_service = files['api.service.yaml']
+          web = files['web.deployment.yaml']
+          web_secret = files['web.externalsecret.yaml']
+          web_policy = files['web.networkpolicy.yaml']
+          revoker = files['revoker.deployment.yaml']
+          kustomization = files['kustomization.yaml']
+          staging = files['PRIVATE_API_STAGING.md']
+          application = Path('remote/argocd/apps/canonical-cloud.application.yaml').read_text()
+
+          assert 'canonical.cloud/exposure: private-bff-only' in api
+          assert 'canonical.cloud/source-sha: "f57528ccf2b077644917c1f770c97eca3027b8e7"' in api
+          assert 'ghcr.io/canonical-cloud/canonical-api-server.rs@sha256:f0706b58e791dee6cb6b7fcce8a109760ecfe1483ce8937ac6a4c76c9b29259b' in api
+          assert 'replicas: 1' in api
+          assert 'name: BIND_ADDRESS\n              value: 0.0.0.0:8080' in api
+          assert 'name: GEMINI_MODEL\n              value: gemini-3.6-pro' in api
+          assert 'QUOTE_CONTEXT_KEY' not in api
+          assert 'SUPABASE_' not in api_secret
+          assert 'SERVICE_ROLE' not in api_secret
+          assert 'MIGRATION_DATABASE_URL' not in api_secret
+          assert 'dataFrom:' not in api_secret
+          for key in ('DATABASE_URL', 'GEMINI_API_KEY', 'CANONICAL_INTERNAL_AUTH_TOKEN'):
+              assert f'secretKey: {key}' in api_secret
+          assert 'key: dd/remote-dev/canonical-cloud-api' in api_secret
+
+          assert 'type: ClusterIP' in api_service
+          assert 'port: 8080' in api_service
+          assert 'app.kubernetes.io/name: canonical-web-server' in api_policy
+          assert 'app.kubernetes.io/component: web' in api_policy
+          assert 'port: 8080' in api_policy
+          for forbidden in ('ingress-nginx', 'dd-remote-gateway', 'api.canonical.plus'):
+              assert forbidden not in api_policy
+
+          assert 'canonical.cloud/release-sha: "d6226363aae7d4ebc7a5084b10509c3d189749b4"' in web
+          assert 'ghcr.io/canonical-cloud/canonical-web-server@sha256:0eac454163bc72bf12ba6659659d528e520d0e37eb473062add806b97c932b29' in web
+          assert 'value: http://canonical-cloud-api.canonical-cloud.svc.cluster.local:8080' in web
+          assert 'value: __Host-canonical-customer-auth' in web
+          assert 'value: http://dd-shared-auth-canonical-plus.shared-auth.svc.cluster.local:8120/auth/verify' in web
+          for alias in ('CANONICAL_WEB_SERVICE_TOKEN', 'CANONICAL_INTERNAL_AUTH_TOKEN'):
+              assert f'secretKey: {alias}' in web_secret
+          assert web_secret.count('property: CANONICAL_INTERNAL_AUTH_TOKEN') == 2
+          assert 'SERVICE_ROLE' not in web_secret
+          assert 'MIGRATION_DATABASE_URL' not in web_secret
+          assert 'dataFrom:' not in web_secret
+          assert 'app.kubernetes.io/name: canonical-api-server' in web_policy
+          assert 'app.kubernetes.io/instance: canonical-plus' in web_policy
+          assert 'port: 8080' in web_policy
+          assert 'port: 8120' in web_policy
+
+          assert 'canonical.cloud/release-sha: "d6226363aae7d4ebc7a5084b10509c3d189749b4"' in revoker
+          assert 'ghcr.io/canonical-cloud/canonical-session-revoker@sha256:e32aba74453526a9a81a06d6e3e97f22e6adcc4e807d0284364b581ad0b8f39c' in revoker
+
+          for resource in (
+              'api.externalsecret.yaml',
+              'api.deployment.yaml',
+              'api.service.yaml',
+              'api.networkpolicy.yaml',
+          ):
+              assert f'- {resource}' in kustomization
+          assert 'origins.ingress.yaml' not in kustomization
+
+          assert 'canonical.cloud/activation: manual-after-private-api-and-secret-certification' in application
+          assert 'automated:' not in application
+          assert 'targetRevision: dev' in application
+
+          assert 'DEN-2655' in staging
+          assert 'does **not** create or authorize' in staging
+          assert 'Never put the internal service credential in Cloudflare' in staging
+          assert 'one replica' in staging.lower()
+          PY
+
+      - name: Install kubectl
+        uses: Azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        with:
+          version: v1.32.2
+
+      - name: Render the exact overlay without applying it
+        run: kubectl kustomize remote/argocd/canonical-cloud >/tmp/canonical-private-api.yaml
+
+      - name: Prove this workflow cannot activate infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/canonical-private-api-staging-contract.yml')
+          text = path.read_text()
+          marker = '      - name: Prove this workflow cannot activate infrastructure'
+          prefix, separator, _ = text.partition(marker)
+          assert separator, 'proof-step marker is missing'
+          assert 'permissions:\n  contents: read' in text
+          for forbidden in (
+              'contents: write',
+              'id-token: write',
+              'secrets.',
+              'kubectl apply',
+              'kubectl create',
+              'argocd app sync',
+              'wrangler deploy',
+              'terraform apply',
+          ):
+              assert forbidden not in prefix, f'activation capability before proof step: {forbidden}'
+          PY
