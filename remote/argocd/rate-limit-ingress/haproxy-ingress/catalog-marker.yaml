@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rate-limit-ingress-haproxy-catalog
+  labels:
+    app.kubernetes.io/name: rate-limit-ingress-catalog
+    app.kubernetes.io/component: haproxy-ingress
+    rate-limit.ores.io/policy-id: public-anonymous-ingress
+    rate-limit.ores.io/activation: disabled-template
+    rate-limit.ores.io/scope: peer-summed
+data:
+  purpose: >-
+    Render-only marker for the disabled HAProxy Ingress rate-limit component.
+    This object does not select an ingress or enable enforcement.

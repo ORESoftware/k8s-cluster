@@ -1,0 +1,24 @@
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: BackendTrafficPolicy
+metadata:
+  name: public-anonymous-ingress-local-rate-limit
+  labels:
+    rate-limit.ores.io/policy-id: public-anonymous-ingress
+    rate-limit.ores.io/activation: disabled-template
+    rate-limit.ores.io/scope: per-replica
+spec:
+  # This target is intentionally nonexistent. Adopters copy the template into
+  # their own overlay and replace it in a reviewed activation PR.
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: replace-me-before-enabling
+  rateLimit:
+    local:
+      rules:
+        # No clientSelectors: this is a route-wide overload budget. Distinct
+        # authenticated or IP principals belong in the reviewed global service
+        # or ores-middleware, never in a caller-supplied identity header here.
+        - limit:
+            requests: 20
+            unit: Second
