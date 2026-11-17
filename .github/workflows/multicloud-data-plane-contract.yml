@@ -5,11 +5,14 @@ on:
     paths:
       - '.github/workflows/multicloud-data-plane-contract.yml'
       - 'docs/multicloud-cockroachdb-nats.md'
+      - 'docs/multicloud-data-plane-evidence.md'
       - 'remote/argocd/clusters/aws/kustomization.yaml'
       - 'remote/argocd/clusters/gcp/kustomization.yaml'
       - 'remote/argocd/clusters/azure/**'
       - 'remote/argocd/multicloud-data-plane/**'
+      - 'remote/tools/multicloud-data-plane-evidence.mjs'
       - 'remote/tests/general/multicloud-data-plane.test.ts'
+      - 'remote/tests/general/multicloud-data-plane-evidence.test.mjs'
       - 'remote/tests/package.json'
       - 'remote/tests/pnpm-lock.yaml'
   push:
@@ -17,11 +20,14 @@ on:
     paths:
       - '.github/workflows/multicloud-data-plane-contract.yml'
       - 'docs/multicloud-cockroachdb-nats.md'
+      - 'docs/multicloud-data-plane-evidence.md'
       - 'remote/argocd/clusters/aws/kustomization.yaml'
       - 'remote/argocd/clusters/gcp/kustomization.yaml'
       - 'remote/argocd/clusters/azure/**'
       - 'remote/argocd/multicloud-data-plane/**'
+      - 'remote/tools/multicloud-data-plane-evidence.mjs'
       - 'remote/tests/general/multicloud-data-plane.test.ts'
+      - 'remote/tests/general/multicloud-data-plane-evidence.test.mjs'
       - 'remote/tests/package.json'
       - 'remote/tests/pnpm-lock.yaml'
   workflow_dispatch:
@@ -67,6 +73,16 @@ jobs:
       - name: Run architecture contracts
         run: pnpm run test:cli:multicloud-data-plane
         working-directory: remote/tests
+
+      - name: Verify retained activation evidence contract
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          node --test general/multicloud-data-plane-evidence.test.mjs
+          DD_MULTICLOUD_EVIDENCE_PATH=../argocd/multicloud-data-plane/evidence.example.json \
+          DD_MULTICLOUD_EXPECTED_SHA256=ab9d3bfcf764ad22d8979aa8b12635191882e5547243df5dfd86ece43bc87188 \
+            node ../tools/multicloud-data-plane-evidence.mjs
 
       - name: Render provider registration roots
         shell: bash
